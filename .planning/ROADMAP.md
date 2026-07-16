@@ -105,11 +105,11 @@ Plans:
 **Plans:** 5 plans (replanned 2026-07-16 from Codex review cycle 1)
 
 Plans:
-- [ ] 04-01-PLAN.md — Wave 0 harness + RED dual-route; dual-token never_cross_slot scaffold; honest prepare/reconstruct switch contract
+- [ ] 04-01-PLAN.md — Wave 0 harness + RED dual-route; dual-token never_cross_slot scaffold; switch contract reserved for production transforms A/B
 - [ ] 04-02-PLAN.md — Codex endpoints + resolve_provider_route production authority + first-party session_oauth_allowed
-- [ ] 04-03-PLAN.md — default_models via resolver + provider rebind + dual-key credentials + caller inventory
-- [ ] 04-04-PLAN.md — prepare/ModelsManager/model_switch + ModelAuthFacts.provider + select_provider_access_token + reconstruct
-- [ ] 04-05-PLAN.md — Local fail-closed + mock on-wire Authorization + secret log fix + phase gate
+- [ ] 04-03-PLAN.md — default_models via resolver + rebind + dual-key credentials with EndpointsConfig trust provenance
+- [ ] 04-04-PLAN.md — PreparedSamplingConfig/auth_type carrier + Option ModelAuthFacts.provider + production transforms A/B + reconstruct
+- [ ] 04-05-PLAN.md — Local fail-closed (incl. empty live resolver) + mock Authorization + secret log fix + phase gate
 
 ### Phase 5: Codex OAuth & dual auth lifecycle
 
