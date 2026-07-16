@@ -5,10 +5,10 @@
 //! Every other leader test is single-client/single-leader; [`LeaderCluster`]
 //! is the missing abstraction for "one leader, several pager clients sharing
 //! its session". One [`ContentController`] gives one shared `$HOME` (hence one
-//! elected leader) plus a fixed leader socket beneath its `GROK_HOME`; clients
-//! spawn with the `--leader`/`--leader-socket` flags so they all attach to the
-//! SAME leader. It also exposes the leader's durable `updates.jsonl` log so a
-//! reattach test can assert on the persisted, replayable turn-completion
+//! elected leader) plus a fixed leader socket beneath its `BUM_HOME` / `.bum`;
+//! clients spawn with the `--leader`/`--leader-socket` flags so they all attach
+//! to the SAME leader. It also exposes the leader's durable `updates.jsonl` log
+//! so a reattach test can assert on the persisted, replayable turn-completion
 //! records — the genuine end-to-end signal behind durable turn completion.
 
 use std::path::{Path, PathBuf};
@@ -30,16 +30,16 @@ pub struct LeaderCluster {
 
 impl LeaderCluster {
     /// Start the cluster: one [`ContentController`] (one shared `$HOME` =>
-    /// one leader) and a fixed leader socket under its `GROK_HOME`.
+    /// one leader) and a fixed leader socket under its product home (`.bum`).
     pub async fn start(rows: u16, cols: u16) -> Result<Self> {
         let content = ContentController::start()
             .await
             .context("start content controller")?;
-        // One shared GROK_HOME => one leader; the socket lives beneath it so
-        // every client (sharing the same env) elects/attaches to the same one.
-        let grok_home = content.home().join(".grok");
-        std::fs::create_dir_all(&grok_home).context("create grok home")?;
-        let socket = grok_home.join("leader-e2e.sock");
+        // One shared BUM_HOME / `.bum` => one leader; the socket lives beneath
+        // it so every client (sharing the same env) elects/attaches to the same one.
+        let product_home = content.product_home();
+        std::fs::create_dir_all(&product_home).context("create product home")?;
+        let socket = product_home.join("leader-e2e.sock");
         let binary = pager_binary().context("resolve pager binary")?;
         Ok(Self {
             content,
@@ -79,10 +79,10 @@ impl LeaderCluster {
         &self.content
     }
 
-    /// The cluster's sessions root: `GROK_HOME/sessions` (layout below is
-    /// `sessions/<encoded-cwd>/<session-id>/updates.jsonl`).
+    /// The cluster's sessions root: `$BUM_HOME/sessions` / `.bum/sessions`
+    /// (layout below is `sessions/<encoded-cwd>/<session-id>/updates.jsonl`).
     fn sessions_dir(&self) -> PathBuf {
-        self.content.home().join(".grok").join("sessions")
+        self.content.product_home().join("sessions")
     }
 
     /// The session-update payload of every record across every `updates.jsonl`

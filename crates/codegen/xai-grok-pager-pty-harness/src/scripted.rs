@@ -130,9 +130,10 @@ pub struct EnvironmentConfig {
     /// Extra CLI args passed to the pager binary.
     #[serde(default)]
     pub args: Vec<String>,
-    /// Optional `config.toml` written into the run's isolated `$GROK_HOME`
-    /// before spawn (e.g. `[ui] keep_text_selection` so selection
-    /// highlights survive long enough to assert on).
+    /// Optional `config.toml` written into the run's isolated `$BUM_HOME`
+    /// (`.bum` under the sandbox home) before spawn (e.g. `[ui]
+    /// keep_text_selection` so selection highlights survive long enough to
+    /// assert on).
     #[serde(default)]
     pub config_toml: Option<String>,
 }
@@ -536,10 +537,10 @@ impl ScriptedScenarioRunner {
         }
 
         if let Some(config_toml) = &scenario.environment.config_toml {
-            let grok_home = content.home().join(".grok");
-            fs::create_dir_all(&grok_home)
-                .with_context(|| format!("create scenario GROK_HOME {}", grok_home.display()))?;
-            fs::write(grok_home.join("config.toml"), config_toml)
+            let product_home = content.product_home();
+            fs::create_dir_all(&product_home)
+                .with_context(|| format!("create scenario BUM_HOME {}", product_home.display()))?;
+            fs::write(product_home.join("config.toml"), config_toml)
                 .context("write scenario config.toml")?;
         }
 

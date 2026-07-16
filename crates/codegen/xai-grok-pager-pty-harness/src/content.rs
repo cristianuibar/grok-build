@@ -9,7 +9,7 @@
 //! The caller controls the response text via [`ContentController::set_response`].
 //! The mock server streams the set response to every inference request.
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
 use xai_grok_test_support::MockInferenceServer;
@@ -66,10 +66,16 @@ impl ContentController {
         self.server.url()
     }
 
-    /// Isolated `$HOME` directory that the pager should use (keeps its ~/.grok
+    /// Isolated `$HOME` directory that the pager should use (keeps its ~/.bum
     /// cache/state out of the real home during tests).
     pub fn home(&self) -> &Path {
         self.home.path()
+    }
+
+    /// Product home under the isolated sandbox: `home()/.bum` (paired with
+    /// `BUM_HOME` in [`Self::env_for_pager`]).
+    pub fn product_home(&self) -> PathBuf {
+        self.home.path().join(".bum")
     }
 
     /// Env vars to pass to the pager process so it hits the mock server
@@ -78,18 +84,13 @@ impl ContentController {
     /// Mirrors `xai_grok_test_support::env::test_env_cmd_tokio`.
     pub fn env_for_pager(&self) -> Vec<(String, String)> {
         let home = self.home.path().to_string_lossy().into_owned();
-        let grok_home = self
-            .home
-            .path()
-            .join(".grok")
-            .to_string_lossy()
-            .into_owned();
+        let product_home = self.product_home().to_string_lossy().into_owned();
         vec![
             ("HOME".into(), home),
-            // Explicit GROK_HOME prevents leaking the real user's
+            // Explicit BUM_HOME prevents leaking the real user's
             // config.toml when $HOME alone isn't sufficient (e.g. if
-            // GROK_HOME is set in the test runner's env).
-            ("GROK_HOME".into(), grok_home),
+            // BUM_HOME is set in the test runner's env).
+            ("BUM_HOME".into(), product_home),
             ("GROK_CLI_CHAT_PROXY_BASE_URL".into(), self.url()),
             ("GROK_XAI_API_BASE_URL".into(), self.url()),
             ("XAI_API_KEY".into(), "test-key-for-ci".into()),
@@ -275,8 +276,8 @@ mod tests {
 
         assert_eq!(get("HOME").as_deref(), content.home().to_str());
         assert_eq!(
-            get("GROK_HOME").as_deref(),
-            content.home().join(".grok").to_str()
+            get("BUM_HOME").as_deref(),
+            content.product_home().to_str()
         );
         assert_eq!(get("GROK_CLI_CHAT_PROXY_BASE_URL"), Some(content.url()));
         assert_eq!(get("GROK_XAI_API_BASE_URL"), Some(content.url()));
