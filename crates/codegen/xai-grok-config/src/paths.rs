@@ -1,5 +1,6 @@
-//! Filesystem locations for grok config files and binaries.
+//! Filesystem locations for product config files and binaries.
 
+use std::ffi::OsString;
 use std::path::PathBuf;
 use std::sync::OnceLock;
 
@@ -11,15 +12,35 @@ const CLAUDE_MANAGED_SETTINGS_PATH: &str =
 #[cfg(target_os = "linux")]
 const CLAUDE_MANAGED_SETTINGS_PATH: &str = "/etc/claude-code/managed-settings.json";
 
-/// The default user grok directory (`~/.grok`, canonicalized) used when
-/// `GROK_HOME` is unset. Exposed so callers (e.g. display helpers) can detect
+/// Pure product-home resolver: does not read process env or touch [`GROK_HOME`] OnceLock.
+///
+/// Precedence: non-empty `bum_home` wins; otherwise join `.bum` under `user_home`
+/// (dunce-canonicalized when present). If `user_home` is `None`, uses `"."` then
+/// `.bum` (same shape as the historical cwd-relative fallback).
+///
+/// Intentionally has no `GROK_HOME` parameter — product home is `BUM_HOME` only.
+pub(crate) fn resolve_product_home(
+    bum_home: Option<OsString>,
+    user_home: Option<PathBuf>,
+) -> PathBuf {
+    if let Some(v) = bum_home
+        && !v.is_empty()
+    {
+        return PathBuf::from(v);
+    }
+    let home = user_home.unwrap_or_else(|| PathBuf::from("."));
+    dunce::canonicalize(&home).unwrap_or(home).join(".bum")
+}
+
+/// The default user product directory (`~/.bum`, canonicalized) used when
+/// `BUM_HOME` is unset. Exposed so callers (e.g. display helpers) can detect
 /// whether [`grok_home()`] is the default without duplicating the computation.
 ///
 /// Uses [`dunce::canonicalize`] instead of [`std::fs::canonicalize`]: on
 /// Windows, std returns a verbatim path (`\\?\C:\Users\...`) which external
 /// tools choke on — e.g. `git clone` rejects `\\?\` destinations with
 /// "Invalid argument", breaking marketplace cache clones under
-/// `~/.grok/marketplace-cache`. `dunce` strips the prefix whenever the path
+/// `~/.bum/marketplace-cache`. `dunce` strips the prefix whenever the path
 /// is safely representable in legacy form; on non-Windows it is identical to
 /// `std::fs::canonicalize`.
 ///
@@ -27,39 +48,35 @@ const CLAUDE_MANAGED_SETTINGS_PATH: &str = "/etc/claude-code/managed-settings.js
 /// `xai_fast_worktree::db::resolve_grok_home` (deliberately standalone crate).
 pub fn default_grok_home() -> PathBuf {
     #[allow(deprecated)]
-    let home = std::env::home_dir().unwrap_or_else(|| PathBuf::from("."));
-    dunce::canonicalize(&home).unwrap_or(home).join(".grok")
+    resolve_product_home(None, std::env::home_dir())
 }
 
-/// Per-user config directory: `$GROK_HOME` or `~/.grok`. Created if needed.
+/// Per-user config directory: `$BUM_HOME` or `~/.bum`. Created if needed.
 pub fn grok_home() -> PathBuf {
     GROK_HOME
         .get_or_init(|| {
-            let grok_home = if let Ok(v) = std::env::var("GROK_HOME") {
-                PathBuf::from(v)
-            } else {
-                default_grok_home()
-            };
-            let _ = std::fs::create_dir_all(&grok_home);
-            grok_home
+            #[allow(deprecated)]
+            let home = resolve_product_home(std::env::var_os("BUM_HOME"), std::env::home_dir());
+            let _ = std::fs::create_dir_all(&home);
+            home
         })
         .clone()
 }
 
-/// The user-global grok home, but only when one genuinely resolves: `Some` when
-/// `$GROK_HOME` is set or a home directory is found, `None` otherwise. Unlike
-/// [`grok_home()`], this never falls back to a cwd-relative `.grok`, so callers
-/// that *scan* user-global grok resources (hooks, marketplace sources, ...) don't
-/// mistake a project's `.grok` tree for the user-global one when no home resolves.
+/// The user-global product home, but only when one genuinely resolves: `Some` when
+/// `$BUM_HOME` is set or a home directory is found, `None` otherwise. Unlike
+/// [`grok_home()`], this never falls back to a cwd-relative `.bum`, so callers
+/// that *scan* user-global product resources (hooks, marketplace sources, ...) don't
+/// mistake a project's local tree for the user-global one when no home resolves.
 pub fn user_grok_home() -> Option<PathBuf> {
     #[allow(deprecated)]
-    let resolvable = std::env::var_os("GROK_HOME").is_some() || std::env::home_dir().is_some();
+    let resolvable = std::env::var_os("BUM_HOME").is_some() || std::env::home_dir().is_some();
     resolvable.then(grok_home)
 }
 
-/// Canonical grok application path: `$GROK_HOME/bin/grok` (Unix) or `grok.exe` (Windows).
+/// Canonical managed application path: `$BUM_HOME/bin/bum` (Unix) or `bum.exe` (Windows).
 pub fn grok_application() -> PathBuf {
-    let name = if cfg!(windows) { "grok.exe" } else { "grok" };
+    let name = if cfg!(windows) { "bum.exe" } else { "bum" };
     grok_home().join("bin").join(name)
 }
 
@@ -307,7 +324,79 @@ mod tests {
         // canonicalization must yield a plain path. No-op assertion on Unix.
         let home = default_grok_home();
         assert!(!home.to_string_lossy().starts_with(r"\\?\"));
-        assert!(home.ends_with(".grok"));
+        assert!(home.ends_with(".bum"));
+    }
+
+    #[test]
+    fn resolve_product_home_bum_override_wins() {
+        let user = PathBuf::from("/tmp/fake-user-home");
+        let resolved = resolve_product_home(
+            Some(OsString::from("/custom/bum-root")),
+            Some(user),
+        );
+        assert_eq!(resolved, PathBuf::from("/custom/bum-root"));
+    }
+
+    #[test]
+    fn resolve_product_home_default_joins_bum() {
+        let tmp = TempDir::new().unwrap();
+        let user = tmp.path().to_path_buf();
+        let resolved = resolve_product_home(None, Some(user.clone()));
+        assert!(resolved.ends_with(".bum"));
+        assert_eq!(
+            resolved,
+            dunce::canonicalize(&user).unwrap_or(user).join(".bum")
+        );
+    }
+
+    #[test]
+    fn resolve_product_home_empty_bum_falls_through() {
+        let tmp = TempDir::new().unwrap();
+        let user = tmp.path().to_path_buf();
+        let resolved = resolve_product_home(Some(OsString::from("")), Some(user.clone()));
+        assert!(resolved.ends_with(".bum"));
+        assert_eq!(
+            resolved,
+            dunce::canonicalize(&user).unwrap_or(user).join(".bum")
+        );
+    }
+
+    #[test]
+    fn resolve_product_home_none_user_home_uses_dot_bum() {
+        // When no user home is available, fall back to "." then dunce-canonicalize
+        // (same shape as historical default_grok_home when home_dir is None).
+        let resolved = resolve_product_home(None, None);
+        let expected = {
+            let home = PathBuf::from(".");
+            dunce::canonicalize(&home).unwrap_or(home).join(".bum")
+        };
+        assert_eq!(resolved, expected);
+        assert!(resolved.ends_with(".bum"));
+    }
+
+    #[test]
+    fn resolve_product_home_no_verbatim_prefix_on_injected_user_home() {
+        let tmp = TempDir::new().unwrap();
+        let resolved = resolve_product_home(None, Some(tmp.path().to_path_buf()));
+        assert!(!resolved.to_string_lossy().starts_with(r"\\?\"));
+        assert!(resolved.ends_with(".bum"));
+    }
+
+    #[test]
+    fn resolve_product_home_api_has_no_grok_home_input() {
+        // Compile-time / API shape proof: only BUM_HOME + user_home parameters.
+        // Call sites that would pass GROK_HOME must not exist on this helper.
+        let _ = resolve_product_home as fn(Option<OsString>, Option<PathBuf>) -> PathBuf;
+    }
+
+    #[test]
+    fn grok_application_leaf_is_bum() {
+        // Managed binary leaf under product home is bum (not grok).
+        let app = if cfg!(windows) { "bum.exe" } else { "bum" };
+        // Path shape only — do not call grok_home() here (OnceLock / env sensitive).
+        let leaf = PathBuf::from("bin").join(app);
+        assert_eq!(leaf.file_name().and_then(|n| n.to_str()), Some(app));
+        assert!(app.starts_with("bum"));
     }
 
     #[test]

@@ -1,10 +1,13 @@
-//! Config file loading for Grok.
+//! Config file loading for the product (bum).
+//!
+//! User config root is `$BUM_HOME` when set, otherwise `~/.bum` (see [`grok_home`]).
+//! System/MDM paths retain the historical `grok` domain names where noted.
 //!
 //! Merge order (lowest → highest priority):
 //! 1. `/etc/grok/managed_config.toml`
-//! 2. `$GROK_HOME/managed_config.toml`
-//! 3. `$GROK_HOME/config.toml`
-//! 4. `$GROK_HOME/requirements.toml` (cloud cache; Ed25519-signed at rest once a
+//! 2. `$BUM_HOME/managed_config.toml` (or `~/.bum/managed_config.toml`)
+//! 3. `$BUM_HOME/config.toml` (or `~/.bum/config.toml`)
+//! 4. `$BUM_HOME/requirements.toml` (cloud cache; Ed25519-signed at rest once a
 //!    key is embedded — see [`signed_policy`] — below the OS-protected layers)
 //! 5. `/etc/grok/requirements.toml`
 //! 6. macOS MDM managed preferences (`ai.x.grok`, admin-forced) — macOS only
