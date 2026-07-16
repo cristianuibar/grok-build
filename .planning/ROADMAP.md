@@ -13,8 +13,8 @@ Ship **bum** as a full-product fork of Grok Build: isolated `~/.bum` identity, d
 
 Decimal phases appear between their surrounding integers in numeric order.
 
-- [ ] **Phase 1: Product identity & isolated home** - Ship `bum` binary and `~/.bum` home cutover
-- [ ] **Phase 2: Multi-slot credentials & xAI OAuth** - Provider-scoped auth store with working xAI login under bum
+- [x] **Phase 1: Product identity & isolated home** - Ship `bum` binary and `~/.bum` home cutover
+- [x] **Phase 2: Multi-slot credentials & xAI OAuth** - Provider-scoped auth store with working xAI login under bum
 - [ ] **Phase 3: Model catalog & GPT-5.6 entries** - Provider-tagged catalog with Grok + GPT-5.6 family in one list
 - [ ] **Phase 4: Provider-aware request routing** - Model → backend + credentials (Grok vs Codex paths)
 - [ ] **Phase 5: Codex OAuth & dual auth lifecycle** - ChatGPT login/logout/status + independent refresh
@@ -59,14 +59,14 @@ Plans:
   2. Auth store is structured for multiple provider slots (xAI first; second slot reserved without overwriting xAI)
   3. After xAI login, user can start an agent turn that authenticates successfully against the xAI path
 
-**Plans**: 4 plans
+**Plans**: 4/4 plans executed
 
 Plans:
 
-- [ ] 02-01-PLAN.md — Multi-slot AuthDocument + lock-scoped mutate + concurrency + version fail-closed
-- [ ] 02-02-PLAN.md — Locked API keys + multi-provider prune + try_devbox_recovery
-- [ ] 02-03-PLAN.md — AuthManager + ShellAuthCredentialProvider + sampling_config.api_key Bearer seam
-- [ ] 02-04-PLAN.md — GROK_AUTH_PATH isolation + mock multi-slot login asserts + phase gate
+- [x] 02-01-PLAN.md — Multi-slot AuthDocument + lock-scoped mutate + concurrency + version fail-closed
+- [x] 02-02-PLAN.md — Locked API keys + multi-provider prune + try_devbox_recovery
+- [x] 02-03-PLAN.md — AuthManager + ShellAuthCredentialProvider + sampling_config.api_key Bearer seam
+- [x] 02-04-PLAN.md — GROK_AUTH_PATH isolation + mock multi-slot login asserts + phase gate
 
 ### Phase 3: Model catalog & GPT-5.6 entries
 

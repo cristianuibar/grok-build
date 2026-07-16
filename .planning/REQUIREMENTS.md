@@ -15,7 +15,7 @@ Requirements for initial release. Each maps to roadmap phases.
 
 ### Authentication
 
-- [ ] **AUTH-01**: User can log in to xAI via OAuth (browser and/or device-code), equivalent to original Grok Build, with credentials stored only under the bum auth store
+- [x] **AUTH-01**: User can log in to xAI via OAuth (browser and/or device-code), equivalent to original Grok Build, with credentials stored only under the bum auth store
 - [ ] **AUTH-02**: User can log in to ChatGPT/Codex via ChatGPT OAuth (Codex CLI-style PKCE browser flow, plus device-code where applicable), credentials stored only under the bum auth store
 - [ ] **AUTH-03**: User can log out of one provider without clearing the other provider’s credentials
 - [ ] **AUTH-04**: User can inspect per-provider auth status (which providers are logged in / usable)
@@ -91,7 +91,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 | ID-01 | Phase 1 | Complete |
 | ID-02 | Phase 8 | Pending |
 | ID-03 | Phase 1 | Complete |
-| AUTH-01 | Phase 2 | Pending |
+| AUTH-01 | Phase 2 | Complete |
 | AUTH-02 | Phase 5 | Pending |
 | AUTH-03 | Phase 5 | Pending |
 | AUTH-04 | Phase 5 | Pending |
