@@ -105,7 +105,7 @@ Each task was committed atomically:
 2. **Task 2: Test-support binary resolution for bum** - `51253b3`
 3. **Task 3: PTY harness binary resolution for bum** - `4269784`
 
-**Plan metadata:** (pending docs commit)
+**Plan metadata:** `5afcf98` (docs: complete plan)
 
 ## Files Created/Modified
 
