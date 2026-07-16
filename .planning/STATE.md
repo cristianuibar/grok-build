@@ -4,17 +4,17 @@ milestone: v1.0
 milestone_name: milestone
 current_phase: 5
 current_phase_name: Codex OAuth & dual auth lifecycle
-current_plan: 2
-status: in_progress
-stopped_at: Completed 05-01-PLAN.md
-last_updated: "2026-07-16T17:12:22.339Z"
+current_plan: 3
+status: executing
+stopped_at: Completed 05-02-PLAN.md
+last_updated: "2026-07-16T17:21:38.643Z"
 last_activity: 2026-07-16
 last_activity_desc: Completed 05-01 Wave 0 dual-auth harness + clap scaffolds
 progress:
-  total_phases: 9
+  total_phases: 5
   completed_phases: 4
   total_plans: 24
-  completed_plans: 18
+  completed_plans: 19
 ---
 
 # Project State
@@ -29,13 +29,13 @@ See: .planning/PROJECT.md (updated 2026-07-16)
 ## Current Position
 
 Phase: 5 of 9 (Codex OAuth & dual auth lifecycle)
-Plan: 2 of 6 (next: 05-02)
-Status: In progress
+Plan: 3 of 6
+Status: Ready to execute
 Last activity: 2026-07-16 — Completed 05-01 Wave 0 dual-auth harness + clap scaffolds
-Current Plan: 2
+Current Plan: 3
 Total Plans in Phase: 6
 
-Progress: [████████░░] 75% (18/24 plans)
+Progress: [████████░░] 79% (18/24 plans)
 
 ## Performance Metrics
 
@@ -77,6 +77,7 @@ Progress: [████████░░] 75% (18/24 plans)
 | Phase 04 P04 | 8min | 2 tasks | 13 files |
 | Phase 04 P05 | 9min | 2 tasks | 4 files |
 | Phase 05 P01 | 15min | 2 tasks | 6 files |
+| Phase 05 P02 | 7min | 2 tasks | 5 files |
 
 ## Accumulated Context
 
@@ -132,6 +133,9 @@ Recent decisions affecting current work:
 - [Phase ?]: No Phase 5 OAuth / Phase 6 missing-provider UX in Phase 4 (D-13)
 - [Phase ?]: Wave 0 dual-auth harness + early clap --provider/logout/auth status; no production Codex OAuth in 05-01
 - [Phase ?]: Runnable clap verify uses --test auth_cli_parse (pager lib-test target pre-broken)
+- [Phase ?]: Public AuthProvider-parameterized mutate/clear/clear_all for dual-slot auth.json (AUTH-03)
+- [Phase ?]: Status usable = hard-unexpired access OR refreshable OAuth; not select_provider_access_token alone (AUTH-04)
+- [Phase ?]: clear_provider_slot_with_lock never reacquires (Plan 05 permanent-fail path)
 
 ### Pending Todos
 
@@ -154,7 +158,7 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-07-16T17:12:22.332Z
-Stopped at: Completed 05-01-PLAN.md
+Last session: 2026-07-16T17:21:38.634Z
+Stopped at: Completed 05-02-PLAN.md
 Resume file: None
 Next: execute 05-02-PLAN.md (auth status / usable semantics wave)
