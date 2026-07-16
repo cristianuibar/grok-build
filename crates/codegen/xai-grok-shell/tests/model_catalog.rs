@@ -265,17 +265,17 @@ fn override_invalid_provider_warns_keeps_model() {
         !cfg.model_override_warnings.is_empty(),
         "expected at least one model override warning"
     );
+    // WR-04: require field=provider + InvalidValue — not any InvalidValue / reason match.
     let provider_warn = cfg.model_override_warnings.iter().any(|w| {
         w.field.as_deref() == Some("provider")
-            || w.reason.to_lowercase().contains("provider")
-            || matches!(
+            && matches!(
                 w.kind,
                 xai_grok_shell::agent::config_model_override_parse::ModelOverrideWarningKind::InvalidValue
             )
     });
     assert!(
         provider_warn,
-        "expected a warning about invalid provider; warnings={:?}",
+        "expected InvalidValue on field provider; warnings={:?}",
         cfg.model_override_warnings
     );
 }
