@@ -138,7 +138,7 @@ Each task was committed atomically:
 2. **Task 2: Full PTY product-home cutover** - `626c043` (feat)
 3. **Task 3: Update + shell + pager + bench + workspace inventory** - `33c0947` (feat)
 
-**Plan metadata:** (pending docs commit)
+**Plan metadata:** `191a77f` (docs: complete plan)
 
 ## Files Created/Modified
 
