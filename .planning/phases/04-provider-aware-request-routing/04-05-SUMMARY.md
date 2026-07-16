@@ -145,7 +145,7 @@ Each task was committed atomically:
 1. **Task 1: Local fail-closed + secret log fix + mock on-wire Authorization** - `fdd2663`
 2. **Task 2: Phase gate — full provider_routing + model_catalog + cargo check** - verification-only (suite green after Task 1; module contract docs included in Task 1 commit)
 
-**Plan metadata:** (pending docs commit)
+**Plan metadata:** `13059d3` (docs: complete plan)
 
 ## Files Created/Modified
 
