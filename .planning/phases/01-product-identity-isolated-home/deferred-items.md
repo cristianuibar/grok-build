@@ -27,3 +27,12 @@
 **Issue:** Several resolution tests that do **not** isolate `HOME` can merge the developer’s real `~/.claude/settings*.json` (e.g. `discovery_with_no_settings_files`, `claude_only_returns_claude_settings_source` — expected 1 rule, got host merge). Product-home–isolated cases (`load_claude_env_*` with `BUM_HOME` + optional `HOME` guards) pass.
 
 **Not caused by:** BUM_HOME product-home setter cutover (those failing tests never set the product-home env key).
+
+## Reconfirmed during 01-05
+
+**Found during:** Task 1 (`cargo test -p xai-grok-shell bundle|config`)
+
+Same pre-existing `xai-grok-shell` lib-test compile break (~32 errors). Mitigated via:
+- `cargo check -p xai-grok-shell --lib`
+- `cargo test -p xai-grok-shell --test test_bundled_root_product_home`
+- `cargo test -p xai-grok-agent discovery`

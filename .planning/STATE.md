@@ -4,16 +4,16 @@ milestone: v1.0
 milestone_name: milestone
 current_phase: 1
 current_phase_name: Product identity & isolated home
-status: executing
-stopped_at: Completed 01-04-PLAN.md
-last_updated: "2026-07-16T03:24:58.308Z"
+status: verifying
+stopped_at: Completed 01-05-PLAN.md
+last_updated: "2026-07-16T03:47:00.244Z"
 last_activity: 2026-07-16
 last_activity_desc: Completed 01-02 twin/managed-bin/updater leaf
 progress:
   total_phases: 1
-  completed_phases: 0
+  completed_phases: 1
   total_plans: 5
-  completed_plans: 4
+  completed_plans: 5
 ---
 
 # Project State
@@ -29,10 +29,10 @@ See: .planning/PROJECT.md (updated 2026-07-16)
 
 Phase: 1 of 9 (Product identity & isolated home)
 Plan: 5 of 5 in current phase
-Status: Ready to execute
+Status: Phase complete — ready for verification
 Last activity: 2026-07-16 — Completed 01-02 twin/managed-bin/updater leaf
 
-Progress: [████████░░] 80%
+Progress: [██████████] 100%
 
 ## Performance Metrics
 
@@ -62,6 +62,7 @@ Progress: [████████░░] 80%
 | Phase 01 P01 | 22min | 3 tasks | 5 files |
 | Phase 01 P02 | 19min | 3 tasks | 12 files |
 | Phase 01 P04 | 16min | 3 tasks | 61 files |
+| Phase 01 P05 | 20min | 3 tasks | 16 files |
 
 ## Accumulated Context
 
@@ -86,6 +87,10 @@ Recent decisions affecting current work:
 - [Phase ?]: Download stems may stay grok-*; installed managed command is bum
 - [Phase ?]: Product-home test sandboxes use BUM_HOME only (no dual-read of GROK_HOME)
 - [Phase ?]: PTY product_home() helper; project-local .grok layout left for workspace skills/config
+- [Phase ?]: Drop legacy HOME/.grok agent scan when product home differs (D-MIGRATE: no dual-read)
+- [Phase ?]: User roles/personas under product home; project cwd/.grok preserved (D-PLUGIN)
+- [Phase ?]: bundled_root via grok_home(); extension tests inject explicit roots (OnceLock-safe)
+- [Phase ?]: Production product-root readers BUM_HOME only; operational labels teach BUM_HOME/~/.bum (D-SCOPE)
 
 ### Pending Todos
 
@@ -108,7 +113,7 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-07-16T03:24:58.300Z
-Stopped at: Completed 01-04-PLAN.md
+Last session: 2026-07-16T03:47:00.235Z
+Stopped at: Completed 01-05-PLAN.md
 Resume file: None
 Next: continue Phase 1 remaining plans (01-04, 01-05)
