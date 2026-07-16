@@ -6,7 +6,7 @@ nyquist_compliant: true
 wave_0_complete: false
 created: 2026-07-17
 updated: 2026-07-17
-review_cycle: 1
+review_cycle: 2
 ---
 
 # Phase 6 — Validation Strategy
@@ -23,9 +23,15 @@ review_cycle: 1
 > **Review cycle 1:** unique `p6_` test prefixes + discovery assert ≥1 match before each
 > filtered execute group (prevents cargo false-green on empty filters).
 >
+> **Review cycle 2:** Plan 04 owns badge-cache lifecycle refresh (startup/login/logout/focus);
+> Plan 04 wave 3 after Plan 02 (effects ownership); deferred carries `persist_default`;
+> Plan 05 history/mid-turn use named observables only; Plan 06 gate uses **per-subgroup**
+> discovery (not aggregate `p6_` only); Plan 04 pager verify has no `||` masking.
+>
 > **Cargo verify hygiene:** one TESTNAME filter per `cargo test`; never bare `| tail` without
-> `set -o pipefail`; chain with `&&` only. Prefer `-p xai-grok-shell` / `-p xai-grok-pager`
-> with narrow filters. **Forbidden gate:** unfiltered `cargo test -p xai-grok-shell --lib`.
+> `set -o pipefail`; chain with `&&` only — never `||` that masks a failed cargo. Prefer
+> `-p xai-grok-shell` / `-p xai-grok-pager` with narrow filters. **Forbidden gate:** unfiltered
+> `cargo test -p xai-grok-shell --lib`.
 
 ---
 
@@ -82,11 +88,15 @@ review_cycle: 1
 | MOD-06 | External CLI status refresh applies deferred | 03 | `cargo test -p xai-grok-pager p6_external_cli -- --nocapture` | ❌ until Plan 03 |
 | MOD-06 | Full mixed catalog + `needs login` badge | 04 | `cargo test -p xai-grok-pager p6_needs_login -- --nocapture` | ❌ until Plan 04 |
 | MOD-06 | AuthMeta dual-slot usable + AppView cache | 04 | `cargo test -p xai-grok-pager p6_provider_auth -- --nocapture` | ❌ until Plan 04 |
+| MOD-06 | Badge cache refresh on startup/login/logout/focus | 04 | `cargo test -p xai-grok-pager p6_provider_auth -- --nocapture` + `p6_refresh` | ❌ until Plan 04 |
 | MOD-06 | BYOK suppresses needs-login badge | 04 | `cargo test -p xai-grok-pager p6_needs_login_byok -- --nocapture` | ❌ until Plan 04 |
+| MOD-06 | Settings DynamicEnum same needs-login badge | 04 | `cargo test -p xai-grok-pager p6_needs_login_settings -- --nocapture` | ❌ until Plan 04 |
+| MOD-06 | External CLI FocusGained / poll emission + generation cancel | 03 | `cargo test -p xai-grok-pager p6_focus_gained -- --nocapture` + `p6_refresh_generation` | ❌ until Plan 03 |
+| MOD-06 | Deferred carries persist_default | 02 / 03 | `cargo test -p xai-grok-pager p6_deferred -- --nocapture` + `p6_transactional_default` | ❌ until Plan 02/03 |
 | MOD-03 | Successful switch updates next sample route (pure) | 05 / Phase 4 | `cargo test -p xai-grok-shell --test provider_routing switch_changes_next_sample_route -- --nocapture` | ✅ |
 | MOD-03 | Dual-login free Grok↔GPT switch (apply) | 05 | `cargo test -p xai-grok-shell --test model_switch_gate p6_dual_login -- --nocapture` | ❌ until Plan 05 |
 | MOD-03 | Same-provider switch no missing-provider friction | 05 | `cargo test -p xai-grok-shell --test model_switch_gate p6_same_provider -- --nocapture` | ❌ until Plan 05 |
-| MOD-03 / D-06 | History preserved + mid-turn non-cancel | 05 | `cargo test -p xai-grok-shell --test model_switch_gate p6_history -- --nocapture` + `p6_mid_turn` | ❌ until Plan 05 |
+| MOD-03 / D-06 | History preserved (chat history snapshot) + mid-turn non-cancel (held MockInferenceServer + no session/cancel) | 05 | `cargo test -p xai-grok-shell --test model_switch_gate p6_history -- --nocapture` + `p6_mid_turn` | ❌ until Plan 05 |
 | MOD-06 / D-07 | IncompatibleAgent path not collapsed | 02 / 06 | `cargo test -p xai-grok-pager incompatible_agent -- --nocapture` | ✅ pattern |
 
 ### ROADMAP success criteria map
@@ -111,11 +121,12 @@ review_cycle: 1
 | Wave | Plans | Per-task verify | Sampling rule |
 |------|-------|-----------------|---------------|
 | 1 | 01 | shell unit + `model_switch_gate p6_missing_provider` | 2/2 automated |
-| 2 | 02, 04, 05 | pager p6_missing_provider / p6_transactional_default; shell p6_dual_login; pager p6_needs_login | ≥2/3 per 3-task window |
-| 3 | 03 | p6_login_now / p6_auth_ / p6_external_cli | 2/2 automated |
-| 4 | 06 | VALIDATION present + aggregate cargo gate with discovery asserts | docs + green filters |
+| 2 | 02, 05 | pager p6_missing_provider / p6_transactional_default; shell p6_dual_login / p6_history / p6_mid_turn | ≥2/2 per plan |
+| 3 | 04 | p6_provider_auth / p6_refresh / p6_needs_login (slash + settings) | 3/3 automated |
+| 4 | 03 | p6_login_now / p6_auth_ / p6_external_cli / p6_focus_gained / p6_refresh_generation | 2/2 automated |
+| 5 | 06 | VALIDATION present + **per-subgroup** cargo gate with discovery asserts | docs + green filters |
 
-> **Wave alignment (review cycle 1):** Plan 04 is **wave 2** (parallel with 02 and 05); Plan 03 is **wave 3** (depends on 02 + 04). Do not list 04 under wave 3.
+> **Wave alignment (review cycle 2):** Plan 02 and 05 are wave 2 (parallel). Plan 04 is **wave 3** (depends on 02 — sole owner of RefreshProviderAuthStatus after SwitchModel Effect lands). Plan 03 is **wave 4** (depends on 02 + 04). Plan 06 is **wave 5**.
 
 ---
 
@@ -124,9 +135,9 @@ review_cycle: 1
 - [ ] Shell unit: pure provider_slot_usable + ModelSwitchMissingProviderError serde (Plan 01 T1)
 - [ ] Shell integration: apply returns missing-provider + no side effects (Plan 01 T2 — `model_switch_gate`)
 - [ ] Pager: SwitchModelError::MissingProvider + transactional default + QuestionView (Plan 02)
-- [ ] Pager: AuthMeta dual-slot + badge + BYOK suppress (Plan 04)
-- [ ] Shell: dual free switch + history/mid-turn session proofs (Plan 05)
-- [ ] Pager: deferred retry after AuthComplete + external CLI refresh (Plan 03)
+- [ ] Pager: AuthMeta dual-slot + lifecycle refresh (startup/login/logout/focus) + badge + settings DynamicEnum + BYOK (Plan 04)
+- [ ] Shell: dual free switch + named history/mid-turn session proofs (Plan 05)
+- [ ] Pager: deferred (persist_default) + AuthComplete + external CLI poll/FocusGained + generation cancel (Plan 03)
 - [ ] IncompatibleAgent regression still green (Plan 02 / 06)
 
 ---
@@ -160,11 +171,17 @@ discover xai-grok-pager p6_login_now
 discover xai-grok-pager p6_deferred
 discover xai-grok-pager p6_auth_
 discover xai-grok-pager p6_external_cli
+discover xai-grok-pager p6_focus_gained
+discover xai-grok-pager p6_refresh_generation
 discover xai-grok-pager p6_needs_login
 discover xai-grok-pager p6_provider_auth
+discover xai-grok-pager p6_refresh
 cargo test -p xai-grok-pager incompatible_agent -- --nocapture
 ```
 
+> **Per-subgroup rule (cycle 2):** every `discover` line above is required independently. Aggregate
+> `grep -c p6_` per crate is **not** a substitute for missing subgroups.
+>
 > Plan 06 Task 1 updates this file with **actual** test names from 06-0N-SUMMARY.md after execution.
 > Plan 06 Task 2 records pass timestamp in `06-PHASE-GATE.md`.
 

@@ -154,11 +154,11 @@ Plans:
 
 Plans:
 - [ ] 06-01-PLAN.md — Shell typed MODEL_SWITCH_MISSING_PROVIDER + apply gate + session side-effect harness
-- [ ] 06-02-PLAN.md — QuestionView + transactional default switch (no optimistic current/persist)
-- [ ] 06-03-PLAN.md — Provider-aware deferred + AuthComplete + external CLI status refresh retry
-- [ ] 06-04-PLAN.md — AuthMeta dual-slot usable producer + needs login badge + BYOK suppress
-- [ ] 06-05-PLAN.md — Dual-login free switch + history/mid-turn session harness proofs
-- [ ] 06-06-PLAN.md — Validation map + phase gate with p6_ discovery asserts
+- [ ] 06-02-PLAN.md — QuestionView + transactional default switch (no optimistic current/persist); wave-2 Effect owner
+- [ ] 06-03-PLAN.md — Provider-aware deferred (persist_default) + AuthComplete + external CLI poll/FocusGained + generation cancel
+- [ ] 06-04-PLAN.md — AuthMeta dual-slot + lifecycle refresh triggers (H3) + slash/settings needs-login badge + BYOK
+- [ ] 06-05-PLAN.md — Dual-login free switch + named history/mid-turn session observables
+- [ ] 06-06-PLAN.md — Validation map + phase gate with per-subgroup p6_ discovery asserts
 
 **UI hint**: yes
 
