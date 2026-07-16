@@ -4,17 +4,17 @@ milestone: v1.0
 milestone_name: milestone
 current_phase: 4
 current_phase_name: Provider-aware request routing
-current_plan: 4
+current_plan: 5
 status: executing
-stopped_at: Completed 04-03-PLAN.md
-last_updated: "2026-07-16T13:42:50.889Z"
+stopped_at: Completed 04-04-PLAN.md
+last_updated: "2026-07-16T13:51:53.776Z"
 last_activity: 2026-07-16
 last_activity_desc: Completed 04-01-PLAN.md (Wave 0 provider_routing harness)
 progress:
   total_phases: 4
   completed_phases: 3
   total_plans: 17
-  completed_plans: 15
+  completed_plans: 16
 ---
 
 # Project State
@@ -29,13 +29,13 @@ See: .planning/PROJECT.md (updated 2026-07-16)
 ## Current Position
 
 Phase: 4 of 9 (Provider-aware request routing)
-Plan: 4 of 5
+Plan: 5 of 5
 Status: Ready to execute
 Last activity: 2026-07-16 — Completed 04-01-PLAN.md (Wave 0 provider_routing harness)
-Current Plan: 4
+Current Plan: 5
 Total Plans in Phase: 5
 
-Progress: [█████████░] 88%
+Progress: [█████████░] 94%
 
 ## Performance Metrics
 
@@ -74,6 +74,7 @@ Progress: [█████████░] 88%
 | Phase 04 P01 | 12min | 2 tasks | 1 files |
 | Phase 04 P02 | 8min | 2 tasks | 3 files |
 | Phase 04 P03 | 9min | 2 tasks | 3 files |
+| Phase 04 P04 | 8min | 2 tasks | 13 files |
 
 ## Accumulated Context
 
@@ -121,6 +122,9 @@ Recent decisions affecting current work:
 - [Phase ?]: default_models stamps via resolve_provider_route; Codex api_base_url None
 - [Phase ?]: resolve_credentials_for_provider dual-key with EndpointsConfig OAuth provenance
 - [Phase ?]: Provider-only override rebinds base via resolve_provider_route
+- [Phase ?]: Option A: SetSessionModel carries auth_type + provider from prepare (no xAI AuthManager re-resolve)
+- [Phase ?]: ModelAuthFacts.provider is Option; attach xAI bearer only Some(Xai); Codex snapshot at prepare (Phase 5 live)
+- [Phase ?]: select_provider_access_token Oidc>ApiKey>External; read_provider_auth_store Result missing vs parse
 
 ### Pending Todos
 
@@ -143,7 +147,7 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-07-16T13:42:50.880Z
-Stopped at: Completed 04-03-PLAN.md
+Last session: 2026-07-16T13:51:53.767Z
+Stopped at: Completed 04-04-PLAN.md
 Resume file: None
 Next: continue Phase 1 remaining plans (01-04, 01-05)
