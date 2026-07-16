@@ -3,7 +3,7 @@ phase: 02
 title: Multi-slot credentials & xAI OAuth
 reviewers: [codex]
 cycle: 1
-status: incorporated
+status: pending_incorporation_c2
 date: 2026-07-16
 incorporated_date: 2026-07-16
 ---
@@ -274,3 +274,53 @@ The CLI wiring and default bum-home path are correctly identified. Existing brow
 6. Define fail-closed handling for unsupported schema versions.
 
 With those changes incorporated, the wave structure and overall approach should converge to **LOW–MEDIUM implementation risk**.
+---
+
+# Cycle 2 Codex re-review
+
+Date: 2026-07-16
+
+## Resolution checklist (prior findings)
+
+1. **STILL OPEN — Lock-scoped document mutation + concurrency tests.**  
+   Storage-level locking and concurrency tests are specified in [02-01-PLAN.md:110](/home/cristian/bum/grok-build/.planning/phases/02-multi-slot-credentials-xai-oauth/02-01-PLAN.md:110) and [02-01-PLAN.md:141](/home/cristian/bum/grok-build/.planning/phases/02-multi-slot-credentials-xai-oauth/02-01-PLAN.md:141). However, the plan makes `write_auth_json` acquire the lock while only “documenting for later” how callers already holding the lock should use a guard-aware variant ([02-01-PLAN.md:232](/home/cristian/bum/grok-build/.planning/phases/02-multi-slot-credentials-xai-oauth/02-01-PLAN.md:232)).
+
+   Existing production callers already hold `auth.json.lock` before calling `write_auth_json`, including startup cleanup ([manager.rs:314](/home/cristian/bum/grok-build/crates/codegen/xai-grok-shell/src/auth/manager.rs:314)), scope removal ([manager.rs:455](/home/cristian/bum/grok-build/crates/codegen/xai-grok-shell/src/auth/manager.rs:455)), refresh persistence ([manager.rs:1737](/home/cristian/bum/grok-build/crates/codegen/xai-grok-shell/src/auth/manager.rs:1737)), and enrichment ([enrichment.rs:145](/home/cristian/bum/grok-build/crates/codegen/xai-grok-shell/src/auth/manager/enrichment.rs:145)). Enrichment also explicitly permits unlocked RMW after timeout ([enrichment.rs:142](/home/cristian/bum/grok-build/crates/codegen/xai-grok-shell/src/auth/manager/enrichment.rs:142)). Unconditionally relocking inside `write_auth_json` risks self-deadlock; leaving these call sites unchanged violates the “all production mutations locked” must-have.
+
+   The plan needs executable tasks covering `manager.rs`, `manager/enrichment.rs`, and `manager/lock.rs`, with distinct acquiring and caller-held-guard mutation APIs plus tests for already-locked update/enrichment paths.
+
+2. **RESOLVED — `try_devbox_recovery` sibling preservation.**  
+   Explicit implementation and seeded-Codex tests are required in [02-02-PLAN.md:179](/home/cristian/bum/grok-build/.planning/phases/02-multi-slot-credentials-xai-oauth/02-02-PLAN.md:179) and [02-02-PLAN.md:189](/home/cristian/bum/grok-build/.planning/phases/02-multi-slot-credentials-xai-oauth/02-02-PLAN.md:189).
+
+3. **RESOLVED — `GROK_AUTH_PATH` direct out-of-home writes.**  
+   Product-home-only persistence and a foreign-path regression test are specified in [02-04-PLAN.md:124](/home/cristian/bum/grok-build/.planning/phases/02-multi-slot-credentials-xai-oauth/02-04-PLAN.md:124) and [02-04-PLAN.md:125](/home/cristian/bum/grok-build/.planning/phases/02-multi-slot-credentials-xai-oauth/02-04-PLAN.md:125).
+
+4. **RESOLVED — locked `store_api_key` / `clear_api_key`.**  
+   Both helpers are routed through locked full-document mutation in [02-02-PLAN.md:146](/home/cristian/bum/grok-build/.planning/phases/02-multi-slot-credentials-xai-oauth/02-02-PLAN.md:146).
+
+5. **RESOLVED — all whole-file purges multi-provider-aware.**  
+   The plan mandates a production-wide purge audit and shared prune policy in [02-02-PLAN.md:182](/home/cristian/bum/grok-build/.planning/phases/02-multi-slot-credentials-xai-oauth/02-02-PLAN.md:182) and [02-02-PLAN.md:190](/home/cristian/bum/grok-build/.planning/phases/02-multi-slot-credentials-xai-oauth/02-02-PLAN.md:190).
+
+Medium findings are incorporated:
+
+- Unsupported versions fail closed: [02-01-PLAN.md:181](/home/cristian/bum/grok-build/.planning/phases/02-multi-slot-credentials-xai-oauth/02-01-PLAN.md:181).
+- Agent-turn and sampler Bearer seam: [02-03-PLAN.md:154](/home/cristian/bum/grok-build/.planning/phases/02-multi-slot-credentials-xai-oauth/02-03-PLAN.md:154).
+- Browser/device mock multi-slot assertions: [02-04-PLAN.md:168](/home/cristian/bum/grok-build/.planning/phases/02-multi-slot-credentials-xai-oauth/02-04-PLAN.md:168).
+- Honest `FileDeleted`: [02-02-PLAN.md:188](/home/cristian/bum/grok-build/.planning/phases/02-multi-slot-credentials-xai-oauth/02-02-PLAN.md:188).
+- Complete phase-gate filters: [02-04-PLAN.md:182](/home/cristian/bum/grok-build/.planning/phases/02-multi-slot-credentials-xai-oauth/02-04-PLAN.md:182).
+
+## New concerns
+
+### HIGH — Lexical containment permits symlink escape
+
+The `GROK_AUTH_PATH` task permits either canonicalization **or `starts_with(product_home)`** ([02-04-PLAN.md:124](/home/cristian/bum/grok-build/.planning/phases/02-multi-slot-credentials-xai-oauth/02-04-PLAN.md:124)), while its test covers only a directly foreign path ([02-04-PLAN.md:125](/home/cristian/bum/grok-build/.planning/phases/02-multi-slot-credentials-xai-oauth/02-04-PLAN.md:125)). A lexically in-home path can traverse a symlink to `~/.grok` or elsewhere. The actual secure writer uses ordinary `OpenOptions::open`, which follows symlinks ([secure_file.rs:72](/home/cristian/bum/grok-build/crates/codegen/xai-grok-shell-base/src/util/secure_file.rs:72), [secure_file.rs:82](/home/cristian/bum/grok-build/crates/codegen/xai-grok-shell-base/src/util/secure_file.rs:82)).
+
+Require canonical containment of the existing parent—or simply accept only the exact product-home `auth.json`—and add a Unix symlink-escape regression test. Also correct the plan’s nonexistent `xai-grok-shell/src/util/secure_file.rs` reference; the implementation is in `xai-grok-shell-base`.
+
+## Risk Assessment
+
+**HIGH.** Two execution-blocking concerns remain: lock ownership/reentrancy across existing writers and symlink-safe home containment.
+
+## Summary
+
+Cycle 2 is not yet converged. Four prior HIGH findings and all prior MEDIUM findings are incorporated, but the central locking change is not safely threaded through existing lock-holding writers, and the path-isolation design still permits a symlink escape.
