@@ -20,16 +20,16 @@ Capabilities already present in this Grok Build fork (baseline the product build
 - ✓ Model selector driven by embedded `default_models.json` + runtime model list — existing
 - ✓ Tool surface (bash, edit, search, web, MCP, subagents, workspace/VCS) — existing
 - ✓ Session, config, hooks, and skills infrastructure under `~/.grok`-style home — existing (paths rebrand to `~/.bum` in Active)
+- ✓ Isolated `~/.bum` product home + multi-slot auth store (`providers.xai` / `providers.codex`) — Phases 1–2
+- ✓ xAI OAuth (browser + device-code) under bum auth store — Phase 2 (AUTH-01)
+- ✓ GPT-5.6 family in mixed model catalog with explicit `provider` binding — Phase 3
+- ✓ Provider-aware request routing (model → backend + credential slot) — Phase 4
+- ✓ Codex / ChatGPT OAuth login, selective logout, dual status, independent refresh (AUTH-02..05) — Phase 5
 
 ### Active
 
-- [ ] **Product rename to bum** — Ship the primary binary as `bum` (not `grok` / `xai-grok-pager`); full rebrand of CLI name, UI chrome, install/docs strings, and default home to `~/.bum` so the product is clearly bum, not stock Grok Build
-- [ ] **Isolated home & credential store** — Config, auth, sessions under `~/.bum` (not shared with `~/.grok` or stock Codex paths); re-login required after switch
-- [ ] **Preserve xAI OAuth** — Keep working browser/device-code login to xAI equivalent to original Grok Build; store credentials in the bum auth store
-- [ ] **Codex / ChatGPT OAuth login** — Add ChatGPT OAuth (Codex CLI-style) as a first-class provider alongside xAI; support login UX in TUI and CLI
-- [ ] **Multi-provider session** — Model picker lists both xAI (Grok) and OpenAI/Codex (GPT-5.6) models; switching models anytime routes requests to the correct backend with that provider’s credentials
-- [ ] **GPT-5.6 models in selector** — Ship current GPT-5.6 family options usable for coding once Codex OAuth is present (exact IDs confirmed against Codex/OpenAI availability during research/implementation)
-- [x] **Provider-aware request routing** — Grok models → xAI / cli-chat-proxy path with xAI tokens; GPT models → OpenAI/Codex API with ChatGPT OAuth tokens — Phase 4
+- [ ] **Product rename polish** — Full rebrand of UI chrome, help strings, and remaining “Grok Build” product surface (binary/`BUM_HOME` already ship in Phases 1+)
+- [ ] **Multi-provider session UX** — Switching models anytime continues productively mid-session (catalog + routing + dual auth exist; switch gate is Phase 6)
 - [ ] **Missing-provider gate** — Selecting a model for a provider without valid credentials blocks and prompts that provider’s OAuth login (no silent failure mid-turn)
 - [ ] **Quiet local fork** — Disable xAI auto-update channel and product telemetry so bum does not phone home to x.ai as a stock client
 - [ ] **Daily-driver bar** — After v1, bum is usable as the default coding agent for real work: auth, model switch, tools, and sessions work for both providers
@@ -68,13 +68,13 @@ Capabilities already present in this Grok Build fork (baseline the product build
 
 | Decision | Rationale | Outcome |
 |----------|-----------|---------|
-| Product/CLI name `bum` with full rebrand | Clear fork identity; launch like `grok`/`codex`/`claude` | — Pending |
-| Isolated `~/.bum` home + auth store | Full rebrand; no accidental coupling to stock grok/codex logins | — Pending |
-| Codex auth = ChatGPT OAuth (Codex CLI style) | Matches “real” Codex login and subscription-backed models | — Pending |
+| Product/CLI name `bum` with full rebrand | Clear fork identity; launch like `grok`/`codex`/`claude` | Phase 1 binary/`BUM_HOME`; chrome polish → Phase 8 |
+| Isolated `~/.bum` home + auth store | Full rebrand; no accidental coupling to stock grok/codex logins | Phase 1–2 — multi-slot `auth.json` under bum home |
+| Codex auth = ChatGPT OAuth (Codex CLI style) | Matches “real” Codex login and subscription-backed models | Phase 5 — PKCE + device, dual lifecycle |
 | GPT traffic → OpenAI/Codex API with Codex credentials | Real GPT-5.6, not pretending via xAI proxy | Phase 4 — route resolver + dual-key sampling |
-| Grok traffic → existing xAI OAuth + proxy path | Preserve working Grok Build path | — Pending |
-| Mixed model picker; switch anytime | One session, best model per task | — Pending |
-| Missing provider → block + prompt login | Fail closed and fixable, not mid-request surprise | — Pending |
+| Grok traffic → existing xAI OAuth + proxy path | Preserve working Grok Build path | Phase 2 auth + Phase 4 routing |
+| Mixed model picker; switch anytime | One session, best model per task | Phase 3 catalog; mid-session gate → Phase 6 |
+| Missing provider → block + prompt login | Fail closed and fixable, not mid-request surprise | — Pending (Phase 6) |
 | Disable xAI auto-update + telemetry | Private daily-driver fork must not phone home as stock client | — Pending |
 | Custom agentic workflows deferred | Keep v1 shippable: identity + models + cross-provider subagents + rebrand | — Pending |
 | Cross-provider subagents in v1 | Parent model/provider must not limit child; NL + tool spawn with model + effort | — Pending |
@@ -99,4 +99,7 @@ This document evolves at phase transitions and milestone boundaries.
 5. Promote next milestone (e.g. custom agentic workflows) into Active when ready
 
 ---
-*Last updated: 2026-07-16 after initialization*
+*Last updated: 2026-07-16 after Phase 5*
+
+---
+*Last updated: 2026-07-16 after Phase 5*

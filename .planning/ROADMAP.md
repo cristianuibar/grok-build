@@ -125,7 +125,7 @@ Plans:
   3. User can inspect per-provider auth status (which providers are logged in / usable)
   4. Access tokens for each provider refresh independently without wiping or invalidating the other provider’s session
 
-**Plans:** 6/6 plans executed
+**Plans:** 6/6 plans complete
 
 Plans:
 
