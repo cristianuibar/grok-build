@@ -463,20 +463,20 @@ Bare `Logout` without provider/all → usage + non-zero exit (UI-SPEC).
 ## Open Questions (RESOLVED)
 
 1. **Codex refresh ownership model**
-   - What we know: xAI `AuthManager` is large (sleep gate, proactive loop, lock revalidation).
-   - **RESOLVED (plans 05-05, D-08):** Thin `CodexRefresher` implementing `TokenRefresher` + shared storage RMW (`mutate_provider_store_or_prune(PROVIDER_CODEX)`). Do **not** rewrite xAI `AuthManager` for dual ownership. Production invoker is **prepare-time / pre-request** (not a second AuthManager process): when Codex access token JWT/`expires_at` ≤ now+5m and a refresh_token is present, call `CodexRefresher` → persist codex only → invalidate Phase 4 snapshot cache → return fresh bearer. Permanent fail clears/marks **codex only**.
+   - What we know: xAI `AuthManager` is large (sleep gate, proactive loop, lock revalidation). Codex path in `reconstruct_full_config` is snapshot-only today (`sampler_turn.rs` ~278-282).
+   - **RESOLVED (plans 05-05 replan from 05-REVIEWS cycle 1, D-08):** Thin **data-only** `CodexRefresher` implementing `TokenRefresher` (returns `RefreshOutcome` only; never mutates store). Outer async `ensure_fresh_codex_auth` holds `auth.json.lock` across re-read → IdP → guard-held `mutate_provider_store_or_prune_with_lock(AuthProvider::Codex)`. Production invoker is **`reconstruct_full_config` in `sampler_turn.rs` for every Codex request** (not ModelsManager prepare alone): near-expiry (JWT/`expires_at` ≤ now+5m + refresh_token) → refresh → return typed `CodexAuthMaterial { bearer, account_id }` into request construction. Permanent fail clears/marks **codex only**. Transient: hard-unexpired keep old token; hard-expired no credential.
 
 2. **`last_refresh` field**
    - Codex persists `last_refresh`; `GrokAuth` has no dedicated field.
-   - **RESOLVED (plan 05-05 discretion):** Prefer **JWT `exp` / `expires_at` ≤ now+5m** for proactive prepare-time refresh. Do **not** add a dedicated `last_refresh` serde field in Phase 5 unless a later requirement forces the 8-day Codex policy.
+   - **RESOLVED (plan 05-05 discretion):** Prefer **JWT `exp` / `expires_at` ≤ now+5m** for reconstruct-time refresh. Do **not** add a dedicated `last_refresh` serde field in Phase 5 unless a later requirement forces the 8-day Codex policy. On login, derive `expires_at` from `expires_in` or access-token JWT `exp` when missing.
 
 3. **TUI `/logout`**
    - Today: clears via shell without provider choice; description implies full logout.
-   - **RESOLVED (plan 05-04, D-03/D-05):** Fail-closed dual-safe messaging; description points to `bum logout --provider|--all`. CLI is source of truth this phase (UI-SPEC). No silent dual wipe.
+   - **RESOLVED (plan 05-04, D-03/D-05):** Fail-closed dual-safe messaging **or** provider-aware ACP; update `extensions/auth.rs`. CLI disk authority is **blocking** `clear_provider_slot` / atomic `clear_all_provider_slots` (not nonblocking `AuthManager::remove_scope`). Description points to `bum logout --provider|--all`. No silent dual wipe.
 
-4. **Live ChatGPT Account header in prepare path**
-   - Phase 4 stamps bearer; `sampling_config_for_model` does not yet inject `ChatGPT-Account-ID`.
-   - **RESOLVED (plan 05-05 Task 3, D-11):** Inject `ChatGPT-Account-ID` from stored `GrokAuth.organization_id` on Codex sampling / `inject_url_derived_headers` (or prepare path) when account id present — Codex provider/base only, never on xAI/cli-chat-proxy. Proven by `chatgpt_account_id_header_on_codex`. Still not Phase 6 missing-provider gate.
+4. **Live ChatGPT Account header**
+   - Phase 4 stamps bearer; no `ChatGPT-Account-ID` yet.
+   - **RESOLVED (plan 05-05 Task 3, D-11):** Inject `ChatGPT-Account-ID` from `CodexAuthMaterial.account_id` / `organization_id` only for **trusted ChatGPT Codex endpoint + ChatGPT OAuth** — never arbitrary hosts via global auth read in bare `inject_url_derived_headers`. Proven by positive + absence tests (`chatgpt_account_id_header_on_codex`, absent on xAI/custom). Still not Phase 6 missing-provider gate.
 
 5. **Revoke on logout**
    - Codex has `oauth/revoke`; bum xAI logout is local clear.

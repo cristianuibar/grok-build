@@ -128,12 +128,12 @@ Plans:
 **Plans:** 6 plans
 
 Plans:
-- [ ] 05-01-PLAN.md — Wave 0 RED harness (`auth_codex_lifecycle` + clap scaffolds)
-- [ ] 05-02-PLAN.md — Provider-slot RMW + paste-safe status pure format
-- [ ] 05-03-PLAN.md — Codex OAuth (PKCE + device) + CLI `login --provider`
-- [ ] 05-04-PLAN.md — Dual logout + `auth status` CLI + TUI dual-safe `/logout`
-- [ ] 05-05-PLAN.md — Independent Codex refresh + cache invalidate + ChatGPT-Account-ID
-- [ ] 05-06-PLAN.md — Phase gate (full suite + multi_slot + provider_routing regressions)
+- [ ] 05-01-PLAN.md — Wave 0 RED harness (reconstruct AUTH-05 names + clap + pager-bin)
+- [ ] 05-02-PLAN.md — Public AuthProvider RMW + usable status semantics
+- [ ] 05-03-PLAN.md — Codex OAuth (PKCE + device multi-step) + login branch before xAI sync
+- [ ] 05-04-PLAN.md — Blocking dual logout + status Write + TUI/ACP dual-safe
+- [ ] 05-05-PLAN.md — reconstruct ensure_fresh + lock-held RT refresh + trusted Account-ID
+- [ ] 05-06-PLAN.md — Phase gate (reconstruct AUTH-05 + concurrent + regressions + fmt)
 
 **UI hint**: yes
 

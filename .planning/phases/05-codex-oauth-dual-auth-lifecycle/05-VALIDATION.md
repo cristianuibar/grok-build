@@ -6,6 +6,7 @@ nyquist_compliant: false
 wave_0_complete: false
 created: 2026-07-16
 updated: 2026-07-16
+replan_source: 05-REVIEWS.md cycle 1
 ---
 
 # Phase 5 — Validation Strategy
@@ -14,7 +15,7 @@ updated: 2026-07-16
 > Wave 0 uses **integration tests on public APIs** — do **not** repair the broken shell `--lib` suite.
 > Prove AUTH-02..05 with **fake tokens + mock IdP only** — no live ChatGPT / Codex OAuth required for CI gates.
 >
-> **AUTH-05 depth:** proofs must include pure `CodexRefresher` isolation **and** a production prepare-time / pre-request call site that spends the refresh token, persists via `mutate_provider_store_or_prune(PROVIDER_CODEX)`, invalidates the Phase 4 snapshot cache, and returns a fresh bearer.
+> **AUTH-05 depth (review cycle 1):** proofs must include pure `CodexRefresher` isolation **and** a production **async reconstruct / ensure_fresh_codex_auth** call site in `sampler_turn.rs` that spends the refresh token under `auth.json.lock`, persists via guard-held mutate, and returns typed `{ bearer, account_id }` into request construction. Prepare/snapshot alone is insufficient.
 >
 > **Cargo verify hygiene:** one TESTNAME filter per `cargo test`; never bare `| tail` without `set -o pipefail`; chain with `&&` only.
 
@@ -27,7 +28,7 @@ updated: 2026-07-16
 | **Framework** | Cargo built-in `cargo test` (crate integration tests + pager unit clap tests) |
 | **Config file** | none global — per-crate; `rust-toolchain.toml` (1.92.0) |
 | **Quick run command** | `cargo test -p xai-grok-shell --test auth_codex_lifecycle -- --nocapture` |
-| **Full suite command** | `cargo test -p xai-grok-shell --test auth_codex_lifecycle -- --nocapture && cargo test -p xai-grok-shell --test auth_multi_slot -- --nocapture && cargo test -p xai-grok-shell --test provider_routing -- --nocapture && cargo check -p xai-grok-shell && cargo check -p xai-grok-pager-bin` |
+| **Full suite command** | `cargo test -p xai-grok-shell --test auth_codex_lifecycle -- --nocapture && cargo test -p xai-grok-shell --test auth_multi_slot -- --nocapture && cargo test -p xai-grok-shell --test provider_routing -- --nocapture && cargo test -p xai-grok-pager bum_login_provider_codex_parses -- --nocapture && cargo test -p xai-grok-pager bum_auth_status_parses -- --nocapture && cargo check -p xai-grok-shell && cargo check -p xai-grok-pager-bin && cargo fmt --all --check` |
 | **Estimated runtime** | ~60–240 seconds after first compile (lifecycle + mock HTTP + regressions) |
 
 ### Cargo verify hygiene (locked)
@@ -49,7 +50,8 @@ updated: 2026-07-16
 | `cargo test -p xai-grok-shell --test provider_routing …` (MOD-04/05 regression) | Live ChatGPT login as phase gate |
 | `cargo test -p xai-grok-pager <clap_test_name>` | Full ACP e2e as required gate |
 | `cargo check -p xai-grok-shell` / `-p xai-grok-pager-bin` | Stock `~/.codex` import as product path |
-| Public pure helpers + mock IdP HTTP + prepare call-site proofs | Pure unit-only refresh without production invoker |
+| Public path-taking helpers + mock IdP HTTP + **reconstruct** call-site proofs | Pure unit-only refresh without reconstruct invoker |
+| Explicit auth_file paths (OnceLock-safe) | Multi-BUM_HOME mutation in one process |
 
 ### CI RED policy (Wave 0)
 
@@ -59,21 +61,21 @@ updated: 2026-07-16
 
 **Public API surface for Phase 5 proofs:**
 
-- `xai_grok_shell::auth::{PROVIDER_XAI, PROVIDER_CODEX, GrokAuth, AuthDocument, AuthStore, select_provider_access_token}`
-- `read_provider_auth_store` / `mutate_provider_store_or_prune` / `clear_provider_slot`
+- `xai_grok_shell::auth::{PROVIDER_XAI, PROVIDER_CODEX, AuthProvider, GrokAuth, select_provider_access_token}`
+- **Public** `mutate_provider_store_or_prune` / `clear_provider_slot` / `clear_all_provider_slots` (path + AuthProvider)
 - Codex login persist / device / claims (Plan 03)
-- `run_cli_login` / `run_cli_logout` / `run_cli_auth_status` (Plans 03–04)
-- Pure status formatter (`auth/status.rs`)
-- `CodexRefresher` + pure `codex/refresh` + **prepare-time ensure-fresh invoker**
-- `snapshot_codex_session_key_from_auth_store` / `invalidate_codex_session_key_cache`
-- `inject_url_derived_headers` / prepare sampling headers for `ChatGPT-Account-ID`
+- `run_cli_login` / `run_cli_logout` / `run_cli_auth_status` (Plans 03–04; status returns String or Write)
+- Pure status formatter (`auth/status.rs`) with logged_in vs usable
+- `CodexRefresher` (data-only) + pure `codex/refresh` + **`ensure_fresh_codex_auth` → reconstruct_full_config**
+- `CodexAuthMaterial { bearer, account_id }`
+- Trusted-host ChatGPT-Account-ID inject (not arbitrary hosts)
 - Pager clap: `Command::Login` / `Logout` / `Auth { Status }`
 
-**Wire strings:** assert `"xai"` / `"codex"` literals in CLI/status as needed — do not import private constants into integration tests when avoidable.
+**Wire strings:** assert `"xai"` / `"codex"` literals in CLI/status as needed.
 
 **Fake tokens:** `xai-fake-token`, `codex-fake-token`, `codex-refresh-token` (or similar) only.
 
-**Deterministic home:** tempfile `BUM_HOME` / product-home override for auth.json fixtures (mirror `auth_multi_slot.rs`).
+**Deterministic home:** Prefer explicit auth_file paths under tempfile. Do not mutate BUM_HOME across tests in one process (OnceLock). Handler tests that require grok_home use single sandbox or subprocess.
 
 ---
 
@@ -90,22 +92,30 @@ updated: 2026-07-16
 
 | Req ID | Behavior | Test Type | Automated Command | File Exists? |
 |--------|----------|-----------|-------------------|--------------|
-| AUTH-02 | Mock/inject Codex login persists only `providers.codex` under temp product home | integration | `cargo test -p xai-grok-shell --test auth_codex_lifecycle codex_login_persists_slot -- --nocapture` | ❌ Wave 0 RED |
-| AUTH-02 | PKCE authorize URL contains client_id, S256, localhost, auth/callback, offline_access, originator bum | integration | `cargo test -p xai-grok-shell --test auth_codex_lifecycle codex_authorize_url_includes_pkce_and_localhost_callback -- --nocapture` | ❌ Wave 0 RED |
-| AUTH-02 | Device endpoints use Codex deviceauth (not xAI device grant) | integration | `cargo test -p xai-grok-shell --test auth_codex_lifecycle codex_device_endpoints_use_deviceauth -- --nocapture` | ❌ Wave 0 RED |
-| AUTH-02 | CLI `--provider codex` parses | unit (pager) | `cargo test -p xai-grok-pager bum_login_provider_codex_parses -- --nocapture` | ❌ Wave 0 scaffold |
-| AUTH-03 | Logout codex leaves xAI; logout xAI leaves codex | integration | `cargo test -p xai-grok-shell --test auth_codex_lifecycle selective_logout_isolates -- --nocapture` | ❌ Wave 0 RED |
-| AUTH-03 | Bare logout fail-closed (no mutation) | integration | `… bare_logout_fail_closed` | ❌ Wave 0 RED |
-| AUTH-03 | `--all` clears both when both present | integration | `… logout_all_clears_both` | ❌ Wave 0 RED |
-| AUTH-04 | Pure status format greppable; both providers; no token substrings | integration | `… auth_status_format_paste_safe` | ❌ Wave 0 RED |
-| AUTH-04 | `run_cli_auth_status` handler path against dual fixture | integration | `… run_cli_auth_status` | ❌ Wave 0 RED |
-| AUTH-04 | `bum auth status` clap parses | unit (pager) | `cargo test -p xai-grok-pager bum_auth_status_parses -- --nocapture` | ❌ Wave 0 scaffold |
-| AUTH-05 | Mock refresh updates only codex slot | integration | `… codex_refresh_isolates` | ❌ Wave 0 RED |
-| AUTH-05 | invalid_grant wipes/marks codex only | integration | `… codex_invalid_grant_no_xai_wipe` | ❌ Wave 0 RED |
-| AUTH-05 | **Production prepare-time path** refreshes near-expiry Codex, persists, invalidates cache, returns fresh bearer | integration | `… codex_pre_request_refresh_updates_snapshot` | ❌ Wave 0 RED |
-| AUTH-05 | Codex sampling injects `ChatGPT-Account-ID` when organization_id set | integration | `… chatgpt_account_id_header_on_codex` (lifecycle or provider_routing) | ❌ Wave 0 RED |
-| AUTH-01 reg | Multi-slot sibling preserve | existing | `cargo test -p xai-grok-shell --test auth_multi_slot -- --nocapture` | ✅ |
-| MOD-04/05 reg | Dual route + never_cross_slot | existing | `cargo test -p xai-grok-shell --test provider_routing -- --nocapture` | ✅ |
+| AUTH-02 | Mock/inject Codex login persists only `providers.codex` | integration | `… codex_login_persists_slot` | ❌ Wave 0 RED |
+| AUTH-02 | PKCE authorize URL contract | integration | `… codex_authorize_url_includes_pkce_and_localhost_callback` | ❌ Wave 0 RED |
+| AUTH-02 | Device endpoints deviceauth | integration | `… codex_device_endpoints_use_deviceauth` | ❌ Wave 0 RED |
+| AUTH-02 | Device pending/slowdown/exchange/denied | integration | `… codex_device_pending_slowdown_exchange_denied` | ❌ Wave 0 RED |
+| AUTH-02 | State mismatch writes nothing | integration | `… codex_oauth_state_mismatch_writes_nothing` | ❌ Wave 0 RED |
+| AUTH-02 | CLI `--provider codex` parses | unit (pager) | `cargo test -p xai-grok-pager bum_login_provider_codex_parses` | ❌ Wave 0 scaffold |
+| AUTH-03 | Logout codex leaves xAI; logout xAI leaves codex | integration | `… selective_logout_isolates` | ❌ Wave 0 RED |
+| AUTH-03 | Bare logout fail-closed | integration | `… bare_logout_fail_closed` | ❌ Wave 0 RED |
+| AUTH-03 | `--all` clears both atomically | integration | `… logout_all_clears_both` | ❌ Wave 0 RED |
+| AUTH-04 | Pure status format greppable; no tokens | integration | `… auth_status_format_paste_safe` | ❌ Wave 0 RED |
+| AUTH-04 | usable expired+refreshable vs expired+no-refresh | integration | `… auth_status_usable` | ❌ Wave 0 RED |
+| AUTH-04 | `run_cli_auth_status` handler path | integration | `… run_cli_auth_status` | ❌ Wave 0 RED |
+| AUTH-04 | `bum auth status` clap parses | unit (pager) | `cargo test -p xai-grok-pager bum_auth_status_parses` | ❌ Wave 0 scaffold |
+| AUTH-05 | Mock refresh updates only codex | integration | `… codex_refresh_isolates` | ❌ Wave 0 RED |
+| AUTH-05 | invalid_grant codex only | integration | `… codex_invalid_grant_no_xai_wipe` | ❌ Wave 0 RED |
+| AUTH-05 | **reconstruct mid-session refresh** returns fresh bearer | integration | `… codex_reconstruct_refreshes_mid_session_expiry` | ❌ Wave 0 RED |
+| AUTH-05 | Concurrent refresh single IdP spend | integration | `… codex_concurrent_refresh_single_idp_spend` | ❌ Wave 0 RED |
+| AUTH-05 | Fresh token skips IdP | integration | `… codex_fresh_token_skips_idp` | ❌ Wave 0 RED |
+| AUTH-05 | Transient hard-unexpired keeps token | integration | `… codex_transient_fail_hard_unexpired_keeps_token` | ❌ Wave 0 RED |
+| AUTH-05 | Transient hard-expired no credential | integration | `… codex_transient_fail_hard_expired_no_credential` | ❌ Wave 0 RED |
+| AUTH-05 | ChatGPT-Account-ID on trusted Codex | integration | `… chatgpt_account_id_header_on_codex` | ❌ Wave 0 RED |
+| AUTH-05 | Account header absent xAI / custom endpoint | integration | `… chatgpt_account_id_header_absent` | ❌ Wave 0 RED |
+| AUTH-01 reg | Multi-slot sibling preserve | existing | `cargo test -p xai-grok-shell --test auth_multi_slot` | ✅ |
+| MOD-04/05 reg | Dual route + never_cross_slot | existing | `cargo test -p xai-grok-shell --test provider_routing` | ✅ |
 
 ---
 
@@ -113,19 +123,19 @@ updated: 2026-07-16
 
 | Task ID | Plan | Wave | Requirement | Threat Ref | Secure Behavior | Test Type | Automated Command | File Exists | Status |
 |---------|------|------|-------------|-----------------|-----------------|-----------|-------------------|-------------|--------|
-| 05-01-01 | 01 | 1 | AUTH-02..05 | T-05-01/02 | Wave 0: binary compiles; --list; smoke green; RED lifecycle contracts | integration scaffold | `cargo test -p xai-grok-shell --test auth_codex_lifecycle -- --list && cargo test -p xai-grok-shell --test auth_codex_lifecycle auth_codex_lifecycle_harness_smoke -- --nocapture` | ❌ | ⬜ pending |
-| 05-01-02 | 01 | 1 | AUTH-02/03/04 | T-05-02 | Clap scaffolds for --provider, logout --all, auth status | unit | `cargo test -p xai-grok-pager bum_login_defaults_to_xai_without_provider_argument -- --nocapture` | ❌ | ⬜ pending |
-| 05-02-01 | 02 | 2 | AUTH-03 | T-05-03 | Provider-slot mutate/clear isolation | integration | `cargo test -p xai-grok-shell --test auth_codex_lifecycle mutate_provider -- --nocapture && cargo test -p xai-grok-shell --test auth_multi_slot -- --nocapture` | ❌ | ⬜ pending |
-| 05-02-02 | 02 | 2 | AUTH-04 | T-05-04 | Pure paste-safe dual status format | integration | `cargo test -p xai-grok-shell --test auth_codex_lifecycle auth_status_format_paste_safe -- --nocapture` | ❌ | ⬜ pending |
-| 05-03-01 | 03 | 3 | AUTH-02 | T-05-06/09 | Authorize URL + mock login persist only codex | integration | `cargo test -p xai-grok-shell --test auth_codex_lifecycle codex_authorize_url_includes_pkce_and_localhost_callback -- --nocapture && cargo test -p xai-grok-shell --test auth_codex_lifecycle codex_login_persists_slot -- --nocapture` | ❌ | ⬜ pending |
-| 05-03-02 | 03 | 3 | AUTH-02 | T-05-07/08 | Deviceauth endpoints + CLI provider dispatch | integration + unit | `cargo test -p xai-grok-pager bum_login_provider_codex_parses -- --nocapture && cargo test -p xai-grok-shell --test auth_codex_lifecycle codex_device_endpoints_use_deviceauth -- --nocapture && cargo test -p xai-grok-shell --test auth_codex_lifecycle codex_login_persists_slot -- --nocapture` | ❌ | ⬜ pending |
-| 05-04-01 | 04 | 4 | AUTH-03 | T-05-11 | Selective / --all / bare fail-closed logout | integration | `cargo test -p xai-grok-shell --test auth_codex_lifecycle selective_logout_isolates -- --nocapture && cargo test -p xai-grok-shell --test auth_codex_lifecycle bare_logout_fail_closed -- --nocapture && cargo test -p xai-grok-shell --test auth_codex_lifecycle logout_all_clears_both -- --nocapture` | ❌ | ⬜ pending |
-| 05-04-02 | 04 | 4 | AUTH-04 | T-05-12/14 | run_cli_auth_status handler + clap + dual-safe /logout | integration + unit | `cargo test -p xai-grok-pager bum_auth_status_parses -- --nocapture && cargo test -p xai-grok-shell --test auth_codex_lifecycle run_cli_auth_status -- --nocapture && cargo test -p xai-grok-shell --test auth_codex_lifecycle auth_status_format_paste_safe -- --nocapture` | ❌ | ⬜ pending |
-| 05-05-01 | 05 | 5 | AUTH-05 | T-05-15/16 | Pure CodexRefresher isolation + invalid_grant no xAI wipe | integration | `cargo test -p xai-grok-shell --test auth_codex_lifecycle codex_refresh_isolates -- --nocapture && cargo test -p xai-grok-shell --test auth_codex_lifecycle codex_invalid_grant_no_xai_wipe -- --nocapture` | ❌ | ⬜ pending |
-| 05-05-02 | 05 | 5 | AUTH-05 | T-05-15/16 | **Production prepare-time invoker** → CodexRefresher → persist PROVIDER_CODEX → fresh snapshot | integration | `cargo test -p xai-grok-shell --test auth_codex_lifecycle codex_pre_request_refresh_updates_snapshot -- --nocapture` | ❌ | ⬜ pending |
-| 05-05-03 | 05 | 5 | AUTH-05 | T-05-17/18 | Cache invalidate on mutates + ChatGPT-Account-ID header inject | integration | `cargo test -p xai-grok-shell --test auth_codex_lifecycle chatgpt_account_id_header_on_codex -- --nocapture && cargo test -p xai-grok-shell --test provider_routing no_proxy_headers_on_codex -- --nocapture` | ❌ | ⬜ pending |
-| 05-06-01 | 06 | 6 | AUTH-02..05 | T-05-19 | Full lifecycle suite green | integration | `cargo test -p xai-grok-shell --test auth_codex_lifecycle -- --nocapture` | ❌ | ⬜ pending |
-| 05-06-02 | 06 | 6 | AUTH-01 + MOD-04/05 | T-05-20 | Regressions + check + deferred-scope audit | integration + check | Full suite command | ❌ | ⬜ pending |
+| 05-01-01 | 01 | 1 | AUTH-02..05 | T-05-01/02 | Wave 0 list + smoke + RED contracts incl. reconstruct AUTH-05 | integration scaffold | `--list` + smoke | ❌ | ⬜ pending |
+| 05-01-02 | 01 | 1 | AUTH-02/03/04 | T-05-02 | Clap scaffolds + pager-bin check; verify new parser names | unit + check | multi clap filters + check pager-bin | ❌ | ⬜ pending |
+| 05-02-01 | 02 | 2 | AUTH-03 | T-05-04 | Public AuthProvider mutate/clear isolation | integration | mutate_provider + clear_provider + multi_slot | ❌ | ⬜ pending |
+| 05-02-02 | 02 | 2 | AUTH-04 | T-05-03 | Paste-safe status + usable semantics | integration | auth_status_format_paste_safe + auth_status_usable | ❌ | ⬜ pending |
+| 05-03-01 | 03 | 3 | AUTH-02 | T-05-06/09 | Authorize + login persist + state mismatch | integration | authorize + login + state_mismatch | ❌ | ⬜ pending |
+| 05-03-02 | 03 | 3 | AUTH-02 | T-05-07/22 | Device multi-step + CLI provider; no xAI post_login_sync | integration + unit | clap provider + deviceauth + device multi-step + login | ❌ | ⬜ pending |
+| 05-04-01 | 04 | 4 | AUTH-03 | T-05-11/23 | Blocking clear; selective / all / bare | integration | selective + bare + logout_all | ❌ | ⬜ pending |
+| 05-04-02 | 04 | 4 | AUTH-04 | T-05-12/14 | status handler + dual-safe TUI/ACP | integration + unit | clap status + run_cli_auth_status + format | ❌ | ⬜ pending |
+| 05-05-01 | 05 | 5 | AUTH-05 | T-05-15/16/24 | Pure data-only refresher + isolation | integration | refresh_isolates + invalid_grant | ❌ | ⬜ pending |
+| 05-05-02 | 05 | 5 | AUTH-05 | T-05-15/21 | **reconstruct ensure_fresh** + lock + concurrent + transient | integration | reconstruct_mid_session + concurrent + fresh_skip + transient | ❌ | ⬜ pending |
+| 05-05-03 | 05 | 5 | AUTH-05 | T-05-18 | Trusted-host account header + absences | integration | chatgpt_account_id_header* + no_proxy regression | ❌ | ⬜ pending |
+| 05-06-01 | 06 | 6 | AUTH-02..05 | T-05-19/21 | Full lifecycle suite green | integration | full auth_codex_lifecycle | ❌ | ⬜ pending |
+| 05-06-02 | 06 | 6 | AUTH-01 + MOD-04/05 | T-05-20 | Regressions + clap + check + fmt + deferred audit | integration + check | Full suite command | ❌ | ⬜ pending |
 
 *Status: ⬜ pending · ✅ green · ❌ red · ⚠️ flaky*
 
@@ -133,20 +143,26 @@ updated: 2026-07-16
 
 ## Wave 0 Requirements
 
-- [ ] `crates/codegen/xai-grok-shell/tests/auth_codex_lifecycle.rs` — AUTH-02..05 integration harness (smoke + behavior-RED contracts)
+- [ ] `crates/codegen/xai-grok-shell/tests/auth_codex_lifecycle.rs` — AUTH-02..05 integration harness
 - [ ] Named RED (or scaffold) contracts include at minimum:
   - `auth_codex_lifecycle_harness_smoke` (GREEN)
   - `codex_login_persists_slot`
   - `codex_authorize_url_includes_pkce_and_localhost_callback`
   - `codex_device_endpoints_use_deviceauth`
+  - `codex_device_pending_slowdown_exchange_denied`
+  - `codex_oauth_state_mismatch_writes_nothing`
   - `selective_logout_isolates` / `logout_all_clears_both` / `bare_logout_fail_closed`
-  - `auth_status_format_paste_safe` / `run_cli_auth_status`
+  - `auth_status_format_paste_safe` / `auth_status_usable_*` / `run_cli_auth_status`
   - `codex_refresh_isolates` / `codex_invalid_grant_no_xai_wipe`
-  - `codex_pre_request_refresh_updates_snapshot` (production prepare path)
-  - `chatgpt_account_id_header_on_codex`
-- [ ] Clap scaffolds in `crates/codegen/xai-grok-pager/src/app/cli.rs` for `--provider`, logout `--all`, `auth status`
+  - `codex_reconstruct_refreshes_mid_session_expiry` (**production reconstruct path**)
+  - `codex_concurrent_refresh_single_idp_spend`
+  - `codex_fresh_token_skips_idp`
+  - `codex_transient_fail_hard_unexpired_keeps_token` / `codex_transient_fail_hard_expired_no_credential`
+  - `chatgpt_account_id_header_on_codex` / `chatgpt_account_id_header_absent_*`
+- [ ] Clap scaffolds in pager cli + pager-bin compile for `--provider`, logout `--all`, `auth status`
 - [ ] Framework install: none
 - [ ] No shell `--lib` gate
+- [ ] OnceLock policy documented in harness
 
 ---
 
@@ -157,7 +173,7 @@ updated: 2026-07-16
 | Live `bum login --provider codex` browser smoke | AUTH-02 (optional) | Needs real ChatGPT + free ports 1455/1457 | Optional: temp `BUM_HOME`; login; `bum auth status`; selective logout; confirm no tokens printed |
 | Device-code live path | AUTH-02 (optional) | Workspace security + browser | Optional: `bum login --provider codex --device-auth` |
 
-*All Phase 5 success criteria have automated verification with fake tokens / mock IdP (including prepare-time refresh and ChatGPT-Account-ID).*
+*All Phase 5 success criteria have automated verification with fake tokens / mock IdP (including reconstruct-time refresh and trusted ChatGPT-Account-ID).*
 
 ---
 
@@ -165,12 +181,12 @@ updated: 2026-07-16
 
 - [ ] All tasks have `<automated>` verify or Wave 0 dependencies
 - [ ] Sampling continuity: no 3 consecutive tasks without automated verify
-- [ ] Wave 0 covers all MISSING references (including prepare-time refresh + account header + deviceauth + authorize URL + status handler)
-- [ ] AUTH-05 production invoker proven (`codex_pre_request_refresh_updates_snapshot`) — not pure unit only
+- [ ] Wave 0 covers all MISSING references (including reconstruct refresh + concurrent + device multi-step + usable + status handler)
+- [ ] AUTH-05 production invoker proven on **reconstruct/ensure_fresh** — not pure unit or prepare-only
 - [ ] No watch-mode flags
 - [ ] Feedback latency < 240s (warm)
 - [ ] Cargo hygiene: one TESTNAME; never shell `--lib` as phase gate
 - [ ] `nyquist_compliant: true` set in frontmatter after phase execution gate green
 - [ ] `wave_0_complete: true` after Plan 01 harness lands
 
-**Approval:** pending (revision from 05-PLAN-CHECK)
+**Approval:** pending (replan from 05-REVIEWS cycle 1)
