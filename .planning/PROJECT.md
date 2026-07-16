@@ -29,7 +29,7 @@ Capabilities already present in this Grok Build fork (baseline the product build
 - [ ] **Codex / ChatGPT OAuth login** — Add ChatGPT OAuth (Codex CLI-style) as a first-class provider alongside xAI; support login UX in TUI and CLI
 - [ ] **Multi-provider session** — Model picker lists both xAI (Grok) and OpenAI/Codex (GPT-5.6) models; switching models anytime routes requests to the correct backend with that provider’s credentials
 - [ ] **GPT-5.6 models in selector** — Ship current GPT-5.6 family options usable for coding once Codex OAuth is present (exact IDs confirmed against Codex/OpenAI availability during research/implementation)
-- [ ] **Provider-aware request routing** — Grok models → xAI / cli-chat-proxy path with xAI tokens; GPT models → OpenAI/Codex API with ChatGPT OAuth tokens
+- [x] **Provider-aware request routing** — Grok models → xAI / cli-chat-proxy path with xAI tokens; GPT models → OpenAI/Codex API with ChatGPT OAuth tokens — Phase 4
 - [ ] **Missing-provider gate** — Selecting a model for a provider without valid credentials blocks and prompts that provider’s OAuth login (no silent failure mid-turn)
 - [ ] **Quiet local fork** — Disable xAI auto-update channel and product telemetry so bum does not phone home to x.ai as a stock client
 - [ ] **Daily-driver bar** — After v1, bum is usable as the default coding agent for real work: auth, model switch, tools, and sessions work for both providers
@@ -71,7 +71,7 @@ Capabilities already present in this Grok Build fork (baseline the product build
 | Product/CLI name `bum` with full rebrand | Clear fork identity; launch like `grok`/`codex`/`claude` | — Pending |
 | Isolated `~/.bum` home + auth store | Full rebrand; no accidental coupling to stock grok/codex logins | — Pending |
 | Codex auth = ChatGPT OAuth (Codex CLI style) | Matches “real” Codex login and subscription-backed models | — Pending |
-| GPT traffic → OpenAI/Codex API with Codex credentials | Real GPT-5.6, not pretending via xAI proxy | — Pending |
+| GPT traffic → OpenAI/Codex API with Codex credentials | Real GPT-5.6, not pretending via xAI proxy | Phase 4 — route resolver + dual-key sampling |
 | Grok traffic → existing xAI OAuth + proxy path | Preserve working Grok Build path | — Pending |
 | Mixed model picker; switch anytime | One session, best model per task | — Pending |
 | Missing provider → block + prompt login | Fail closed and fixable, not mid-request surprise | — Pending |

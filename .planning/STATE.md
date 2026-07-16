@@ -2,14 +2,14 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-current_phase: 4
-current_phase_name: Provider-aware request routing
-current_plan: 5
-status: verifying
+current_phase: 5
+current_phase_name: Codex OAuth & dual auth lifecycle
+current_plan: Not started
+status: planning
 stopped_at: Completed 04-05-PLAN.md
-last_updated: "2026-07-16T14:02:13.048Z"
+last_updated: "2026-07-16T14:35:12.878Z"
 last_activity: 2026-07-16
-last_activity_desc: Completed 04-01-PLAN.md (Wave 0 provider_routing harness)
+last_activity_desc: Phase 4 complete, transitioned to Phase 5
 progress:
   total_phases: 4
   completed_phases: 4
@@ -24,24 +24,25 @@ progress:
 See: .planning/PROJECT.md (updated 2026-07-16)
 
 **Core value:** One CLI (`bum`) can log into both xAI and Codex and freely switch between Grok and GPT-5.6 models in a real coding session — including cross-provider subagent orchestration.
-**Current focus:** Phase 4 — Provider-aware request routing (executing)
+**Current focus:** Phase 5 — Codex OAuth & dual auth lifecycle (ready to plan)
 
 ## Current Position
 
-Phase: 4 of 9 (Provider-aware request routing)
-Plan: 5 of 5
-Status: Phase complete — ready for verification
-Last activity: 2026-07-16 — Completed 04-01-PLAN.md (Wave 0 provider_routing harness)
-Current Plan: 5
-Total Plans in Phase: 5
+Phase: 5 of 9 (Codex OAuth & dual auth lifecycle)
+Plan: Not started
+Status: Ready to plan
+Last activity: 2026-07-16 — Phase 4 complete (provider-aware routing verified + review fixes), transitioned to Phase 5
+Current Plan: Not started
+Total Plans in Phase: TBD
 
-Progress: [██████████] 100%
+Progress: [████░░░░░░] 44% (4/9 phases)
+
 
 ## Performance Metrics
 
 **Velocity:**
 
-- Total plans completed: 13
+- Total plans completed: 5
 - Average duration: ~18min
 - Total execution time: ~3.5 hours
 
@@ -51,7 +52,7 @@ Progress: [██████████] 100%
 |-------|-------|-------|----------|
 | 01 | 5/5 | 98min | 19.6min |
 | 03 | 3/3 | 50min | 16.7min |
-| 04 | 1/5 | 12min | 12min |
+| 4 | 5 | - | - |
 
 **Recent Trend:**
 

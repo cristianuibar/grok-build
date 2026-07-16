@@ -16,7 +16,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [x] **Phase 1: Product identity & isolated home** - Ship `bum` binary and `~/.bum` home cutover
 - [x] **Phase 2: Multi-slot credentials & xAI OAuth** - Provider-scoped auth store with working xAI login under bum
 - [x] **Phase 3: Model catalog & GPT-5.6 entries** - Provider-tagged catalog with Grok + GPT-5.6 family in one list (completed 2026-07-16)
-- [ ] **Phase 4: Provider-aware request routing** - Model → backend + credentials (Grok vs Codex paths)
+- [x] **Phase 4: Provider-aware request routing** - Model → backend + credentials (Grok vs Codex paths) (completed 2026-07-16)
 - [ ] **Phase 5: Codex OAuth & dual auth lifecycle** - ChatGPT login/logout/status + independent refresh
 - [ ] **Phase 6: Mid-session switch & missing-provider gate** - Switch anytime; fail closed with login prompt
 - [ ] **Phase 7: Cross-provider multi-agent orchestration** - Same-provider regression + parent/child cross-provider spawn
@@ -102,7 +102,7 @@ Plans:
   2. Requests for GPT/Codex models use the OpenAI/Codex (ChatGPT backend) path with ChatGPT OAuth credentials — not the xAI proxy
   3. Switching the active model changes resolved base URL / credential slot for the next sample (verifiable in logs or tests with fake tokens)
 
-**Plans:** 5/5 plans executed
+**Plans:** 5/5 plans complete
 
 Plans:
 
@@ -197,10 +197,10 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 →
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Product identity & isolated home | 5/5 | In Progress|  |
-| 2. Multi-slot credentials & xAI OAuth | 0/4 | Not started | - |
+| 1. Product identity & isolated home | 5/5 | Complete    | 2026-07-16 |
+| 2. Multi-slot credentials & xAI OAuth | 4/4 | Complete    | 2026-07-16 |
 | 3. Model catalog & GPT-5.6 entries | 3/3 | Complete    | 2026-07-16 |
-| 4. Provider-aware request routing | 5/5 | In Progress|  |
+| 4. Provider-aware request routing | 5/5 | Complete    | 2026-07-16 |
 | 5. Codex OAuth & dual auth lifecycle | 0/TBD | Not started | - |
 | 6. Mid-session switch & missing-provider gate | 0/TBD | Not started | - |
 | 7. Cross-provider multi-agent orchestration | 0/TBD | Not started | - |
