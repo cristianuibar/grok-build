@@ -108,3 +108,7 @@ tempfile = { workspace = true }
 # leaving cargo's `default` (and thus cargo production builds) without them.
 # The helpers are inert unless their mock setters are called.
 default-bazel = []
+# Public test-only helpers consumed by `xai-grok-pager` unit tests (protocol
+# override, pin_theme, clipboard probe hooks, etc.). Not enabled by default so
+# production builds stay free of the surface; pager enables this in dev-deps.
+test-helpers = []
