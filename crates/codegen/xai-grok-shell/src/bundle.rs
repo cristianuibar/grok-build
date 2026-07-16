@@ -83,11 +83,10 @@ struct BundleFile<'a> {
     content: &'a str,
 }
 
+/// Cache root for managed extension/subagent bundles under product home
+/// (`$BUM_HOME/bundled` or `~/.bum/bundled`). Never writes under stock `~/.grok`.
 pub fn bundled_root() -> PathBuf {
-    dirs::home_dir()
-        .unwrap_or_else(|| PathBuf::from("."))
-        .join(".grok")
-        .join(BUNDLED_DIR_NAME)
+    xai_grok_config::grok_home().join(BUNDLED_DIR_NAME)
 }
 
 pub fn read_cached_manifest(root: &Path) -> Result<Option<BundleManifest>> {

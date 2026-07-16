@@ -461,13 +461,15 @@ impl SubagentsConfig {
         );
         result.enabled = resolved.value;
         if let Some(cwd) = cwd {
+            // Project-local cwd/.grok/roles|personas (D-PLUGIN).
             result.discover_roles(cwd);
             result.discover_personas(cwd);
         }
-        if let Some(home) = dirs::home_dir() {
-            result.discover_roles(&home);
-            result.discover_personas(&home);
-        }
+        // User-global roles/personas live under product home (`$BUM_HOME` /
+        // `~/.bum`), not stock `$HOME/.grok`.
+        let product_home = xai_grok_config::grok_home();
+        result.discover_roles_in_dir(&product_home.join("roles"));
+        result.discover_personas_in_dir(&product_home.join("personas"));
         let bundled_root = bundle::bundled_root();
         result.discover_roles_in_dir(&bundled_root.join("roles"));
         result.discover_personas_in_dir(&bundled_root.join("personas"));

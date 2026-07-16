@@ -2254,56 +2254,48 @@ fn discover_personas_inline_takes_precedence() {
         Some("Inline strict"),
     );
 }
+/// Priority: inline config > project cwd/.grok > product-home user > bundled.
+/// Uses the process product home (`grok_home` OnceLock) so multi-scenario HOME /
+/// BUM_HOME mutation is avoided — files are written under the pinned product root.
 #[test]
+#[serial_test::serial]
 fn bundled_personas_and_roles_have_lowest_priority_in_resolve_order() {
     let tmp = tempfile::TempDir::new().unwrap();
-    let home = tmp.path().join("home");
     let workspace = tmp.path().join("workspace");
-    let bundled = home.join(".grok").join("bundled");
+    // Product home is process-pinned; write user + bundled fixtures there.
+    let product_home = xai_grok_config::grok_home();
+    let bundled = crate::bundle::bundled_root();
+    let user_role = product_home.join("roles/reviewer.toml");
+    let user_persona = product_home.join("personas/reviewer.toml");
+    let bundled_role = bundled.join("roles/reviewer.toml");
+    let bundled_persona = bundled.join("personas/reviewer.toml");
+    let project_role = workspace.join(".grok/roles/reviewer.toml");
+    let project_persona = workspace.join(".grok/personas/reviewer.toml");
+
     std::fs::create_dir_all(workspace.join(".grok").join("roles")).unwrap();
     std::fs::create_dir_all(workspace.join(".grok").join("personas")).unwrap();
-    std::fs::create_dir_all(home.join(".grok").join("roles")).unwrap();
-    std::fs::create_dir_all(home.join(".grok").join("personas")).unwrap();
+    std::fs::create_dir_all(product_home.join("roles")).unwrap();
+    std::fs::create_dir_all(product_home.join("personas")).unwrap();
     std::fs::create_dir_all(bundled.join("roles")).unwrap();
     std::fs::create_dir_all(bundled.join("personas")).unwrap();
-    std::fs::write(
-            bundled.join("roles/reviewer.toml"),
-            r#"description = "Bundled reviewer""#,
-        )
-        .unwrap();
-    std::fs::write(
-            bundled.join("personas/reviewer.toml"),
-            r#"instructions = "Bundled persona""#,
-        )
-        .unwrap();
-    std::fs::write(
-            home.join(".grok/roles/reviewer.toml"),
-            r#"description = "User reviewer""#,
-        )
-        .unwrap();
-    std::fs::write(
-            home.join(".grok/personas/reviewer.toml"),
-            r#"instructions = "User persona""#,
-        )
-        .unwrap();
-    std::fs::write(
-            workspace.join(".grok/roles/reviewer.toml"),
-            r#"description = "Project reviewer""#,
-        )
-        .unwrap();
-    std::fs::write(
-            workspace.join(".grok/personas/reviewer.toml"),
-            r#"instructions = "Project persona""#,
-        )
-        .unwrap();
-    with_env_var(
-        "HOME",
-        home.to_str().unwrap(),
-        || {
-            let config = toml::from_str::<
-                toml::Value,
-            >(
-                    r#"
+
+    let cleanup = || {
+        let _ = std::fs::remove_file(&user_role);
+        let _ = std::fs::remove_file(&user_persona);
+        let _ = std::fs::remove_file(&bundled_role);
+        let _ = std::fs::remove_file(&bundled_persona);
+    };
+    cleanup();
+
+    std::fs::write(&bundled_role, r#"description = "Bundled reviewer""#).unwrap();
+    std::fs::write(&bundled_persona, r#"instructions = "Bundled persona""#).unwrap();
+    std::fs::write(&user_role, r#"description = "User reviewer""#).unwrap();
+    std::fs::write(&user_persona, r#"instructions = "User persona""#).unwrap();
+    std::fs::write(&project_role, r#"description = "Project reviewer""#).unwrap();
+    std::fs::write(&project_persona, r#"instructions = "Project persona""#).unwrap();
+
+    let config_inline = toml::from_str::<toml::Value>(
+        r#"
                 [subagents]
                 enabled = true
 
@@ -2313,68 +2305,62 @@ fn bundled_personas_and_roles_have_lowest_priority_in_resolve_order() {
                 [subagents.personas.reviewer]
                 instructions = "Inline persona"
                 "#,
-                )
-                .unwrap();
-            let resolved = SubagentsConfig::resolve(true, &config, Some(&workspace));
-            assert_eq!(
-                resolved.get_role("reviewer").unwrap().description, "Inline reviewer"
-            );
-            assert_eq!(
-                resolved.get_persona("reviewer").unwrap().instructions.as_deref(),
-                Some("Inline persona")
-            );
-        },
+    )
+    .unwrap();
+    let resolved = SubagentsConfig::resolve(true, &config_inline, Some(&workspace));
+    assert_eq!(
+        resolved.get_role("reviewer").unwrap().description,
+        "Inline reviewer"
     );
-    std::fs::remove_file(workspace.join(".grok/roles/reviewer.toml")).unwrap();
-    std::fs::remove_file(workspace.join(".grok/personas/reviewer.toml")).unwrap();
-    with_env_var(
-        "HOME",
-        home.to_str().unwrap(),
-        || {
-            let config = toml::from_str::<
-                toml::Value,
-            >(
-                    r#"
+    assert_eq!(
+        resolved
+            .get_persona("reviewer")
+            .unwrap()
+            .instructions
+            .as_deref(),
+        Some("Inline persona")
+    );
+
+    std::fs::remove_file(&project_role).unwrap();
+    std::fs::remove_file(&project_persona).unwrap();
+    let config_plain = toml::from_str::<toml::Value>(
+        r#"
                 [subagents]
                 enabled = true
                 "#,
-                )
-                .unwrap();
-            let resolved = SubagentsConfig::resolve(true, &config, Some(&workspace));
-            assert_eq!(
-                resolved.get_role("reviewer").unwrap().description, "User reviewer"
-            );
-            assert_eq!(
-                resolved.get_persona("reviewer").unwrap().instructions.as_deref(),
-                Some("User persona")
-            );
-        },
+    )
+    .unwrap();
+    let resolved = SubagentsConfig::resolve(true, &config_plain, Some(&workspace));
+    assert_eq!(
+        resolved.get_role("reviewer").unwrap().description,
+        "User reviewer"
     );
-    std::fs::remove_file(home.join(".grok/roles/reviewer.toml")).unwrap();
-    std::fs::remove_file(home.join(".grok/personas/reviewer.toml")).unwrap();
-    with_env_var(
-        "HOME",
-        home.to_str().unwrap(),
-        || {
-            let config = toml::from_str::<
-                toml::Value,
-            >(
-                    r#"
-                [subagents]
-                enabled = true
-                "#,
-                )
-                .unwrap();
-            let resolved = SubagentsConfig::resolve(true, &config, Some(&workspace));
-            assert_eq!(
-                resolved.get_role("reviewer").unwrap().description, "Bundled reviewer"
-            );
-            assert_eq!(
-                resolved.get_persona("reviewer").unwrap().instructions.as_deref(),
-                Some("Bundled persona")
-            );
-        },
+    assert_eq!(
+        resolved
+            .get_persona("reviewer")
+            .unwrap()
+            .instructions
+            .as_deref(),
+        Some("User persona")
     );
+
+    std::fs::remove_file(&user_role).unwrap();
+    std::fs::remove_file(&user_persona).unwrap();
+    let resolved = SubagentsConfig::resolve(true, &config_plain, Some(&workspace));
+    assert_eq!(
+        resolved.get_role("reviewer").unwrap().description,
+        "Bundled reviewer"
+    );
+    assert_eq!(
+        resolved
+            .get_persona("reviewer")
+            .unwrap()
+            .instructions
+            .as_deref(),
+        Some("Bundled persona")
+    );
+
+    cleanup();
 }
 #[test]
 fn render_io_summary_shows_bundled_for_bundled_personas() {

@@ -1,8 +1,9 @@
 //! Agent definition file discovery.
 //!
-//! Searches `.grok/agents/` and `.claude/agents/` from cwd to repo root,
-//! then `~/.grok/agents/`, then `~/.claude/agents/`. Name-based dedup keeps
-//! highest priority.
+//! Searches project `.grok/agents/` and `.claude/agents/` from cwd to repo root,
+//! then product-home agents (`$BUM_HOME/agents` or `~/.bum/agents`), then
+//! `~/.claude/agents/`. Name-based dedup keeps highest priority.
+//! Stock `~/.grok` user agents are not scanned (product isolation).
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -183,42 +184,28 @@ fn merge_subagents(
 /// Discover all agent definitions from the filesystem.
 ///
 /// Search order (highest priority first):
-/// 1. `.grok/agents/` walking from `cwd` up to repo root
-/// 2. `~/.grok/agents/` (user-level)
+/// 1. Project `.grok/agents/` / `.claude/agents/` walking from `cwd` up to repo root
+/// 2. Product-home `agents/` (user-level; `$BUM_HOME` / `~/.bum`)
 /// 3. `~/.claude/agents/` (compat user-level)
-/// 4. `~/.grok/bundled/agents/` (bundled, lowest priority)
+/// 4. Product-home `bundled/agents/` (bundled, lowest priority)
 ///
 /// Deduplicates by name — higher-priority definitions win.
-/// User-level agent directories in priority order: user grok agents, `.claude`
-/// compat agents, then bundled. `.grok` dirs resolve from `grok_home`
-/// (GROK_HOME-aware) plus the legacy literal `~/.grok` when GROK_HOME points
-/// elsewhere; `.claude` resolves from `home`.
+/// User-level agent directories resolve from `grok_home` (product home) only —
+/// stock `~/.grok` is not scanned when product home differs. `.claude` resolves
+/// from `home`. Project-local cwd `.grok` discovery is separate (D-PLUGIN).
 pub(crate) fn user_agent_dirs(
     home: Option<&Path>,
     grok_home: Option<&Path>,
 ) -> Vec<(std::path::PathBuf, AgentScope)> {
-    // Legacy literal ~/.grok, included only when it differs from grok_home
-    // (i.e. GROK_HOME points elsewhere) so agents left in the old location are
-    // still discovered and stay consistent with scope_from_path classification.
-    let legacy_grok = home
-        .map(|h| h.join(".grok"))
-        .filter(|legacy| grok_home != Some(legacy.as_path()));
-
     let mut dirs = Vec::new();
     if let Some(g) = grok_home {
         dirs.push((g.join("agents"), AgentScope::User));
-    }
-    if let Some(l) = &legacy_grok {
-        dirs.push((l.join("agents"), AgentScope::User));
     }
     if let Some(h) = home {
         dirs.push((h.join(".claude").join("agents"), AgentScope::User));
     }
     if let Some(g) = grok_home {
         dirs.push((g.join("bundled").join("agents"), AgentScope::Bundled));
-    }
-    if let Some(l) = &legacy_grok {
-        dirs.push((l.join("bundled").join("agents"), AgentScope::Bundled));
     }
     dirs
 }
@@ -763,32 +750,30 @@ mod tests {
     }
 
     #[test]
-    fn user_agent_dirs_includes_legacy_grok_when_grok_home_differs() {
+    fn user_agent_dirs_uses_product_home_not_stock_grok_when_differs() {
         let home = Path::new("/home/u");
-        let grok = Path::new("/custom/grokhome");
-        let paths: Vec<_> = user_agent_dirs(Some(home), Some(grok))
+        let product = Path::new("/custom/bumhome");
+        let paths: Vec<_> = user_agent_dirs(Some(home), Some(product))
             .into_iter()
             .map(|(p, _)| p)
             .collect();
-        assert!(paths.contains(&grok.join("agents")));
-        assert!(paths.contains(&home.join(".grok").join("agents")));
+        assert!(paths.contains(&product.join("agents")));
         assert!(paths.contains(&home.join(".claude").join("agents")));
-        assert!(paths.contains(&grok.join("bundled").join("agents")));
-        assert!(paths.contains(&home.join(".grok").join("bundled").join("agents")));
+        assert!(paths.contains(&product.join("bundled").join("agents")));
+        // Stock ~/.grok is not first-class bum user state when product home differs.
+        assert!(!paths.contains(&home.join(".grok").join("agents")));
+        assert!(!paths.contains(&home.join(".grok").join("bundled").join("agents")));
     }
 
     #[test]
-    fn user_agent_dirs_dedups_legacy_when_grok_home_is_dot_grok() {
+    fn user_agent_dirs_no_duplicate_product_home_agents() {
         let home = Path::new("/home/u");
-        let grok = home.join(".grok");
-        let count = user_agent_dirs(Some(home), Some(&grok))
+        let product = home.join(".bum");
+        let count = user_agent_dirs(Some(home), Some(&product))
             .into_iter()
-            .filter(|(p, _)| *p == grok.join("agents"))
+            .filter(|(p, _)| *p == product.join("agents"))
             .count();
-        assert_eq!(
-            count, 1,
-            "no duplicate ~/.grok/agents when grok_home == ~/.grok"
-        );
+        assert_eq!(count, 1, "single product-home agents dir");
     }
 
     #[test]
