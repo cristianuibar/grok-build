@@ -470,22 +470,21 @@ assert!(!real_or_sandbox_root.join(".grok").exists()
 
 ## Open Questions
 
-1. **Internal API naming (`grok_home` vs `product_home`)**
+1. **Internal API naming (`grok_home` vs `product_home`)** — **(RESOLVED)**
    - What we know: callers are widespread; rename is optional.
-   - What's unclear: whether Phase 1 should alias `pub fn product_home() -> PathBuf { grok_home() }` for clarity.
-   - Recommendation: keep `grok_home` symbol this phase; document semantics; optional thin alias.
+   - **Chosen:** Keep public symbol `grok_home()` / `default_grok_home()` this phase; document that they return the bum product home. No required `product_home()` alias (blast-radius control; D-SCOPE).
 
-2. **Test harness env: `BUM_HOME=tmp` vs `BUM_HOME=tmp/.bum`**
+2. **Test harness env: `BUM_HOME=tmp` vs `BUM_HOME=tmp/.bum`** — **(RESOLVED)**
    - What we know: today `GROK_HOME=home.join(".grok")` while also setting `HOME`.
-   - Recommendation: set `BUM_HOME` to the dedicated product root directory used for assertions (either the temp path itself or `tmp/.bum`), and assert all product files live under that path; optionally still set `HOME` to tmp for `~` expansion and to prove no `HOME/.grok` writes.
+   - **Chosen:** Convention `HOME=tmp` and `BUM_HOME=home.join(".bum")` (mirror prior `HOME` + `GROK_HOME=home.join(".grok")`). Assert product files under BUM_HOME and zero product writes under `HOME/.grok` / `HOME/.codex` (plans 01-04 / 01-05).
 
-3. **Legacy `~/.grok` discovery reads**
+3. **Legacy `~/.grok` discovery reads** — **(RESOLVED)**
    - What we know: agent/plugin discovery intentionally scans legacy `~/.grok` when override differs.
-   - Recommendation: disable stock-home legacy product scans for bum isolation (no read of stock credentials/agents as first-class bum user state). Confirm with planner if any intentional compat remains.
+   - **Chosen:** Disable stock-home legacy user-agent product scans for bum isolation (plan 01-05 Task 1). Keep project-local cwd `.grok` discovery (D-PLUGIN). No credential import (D-MIGRATE).
 
-4. **`/etc/grok` system config**
+4. **`/etc/grok` system config** — **(RESOLVED)**
    - What we know: `system_config_dir` is `/etc/grok`.
-   - Recommendation: leave Phase 8 unless it injects paths that force user writes under `~/.grok` (unlikely).
+   - **Chosen:** Leave `/etc/grok` unchanged in Phase 1 (D-SCOPE / Phase 8).
 
 ## Environment Availability
 
