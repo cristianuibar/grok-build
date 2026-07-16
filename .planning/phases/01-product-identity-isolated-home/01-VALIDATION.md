@@ -12,7 +12,7 @@ reviews_cycle: 1
 # Phase 1 — Validation Strategy
 
 > Per-phase validation contract for feedback sampling during execution.
-> Updated after Codex review cycle 1 replan (hermetic isolation, updater, bundle, full fixtures).
+> Updated after Codex residual replan (workspace product-home fixtures + operational path labels).
 
 ---
 
@@ -23,7 +23,7 @@ reviews_cycle: 1
 | **Framework** | Rust `cargo test` (crate-local); `serial_test`; `tempfile`; **one env scenario per isolated test binary** for OnceLock |
 | **Config file** | none global — per-crate; `rust-toolchain.toml` (1.92.0) |
 | **Quick run command** | `cargo test -p xai-grok-config --lib paths -- --nocapture` |
-| **Full suite command** | `cargo test -p xai-grok-config -p xai-fast-worktree -p xai-grok-pager-render -p xai-grok-agent -p xai-grok-update --test test_install_internal -p xai-grok-pager-bin --test home_isolation -- --nocapture` plus `cargo build -p xai-grok-pager-bin --bin bum` and shell-inclusive `rg` gate from plan 01-05 |
+| **Full suite command** | `cargo test -p xai-grok-config -p xai-fast-worktree -p xai-grok-pager-render -p xai-grok-agent -p xai-grok-update --test test_install_internal -p xai-grok-workspace --lib folder_trust -p xai-grok-workspace --lib trust -p xai-grok-pager-bin --test home_isolation -- --nocapture` plus `cargo build -p xai-grok-pager-bin --bin bum` and classified shell-inclusive + operational-label `rg` gate from plan 01-05 |
 | **Estimated runtime** | ~90–240 seconds (per-crate; avoid full workspace) |
 
 ---
@@ -52,10 +52,10 @@ reviews_cycle: 1
 | 01-03-03 | 03 | 1 | ID-01 | T-01-06 | PTY CARGO_BIN_EXE_bum | compile | `cargo check -p xai-grok-pager-pty-harness` | ⚠️ update | ⬜ pending |
 | 01-04-01 | 04 | 3 | ID-03 | T-01-07 | Sandbox + lock/log .bum | compile + rg | `cargo check -p xai-grok-test-support` + no join(".grok") in env/leader | ⚠️ update | ⬜ pending |
 | 01-04-02 | 04 | 3 | ID-03 | T-01-07 | Full PTY product home | unit + rg | `cargo test -p xai-grok-pager-pty-harness env_for_pager` | ⚠️ update | ⬜ pending |
-| 01-04-03 | 04 | 3 | ID-03 | T-01-07 | Shell inventory BUM_HOME | behavioral | `cargo test -p xai-grok-shell --test test_debug_logging` + leader | ⚠️ update | ⬜ pending |
+| 01-04-03 | 04 | 3 | ID-03 | T-01-07 | Shell+pager+workspace inventory BUM_HOME | behavioral | shell debug_logging + leader + workspace folder_trust/trust + negative product-home setters rg | ⚠️ update | ⬜ pending |
 | 01-05-01 | 05 | 4 | ID-03 | T-01-08/13/14 | No stock agents/roles; bundle SoT | unit | agent discovery + shell bundle + config | ⚠️ update | ⬜ pending |
 | 01-05-02 | 05 | 4 | ID-03 | T-01-09 | Hermetic recursive isolation | integration | `cargo test -p xai-grok-pager-bin --test home_isolation` | ❌ Wave 0 | ⬜ pending |
-| 01-05-03 | 05 | 4 | ID-01, ID-03 | T-01-11 | Shell-inclusive gate + build bum | build + rg | build bum + paths + home_isolation + shell rg | ⚠️/❌ | ⬜ pending |
+| 01-05-03 | 05 | 4 | ID-01, ID-03 | T-01-11/15 | Classified gate + labels + build bum | build + rg | build bum + paths + home_isolation + shell env-read rg + hub_auth/mcp/hooks/mcp_doctor label rg | ⚠️/❌ | ⬜ pending |
 
 *Status: ⬜ pending · ✅ green · ❌ red · ⚠️ flaky*
 
@@ -68,9 +68,10 @@ Existing infrastructure covers most requirements; create/update during plans (no
 - [ ] Pure `resolve_product_home` unit tests + config path flip — plan 01-01
 - [ ] Second isolated binary `grok_home_ignore_grok_home` — plan 01-01
 - [ ] Updater managed bin/bum tests — plan 01-02
-- [ ] Full PTY + shell fixture inventory — plan 01-04
+- [ ] Full PTY + shell + workspace fixture inventory — plan 01-04
 - [ ] New hermetic isolation test: `home_isolation.rs` — plan 01-05
 - [ ] Bundle + roles/personas cutover tests — plan 01-05
+- [ ] Operational product-home path labels (hub_auth, mcp credentials, hooks trust, mcp_doctor) — plan 01-05
 - [ ] No new test framework install required
 
 ---
