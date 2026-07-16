@@ -12,6 +12,8 @@
 mod browser;
 mod claims;
 mod device;
+mod ensure_fresh;
+mod refresh;
 
 pub use browser::{
     CodexAuthorizeSession, CodexLoginError, CodexTokenResponse, apply_codex_oauth_callback,
@@ -24,6 +26,16 @@ pub use claims::{
 pub use device::{
     codex_device_token_url, codex_device_usercode_url, codex_device_verify_url,
     run_codex_device_login, run_codex_device_login_with_base, run_codex_device_poll_only_with_base,
+};
+pub use ensure_fresh::{
+    clear_ensure_fresh_codex_test_hooks, ensure_fresh_codex_auth, ensure_fresh_codex_auth_at,
+    set_ensure_fresh_codex_synthetic_permanent, set_ensure_fresh_codex_synthetic_success,
+    set_ensure_fresh_codex_synthetic_transient, set_ensure_fresh_codex_test_hooks_public,
+    CodexAuthMaterial, EnsureFreshCodexOptions,
+};
+pub use refresh::{
+    classify_terminal, codex_token_exchange, codex_token_url, merge_codex_refresh_response,
+    CodexRefreshResult,
 };
 
 use std::path::Path;

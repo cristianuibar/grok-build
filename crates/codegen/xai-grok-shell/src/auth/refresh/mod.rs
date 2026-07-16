@@ -1,3 +1,4 @@
+mod codex_refresher;
 mod external_refresher;
 mod oidc_refresher;
 
@@ -9,6 +10,7 @@ use crate::auth::manager::AuthManager;
 pub(crate) use crate::auth::manager::RefreshReason;
 use crate::auth::model::GrokAuth;
 
+pub(crate) use codex_refresher::CodexRefresher;
 use external_refresher::ExternalBinaryRefresher;
 pub(crate) use oidc_refresher::OidcRefresher;
 
