@@ -3,8 +3,9 @@ phase: 01
 title: Product identity & isolated home
 reviewers: [codex]
 cycle: 1
-status: open
+status: incorporated
 date: 2026-07-16
+incorporated: 2026-07-16
 ---
 
 # Phase 1 Plan Reviews

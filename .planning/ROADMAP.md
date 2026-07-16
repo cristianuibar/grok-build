@@ -36,11 +36,11 @@ Decimal phases appear between their surrounding integers in numeric order.
 **Plans**: 5 plans
 
 Plans:
-- [ ] 01-01-PLAN.md — SoT home cutover (`~/.bum` / `BUM_HOME`) + path display labels
-- [ ] 01-02-PLAN.md — Twin resolver, managed bin leaf, workspace fallback lockstep
+- [ ] 01-01-PLAN.md — SoT home cutover (`~/.bum` / `BUM_HOME`) + pure resolver + process-isolated env tests + path display labels
+- [ ] 01-02-PLAN.md — Twin resolver, leader managed bin, updater `bin/bum`, workspace fallback lockstep
 - [ ] 01-03-PLAN.md — Ship `[[bin]]` as `bum` + harness binary resolution
-- [ ] 01-04-PLAN.md — Test sandbox env cutover to `BUM_HOME`
-- [ ] 01-05-PLAN.md — Legacy stock-home read gate + isolation proof integration test
+- [ ] 01-04-PLAN.md — Full test sandbox cutover (PTY flows/leader/scripted, shell inventory, lock/log)
+- [ ] 01-05-PLAN.md — Bundle + roles/personas + stock-home gate + hermetic isolation proof + shell-inclusive grep
 
 ### Phase 2: Multi-slot credentials & xAI OAuth
 **Goal**: Auth storage is provider-scoped so dual OAuth is safe; xAI login still works end-to-end under bum
