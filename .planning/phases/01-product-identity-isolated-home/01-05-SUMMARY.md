@@ -145,7 +145,7 @@ Each task was committed atomically:
 2. **Task 2: Hermetic temp-home isolation integration test** - `4a2f363` (feat) + `2e25e9f` (chore Cargo.lock tempfile)
 3. **Task 3: Production bypass + operational product-home labels + classified gate + bum build** - `9f35952` (feat)
 
-**Plan metadata:** _(final docs commit after this file)_
+**Plan metadata:** `e49fbe9` (docs: complete plan)
 
 ## Files Created/Modified
 
