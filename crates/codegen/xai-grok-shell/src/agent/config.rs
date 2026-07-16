@@ -4877,6 +4877,12 @@ pub fn to_acp_model_info(
                     "agentType".to_string(),
                     serde_json::Value::String(info.agent_type.clone()),
                 );
+                // Provider binding for multi-provider catalog (D-10 machine surface).
+                // Copied only from trusted in-process ModelInfo.provider — never client input.
+                map.insert(
+                    "provider".to_string(),
+                    serde_json::Value::String(info.provider.as_str().to_owned()),
+                );
                 if info.supports_reasoning_effort {
                     map.insert(
                         "supportsReasoningEffort".to_string(),
