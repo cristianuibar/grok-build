@@ -115,7 +115,7 @@ status: complete
 2. **Task 2: Workspace fallback + managed bin leaf + leader hard-coded tests + sandbox** - `478219c` (feat)
 3. **Task 3: Updater managed bin leaf bin/bum + install + downgrade-matrix tests** - `612dba9` (feat)
 
-**Plan metadata:** (see final docs commit hash below after commit)
+**Plan metadata:** `48e29b4` (docs: complete twin managed-bin updater plan)
 
 ## Files Created/Modified
 
