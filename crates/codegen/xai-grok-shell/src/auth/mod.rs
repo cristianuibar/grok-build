@@ -49,7 +49,7 @@ pub(crate) use model::{TOKEN_TTL, UserInfo, is_expired, token_suffix};
 pub(crate) use refresh::DiagnosticUploader;
 pub use status::{
     AuthStatusReport, ProviderAuthStatus, credential_usable, format_auth_status,
-    inspect_provider_store, store_logged_in, store_usable,
+    inspect_provider_store, provider_slot_usable, store_logged_in, store_usable,
 };
 pub use storage::{
     AuthStoreReadError, ProviderStoreMutation, clear_all_provider_slots, clear_api_key,

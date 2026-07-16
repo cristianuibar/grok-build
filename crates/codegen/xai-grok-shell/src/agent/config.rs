@@ -5515,11 +5515,184 @@ impl ModelSwitchIncompatibleAgentError {
         )
     }
 }
+
+/// Error code for model switch rejection when the target model's provider
+/// OAuth slot has no usable credentials (MOD-06 / D-07).
+pub const MODEL_SWITCH_MISSING_PROVIDER: &str = "MODEL_SWITCH_MISSING_PROVIDER";
+
+/// Structured ACP error payload for missing-provider model-switch rejection.
+///
+/// Serialized into `acp::Error.data` by the shell (camelCase) and deserialized
+/// by the TUI for the missing-provider QuestionView. Distinct from
+/// [`ModelSwitchIncompatibleAgentError`] (D-07).
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct ModelSwitchMissingProviderError {
+    /// Stable machine-readable error code (always `MODEL_SWITCH_MISSING_PROVIDER`).
+    pub code: String,
+    /// Target provider wire id (`xai` | `codex`) from catalog, never client-supplied.
+    pub provider: String,
+    /// The model ID that was requested.
+    pub model_id: String,
+    /// CLI remediation hint (`bum login --provider {id}`).
+    pub suggestion: String,
+}
+
+impl ModelSwitchMissingProviderError {
+    /// Build a payload for a catalog provider + requested model id (UI-SPEC).
+    pub fn new(provider: ModelProvider, model_id: impl Into<String>) -> Self {
+        let id = provider.as_str();
+        Self {
+            code: MODEL_SWITCH_MISSING_PROVIDER.to_string(),
+            provider: id.to_owned(),
+            model_id: model_id.into(),
+            suggestion: format!("bum login --provider {id}"),
+        }
+    }
+
+    /// Build an `acp::Error` with this structured payload (UI-SPEC message).
+    pub fn into_acp_error(self) -> acp::Error {
+        let provider_label = match self.provider.as_str() {
+            "codex" => ModelProvider::Codex.display_label(),
+            _ => ModelProvider::Xai.display_label(),
+        };
+        let message = format!(
+            "Cannot switch to model '{}': no usable {} credentials. Run: {}",
+            self.model_id, provider_label, self.suggestion,
+        );
+        acp::Error::new(acp::ErrorCode::InvalidRequest.into(), message)
+            .data(serde_json::to_value(&self).ok())
+    }
+
+    /// Try to parse from an `acp::Error.data` field.
+    pub fn from_acp_error(err: &acp::Error) -> Option<Self> {
+        let data = err.data.as_ref()?;
+        let code = data.get("code")?.as_str()?;
+        if code != MODEL_SWITCH_MISSING_PROVIDER {
+            return None;
+        }
+        serde_json::from_value(data.clone()).ok()
+    }
+
+    /// TUI-friendly short message (same body as ACP message for this code).
+    pub fn user_message(&self) -> String {
+        let provider_label = match self.provider.as_str() {
+            "codex" => ModelProvider::Codex.display_label(),
+            _ => ModelProvider::Xai.display_label(),
+        };
+        format!(
+            "Cannot switch to model '{}': no usable {} credentials. Run: {}",
+            self.model_id, provider_label, self.suggestion,
+        )
+    }
+}
+
+/// Pure missing-provider gate decision for model switch (D-01, D-02, BYOK A3).
+///
+/// Returns `Some(error)` when the switch must fail closed; `None` when the
+/// OAuth-slot gate does not block (BYOK or usable provider slot).
+pub fn missing_provider_gate_error(
+    provider: ModelProvider,
+    model_id: &str,
+    has_own_credentials: bool,
+    slot_usable: bool,
+) -> Option<ModelSwitchMissingProviderError> {
+    if has_own_credentials || slot_usable {
+        return None;
+    }
+    Some(ModelSwitchMissingProviderError::new(provider, model_id))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use serial_test::serial;
     use xai_grok_test_support::EnvGuard;
+
+    #[test]
+    fn p6_model_switch_missing_provider_error_round_trips_acp_data() {
+        let err = ModelSwitchMissingProviderError::new(ModelProvider::Codex, "gpt-5.6-sol");
+        assert_eq!(err.code, MODEL_SWITCH_MISSING_PROVIDER);
+        assert_eq!(err.provider, "codex");
+        assert_eq!(err.model_id, "gpt-5.6-sol");
+        assert_eq!(err.suggestion, "bum login --provider codex");
+
+        let acp_err = err.clone().into_acp_error();
+        let parsed = ModelSwitchMissingProviderError::from_acp_error(&acp_err)
+            .expect("from_acp_error must parse MODEL_SWITCH_MISSING_PROVIDER payload");
+        assert_eq!(parsed, err);
+
+        // camelCase keys in wire data
+        let data = acp_err.data.as_ref().expect("data present");
+        assert_eq!(
+            data.get("code").and_then(|v| v.as_str()),
+            Some(MODEL_SWITCH_MISSING_PROVIDER)
+        );
+        assert_eq!(data.get("provider").and_then(|v| v.as_str()), Some("codex"));
+        assert_eq!(
+            data.get("modelId").and_then(|v| v.as_str()),
+            Some("gpt-5.6-sol")
+        );
+        assert_eq!(
+            data.get("suggestion").and_then(|v| v.as_str()),
+            Some("bum login --provider codex")
+        );
+        assert!(
+            data.get("model_id").is_none(),
+            "wire keys must be camelCase (modelId), not snake_case"
+        );
+
+        // Distinct from IncompatibleAgent
+        assert!(ModelSwitchIncompatibleAgentError::from_acp_error(&acp_err).is_none());
+    }
+
+    #[test]
+    fn p6_model_switch_missing_provider_error_message_includes_cli_suggestion() {
+        for (provider, label) in [
+            (ModelProvider::Codex, "Codex"),
+            (ModelProvider::Xai, "xAI"),
+        ] {
+            let model_id = if provider == ModelProvider::Codex {
+                "gpt-5.6-sol"
+            } else {
+                "grok-build"
+            };
+            let err = ModelSwitchMissingProviderError::new(provider, model_id);
+            let acp_err = err.clone().into_acp_error();
+            let expected = format!(
+                "Cannot switch to model '{model_id}': no usable {label} credentials. Run: bum login --provider {}",
+                provider.as_str()
+            );
+            assert_eq!(acp_err.message, expected);
+            assert_eq!(err.user_message(), expected);
+            assert!(
+                err.suggestion == format!("bum login --provider {}", provider.as_str()),
+                "suggestion must be exact CLI form"
+            );
+        }
+    }
+
+    #[test]
+    fn p6_missing_provider_gate_error_decision_table() {
+        assert!(
+            missing_provider_gate_error(ModelProvider::Codex, "gpt-5.6-sol", false, false)
+                .is_some()
+        );
+        assert!(
+            missing_provider_gate_error(ModelProvider::Codex, "gpt-5.6-sol", true, false)
+                .is_none(),
+            "BYOK must skip OAuth-slot gate"
+        );
+        assert!(
+            missing_provider_gate_error(ModelProvider::Codex, "gpt-5.6-sol", false, true)
+                .is_none(),
+            "usable slot must not block"
+        );
+        assert!(
+            missing_provider_gate_error(ModelProvider::Xai, "grok-build", false, false).is_some()
+        );
+    }
+
     #[test]
     fn main_cli_tools_override_preserves_profile_injection_policy() {
         let overrides = CliAgentOverrides {

@@ -146,6 +146,16 @@ pub fn store_usable(store: &AuthStore) -> bool {
         .any(credential_usable)
 }
 
+/// Whether a provider OAuth slot is usable for switch-time gating (Phase 6 D-02).
+///
+/// Pure decision over an optional on-disk store for **one** provider slot.
+/// Empty / missing store → unusable. Reuses [`store_usable`] / [`credential_usable`]
+/// (refreshable OAuth counts as usable). Does **not** consult xAI-only
+/// `AuthManager` — Codex must never be inferred from the xAI manager alone.
+pub fn provider_slot_usable(store: Option<&AuthStore>) -> bool {
+    store.is_some_and(store_usable)
+}
+
 fn empty_provider_status(provider: AuthProvider) -> ProviderAuthStatus {
     ProviderAuthStatus {
         provider,
@@ -316,6 +326,44 @@ mod tests {
         assert!(!text.contains("secret"));
         assert!(!text.contains("xai-secret"));
         assert!(!text.contains("codex-secret"));
+    }
+
+    #[test]
+    fn p6_provider_slot_usable_empty_store_false() {
+        assert!(
+            !provider_slot_usable(None),
+            "missing store must be unusable"
+        );
+        assert!(
+            !provider_slot_usable(Some(&AuthStore::new())),
+            "empty store must be unusable"
+        );
+    }
+
+    #[test]
+    fn p6_provider_slot_usable_refreshable_true() {
+        let mut store = AuthStore::new();
+        store.insert(
+            "codex::fixture".to_owned(),
+            sample_oidc("expired-access", Some("refresh-token"), true),
+        );
+        assert!(
+            provider_slot_usable(Some(&store)),
+            "expired access + nonblank refresh must be usable (D-02)"
+        );
+    }
+
+    #[test]
+    fn p6_provider_slot_usable_hard_expired_no_refresh_false() {
+        let mut store = AuthStore::new();
+        store.insert(
+            "codex::fixture".to_owned(),
+            sample_oidc("expired-access", None, true),
+        );
+        assert!(
+            !provider_slot_usable(Some(&store)),
+            "hard-expired access without refresh must be unusable"
+        );
     }
 
     #[test]
