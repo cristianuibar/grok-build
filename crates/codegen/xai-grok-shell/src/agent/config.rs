@@ -3151,6 +3151,28 @@ pub fn resolve_model_list(
             }
         }
         resolved = prefetched;
+        // Multi-provider survival: remote prefetch replaces the catalog (xAI prune
+        // intent preserved), then re-append bundled Codex defaults so GPT-5.6 rows
+        // remain on the normal logged-in path. Remove-then-append (not replace-in-
+        // place) so colliding gpt-5.6-* keys land at the end in JSON order Sol→
+        // Terra→Luna and remote cannot rebind those ids to xai. Skip on enterprise
+        // custom models endpoints (has_custom_endpoint).
+        if !cfg.endpoints.has_custom_endpoint() {
+            let codex_defaults: Vec<_> = default_model_entries(&cfg.endpoints)
+                .into_iter()
+                .filter(|(_, entry)| entry.info.provider == ModelProvider::Codex)
+                .collect();
+            for (key, _) in &codex_defaults {
+                resolved.shift_remove(key);
+            }
+            for (key, entry) in codex_defaults {
+                tracing::debug!(
+                    model_key = % key,
+                    "re-appending bundled Codex default after prefetch replace"
+                );
+                resolved.insert(key, entry);
+            }
+        }
     }
     for (key, model_override) in &cfg.config_models {
         let had_base = resolved.contains_key(key);
