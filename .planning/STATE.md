@@ -5,16 +5,15 @@ milestone_name: milestone
 current_phase: 1
 current_phase_name: Product identity & isolated home
 status: executing
-stopped_at: Completed 01-03-PLAN.md
-last_updated: "2026-07-16T02:46:30.000Z"
+stopped_at: Completed 01-02-PLAN.md
+last_updated: "2026-07-16T03:07:23.037Z"
 last_activity: 2026-07-16
-last_activity_desc: Completed 01-03 ship binary as bum
+last_activity_desc: Completed 01-02 twin/managed-bin/updater leaf
 progress:
-  total_phases: 9
+  total_phases: 1
   completed_phases: 0
   total_plans: 5
-  completed_plans: 2
-  percent: 40
+  completed_plans: 3
 ---
 
 # Project State
@@ -29,29 +28,29 @@ See: .planning/PROJECT.md (updated 2026-07-16)
 ## Current Position
 
 Phase: 1 of 9 (Product identity & isolated home)
-Plan: 2 of 5 in current phase
-Status: Executing
-Last activity: 2026-07-16 — Completed 01-01 product home SoT + 01-03 binary ship
+Plan: 4 of 5 in current phase
+Status: Ready to execute
+Last activity: 2026-07-16 — Completed 01-02 twin/managed-bin/updater leaf
 
-Progress: [████░░░░░░] 40%
+Progress: [██████░░░░] 60%
 
 ## Performance Metrics
 
 **Velocity:**
 
-- Total plans completed: 2
-- Average duration: 21.5min
-- Total execution time: 0.7 hours
+- Total plans completed: 3
+- Average duration: 20.7min
+- Total execution time: 1.0 hours
 
 **By Phase:**
 
 | Phase | Plans | Total | Avg/Plan |
 |-------|-------|-------|----------|
-| 01 | 2/5 | 43min | 21.5min |
+| 01 | 3/5 | 62min | 20.7min |
 
 **Recent Trend:**
 
-- Last 5 plans: 01-03 (21min), 01-01 (22min)
+- Last 5 plans: 01-02 (19min), 01-03 (21min), 01-01 (22min)
 - Trend: —
 
 *Updated after each plan completion*
@@ -61,6 +60,7 @@ Progress: [████░░░░░░] 40%
 |------|----------|-------|-------|
 | Phase 01 P03 | 21min | 3 tasks | 5 files |
 | Phase 01 P01 | 22min | 3 tasks | 5 files |
+| Phase 01 P02 | 19min | 3 tasks | 12 files |
 
 ## Accumulated Context
 
@@ -80,6 +80,9 @@ Recent decisions affecting current work:
 - [Phase ?]: Product home override is BUM_HOME only; GROK_HOME is never read as product home
 - [Phase ?]: Pure resolve_product_home takes optional OsString + PathBuf — no process env in unit tests
 - [Phase ?]: Kept public symbol grok_home() and OnceLock static name GROK_HOME this phase
+- [Phase ?]: Twin uses home_dir for SoT parity; no config crate dep this phase
+- [Phase ?]: Managed product bin leaf under home is bum only (no grok alias)
+- [Phase ?]: Download stems may stay grok-*; installed managed command is bum
 
 ### Pending Todos
 
@@ -102,7 +105,7 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-07-16T02:45:32.187Z
-Stopped at: Completed 01-03-PLAN.md
+Last session: 2026-07-16T03:07:23.026Z
+Stopped at: Completed 01-02-PLAN.md
 Resume file: None
-Next: continue Phase 1 remaining plans (01-02, 01-04, 01-05)
+Next: continue Phase 1 remaining plans (01-04, 01-05)
