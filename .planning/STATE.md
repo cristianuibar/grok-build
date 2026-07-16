@@ -4,17 +4,17 @@ milestone: v1.0
 milestone_name: milestone
 current_phase: 6
 current_phase_name: Mid-session switch & missing-provider gate
-current_plan: 4
+current_plan: 5
 status: executing
-stopped_at: Completed 06-05-PLAN.md
-last_updated: "2026-07-16T23:07:53.104Z"
+stopped_at: Completed 06-04-PLAN.md
+last_updated: "2026-07-16T23:38:19.455Z"
 last_activity: 2026-07-16
 last_activity_desc: Completed 06-01 missing-provider shell gate
 progress:
   total_phases: 6
   completed_phases: 5
   total_plans: 29
-  completed_plans: 26
+  completed_plans: 27
 ---
 
 # Project State
@@ -29,13 +29,13 @@ See: .planning/PROJECT.md (updated 2026-07-16)
 ## Current Position
 
 Phase: 6 of 9 (Mid-session switch & missing-provider gate)
-Plan: 4 of 6
+Plan: 5 of 6
 Status: Ready to execute
 Last activity: 2026-07-16 — Completed 06-01 missing-provider shell gate
-Current Plan: 4
+Current Plan: 5
 Total Plans in Phase: 6
 
-Progress: [█████████░] 90% (24/29 plans)
+Progress: [█████████░] 93% (24/29 plans)
 
 ## Performance Metrics
 
@@ -64,6 +64,7 @@ Progress: [█████████░] 90% (24/29 plans)
 | Phase 06 P01 | 16min | 2 tasks | 5 files |
 | Phase 06 P02 | 25min | 2 tasks | 32 files |
 | Phase 06 P05 | 12min | 2 tasks | 1 files |
+| Phase 06 P04 | 29min | 3 tasks | 30 files |
 
 ## Decisions
 
@@ -73,9 +74,12 @@ Progress: [█████████░] 90% (24/29 plans)
 - [Phase ?]: MissingProvider QuestionView Login now / Keep current; Keep current clears deferred zero-persist
 - [Phase ?]: 06-05: History preserve via chat_history.jsonl snapshot; mid-turn non-cancel via hold_agent_completions + cancel_notifications spy
 - [Phase ?]: 06-05: Next-sample route proven by post-switch Authorization carrying target provider token
+- [Phase ?]: Stale-on-error RefreshProviderAuthStatus keeps last dual-slot cache
+- [Phase ?]: needs login badge shared helper for slash /model and settings DynamicEnum; BYOK hasOwnCredentials suppress
+- [Phase ?]: Lifecycle badge refresh: startup post-render + SessionCreated + AuthComplete + FocusGained (not deferred-gated)
 
 ## Session
 
-**Last session:** 2026-07-16T23:07:53.091Z
-**Stopped at:** Completed 06-05-PLAN.md
+**Last session:** 2026-07-16T23:38:19.443Z
+**Stopped at:** Completed 06-04-PLAN.md
 **Resume file:** None
