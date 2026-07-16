@@ -5,8 +5,8 @@
 
 use indexmap::IndexMap;
 use xai_grok_shell::agent::config::{
-    resolve_model_list, Config, ConfigModelOverride, ModelEntry, ModelEntryConfig, ModelInfo,
-    ModelProvider,
+    resolve_model_list, to_acp_model_info, Config, ConfigModelOverride, ModelEntry,
+    ModelEntryConfig, ModelInfo, ModelProvider,
 };
 use xai_grok_shell::agent::models::available_models;
 
@@ -533,5 +533,152 @@ fn mixed_list_with_prefetch() {
     assert!(
         grok_pos < sol_pos,
         "prefetched grok-build must precede appended GPT family; keys={keys:?}"
+    );
+}
+
+// ── Plan 03: ACP to_acp_model_info meta.provider + list name projection ──
+
+/// Helper: build a catalog entry with known provider/name via public fields.
+fn entry_with_provider(cfg: &Config, slug: &str, provider: ModelProvider, name: Option<&str>) -> ModelEntry {
+    let mut entry = ModelEntry::fallback(slug, &cfg.endpoints);
+    entry.info.provider = provider;
+    entry.info.name = name.map(str::to_owned);
+    entry.info.user_selectable = true;
+    entry.info.hidden = false;
+    entry
+}
+
+/// D-10 machine surface: Codex entry projects meta.provider = "codex" and keeps UI-SPEC name.
+#[test]
+fn to_acp_model_info_sets_meta_provider() {
+    let cfg = Config::default();
+    let mut models = IndexMap::new();
+    models.insert(
+        "gpt-5.6-sol".to_owned(),
+        entry_with_provider(
+            &cfg,
+            "gpt-5.6-sol",
+            ModelProvider::Codex,
+            Some("GPT-5.6 Sol (Codex)"),
+        ),
+    );
+
+    let acp = to_acp_model_info(&models);
+    let info = acp
+        .values()
+        .next()
+        .expect("to_acp_model_info must emit one ModelInfo");
+    assert_eq!(
+        info.name.as_str(),
+        "GPT-5.6 Sol (Codex)",
+        "ACP name must pass through catalog name with provider suffix"
+    );
+    let meta = info.meta.as_ref().expect("meta must be present");
+    assert_eq!(
+        meta.get("provider").and_then(|v| v.as_str()),
+        Some("codex"),
+        "meta.provider must be wire id \"codex\"; meta={meta:?}"
+    );
+    assert!(
+        meta.get("agentType").is_some(),
+        "agentType must remain in meta alongside provider; meta={meta:?}"
+    );
+}
+
+/// xAI entry: meta.provider = "xai"; agentType remains a distinct field.
+#[test]
+fn to_acp_model_info_provider_xai() {
+    let cfg = Config::default();
+    let mut models = IndexMap::new();
+    models.insert(
+        "grok-build".to_owned(),
+        entry_with_provider(
+            &cfg,
+            "grok-build",
+            ModelProvider::Xai,
+            Some("Grok Build (xAI)"),
+        ),
+    );
+
+    let acp = to_acp_model_info(&models);
+    let info = acp.values().next().expect("one ModelInfo");
+    let meta = info.meta.as_ref().expect("meta must be present");
+    assert_eq!(
+        meta.get("provider").and_then(|v| v.as_str()),
+        Some("xai"),
+        "meta.provider must be wire id \"xai\"; meta={meta:?}"
+    );
+    assert!(
+        meta.get("agentType").is_some(),
+        "agentType must still be present as a distinct field; meta={meta:?}"
+    );
+    assert_ne!(
+        meta.get("agentType"),
+        meta.get("provider"),
+        "agentType and provider are distinct meta keys"
+    );
+}
+
+/// Name falls back to model id when catalog name is None.
+#[test]
+fn to_acp_model_info_name_falls_back_to_model_id() {
+    let cfg = Config::default();
+    let mut models = IndexMap::new();
+    models.insert(
+        "unnamed-slug".to_owned(),
+        entry_with_provider(&cfg, "unnamed-slug", ModelProvider::Xai, None),
+    );
+
+    let acp = to_acp_model_info(&models);
+    let info = acp.values().next().expect("one ModelInfo");
+    assert_eq!(
+        info.name.as_str(),
+        "unnamed-slug",
+        "ACP name must fall back to model id when name is None"
+    );
+    let meta = info.meta.as_ref().expect("meta must be present");
+    assert_eq!(
+        meta.get("provider").and_then(|v| v.as_str()),
+        Some("xai"),
+        "meta.provider still set on name-fallback path"
+    );
+}
+
+/// Pure projection substitute for slash/settings list labels: default catalog
+/// ACP names carry (xAI) / (Codex) suffixes (selector coverage gate).
+#[test]
+fn acp_list_projection_includes_provider_suffixes() {
+    let list = resolve_model_list(&Config::default(), None);
+    let acp = to_acp_model_info(&list);
+
+    let grok_key = acp
+        .keys()
+        .find(|k| k.0.as_ref() == "grok-build")
+        .expect("ACP map must include grok-build");
+    let sol_key = acp
+        .keys()
+        .find(|k| k.0.as_ref() == "gpt-5.6-sol")
+        .expect("ACP map must include gpt-5.6-sol");
+
+    let grok_name = acp[grok_key].name.as_str();
+    let sol_name = acp[sol_key].name.as_str();
+    assert!(
+        grok_name.contains("(xAI)"),
+        "ACP/list name for grok-build must contain (xAI); got {grok_name:?}"
+    );
+    assert!(
+        sol_name.contains("(Codex)"),
+        "ACP/list name for gpt-5.6-sol must contain (Codex); got {sol_name:?}"
+    );
+
+    let grok_meta = acp[grok_key].meta.as_ref().expect("grok meta");
+    let sol_meta = acp[sol_key].meta.as_ref().expect("sol meta");
+    assert_eq!(
+        grok_meta.get("provider").and_then(|v| v.as_str()),
+        Some("xai")
+    );
+    assert_eq!(
+        sol_meta.get("provider").and_then(|v| v.as_str()),
+        Some("codex")
     );
 }
