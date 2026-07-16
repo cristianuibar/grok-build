@@ -33,10 +33,11 @@ Capabilities already present in this Grok Build fork (baseline the product build
 - [ ] **Missing-provider gate** — Selecting a model for a provider without valid credentials blocks and prompts that provider’s OAuth login (no silent failure mid-turn)
 - [ ] **Quiet local fork** — Disable xAI auto-update channel and product telemetry so bum does not phone home to x.ai as a stock client
 - [ ] **Daily-driver bar** — After v1, bum is usable as the default coding agent for real work: auth, model switch, tools, and sessions work for both providers
+- [ ] **Cross-provider multi-agent orchestration** — Existing Grok Build subagent spawn/resume/roles keep working; improve so a parent on one provider can start a child on another (e.g. main Grok 4.5 → “Codex Sol medium effort” research subagent) with correct model, effort, credentials, and backend routing
 
 ### Out of Scope
 
-- Custom agentic workflows / workflow engine — deferred to a later milestone; v1 is multi-provider identity + routing + rebrand only
+- Custom agentic workflows / workflow engine — deferred to a later milestone; v1 is multi-provider identity + routing + cross-provider subagents + rebrand (not a full custom workflow product)
 - Sharing or importing stock `~/.grok` / Codex credential stores — v1 is isolated `~/.bum` only
 - Official public distribution / signed x.ai install channel for bum — local/team daily driver first
 - Replacing the agent runtime with a new framework — stay on this Grok Build fork’s runtime
@@ -75,7 +76,8 @@ Capabilities already present in this Grok Build fork (baseline the product build
 | Mixed model picker; switch anytime | One session, best model per task | — Pending |
 | Missing provider → block + prompt login | Fail closed and fixable, not mid-request surprise | — Pending |
 | Disable xAI auto-update + telemetry | Private daily-driver fork must not phone home as stock client | — Pending |
-| Custom agentic workflows deferred | Keep v1 shippable: identity + models + rebrand | — Pending |
+| Custom agentic workflows deferred | Keep v1 shippable: identity + models + cross-provider subagents + rebrand | — Pending |
+| Cross-provider subagents in v1 | Parent model/provider must not limit child; NL + tool spawn with model + effort | — Pending |
 | v1 success = feature-complete daily driver | Not a prototype — usable as default coding CLI | — Pending |
 
 ## Evolution
