@@ -408,22 +408,22 @@ let display = if needs_login {
 
 **If this table is empty:** N/A — several discretion items remain.
 
-## Open Questions
+## Open Questions (RESOLVED)
 
-1. **Login now depth for Codex in TUI**  
-   - What we know: Phase 5 shipped CLI Codex OAuth; TUI `Action::Login` is xAI interactive.  
-   - What's unclear: Whether Phase 6 must implement full Codex browser detour in TUI or CLI + poll is enough.  
-   - Recommendation: Ship CLI-always path + deferred auto-retry; wire TUI provider login only if a thin Effect can call existing shell Codex login without large scope.
+1. **Login now depth for Codex in TUI** — RESOLVED (Plan 03 discretion lock + CONTEXT Claude's Discretion):  
+   - xAI Login now: reuse existing mid-session Authenticate / login Effect.  
+   - Codex Login now: CLI-primary is acceptable if no thin TUI Codex OAuth Effect exists — always show `bum login --provider codex`, stash `deferred_model_switch`, never start xAI OAuth as substitute.  
+   - Auto-retry still re-issues `Effect::SwitchModel` on AuthComplete / auth-meta refresh path after successful provider-scoped login (shell gate remains authoritative).
 
-2. **Auth usability snapshot for badges**  
-   - What we know: Pager cannot hit FS in pure suggest_args.  
-   - What's unclear: Existing AppView field for dual-slot usable flags?  
-   - Recommendation: Add lightweight `provider_auth_usable: [bool; 2]` (or map) refreshed on auth lifecycle; optional ACP ext-method later.
+2. **Auth usability snapshot for badges** — RESOLVED (Plan 04):  
+   - Add dual-slot usable flags on `AppView` (display-only; shell gate authoritative).  
+   - Refresh via `apply_auth_meta` / pure setters — never open `auth.json` inside slash `suggest_args`.  
+   - Badge text exact `needs login` (suffix MVP OK per RESEARCH A4 / UI-SPEC).
 
-3. **Bootstrap apply gate**  
-   - What we know: `new_session` / `load_session` call `apply`.  
-   - What's unclear: Should load of session on missing provider error the load or allow with degraded sample?  
-   - Recommendation: Gate user `set_session_model` path hard; for load, fail closed on sample is secondary (not MOD-06 primary) — prefer not opening QuestionView on load.
+3. **Bootstrap apply gate** — RESOLVED (Plan 01):  
+   - Gate **always** inside `model_switch::apply` after `resolve_model_id` (fail-closed for MOD-06).  
+   - TUI QuestionView only maps user-driven `SwitchModelComplete` (Plan 02) — load/new_session may surface typed ACP error without opening the modal.  
+   - Resume/load with an unusable provider model fails closed at apply; do not invent a second skip path that ACP clients could use to bypass the gate.
 
 ## Environment Availability
 
