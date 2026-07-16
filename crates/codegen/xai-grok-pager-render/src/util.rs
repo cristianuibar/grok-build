@@ -6,24 +6,24 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 pub use xai_grok_config::grok_home;
 
-/// Path to `$GROK_HOME/pager.toml`.
+/// Path to `$BUM_HOME/pager.toml` (or `~/.bum/pager.toml` when unset).
 pub fn pager_toml_path() -> PathBuf {
     grok_home().join("pager.toml")
 }
 
-/// User-facing label for the user grok directory (``~/.grok`` or ``$GROK_HOME``).
+/// User-facing label for the user product directory (``~/.bum`` or ``$BUM_HOME``).
 ///
 /// Derived from resolved [`grok_home()`] vs `xai_grok_config::default_grok_home()`,
-/// not from whether `GROK_HOME` is set in the environment.
+/// not from whether `BUM_HOME` is set in the environment.
 pub fn display_grok_home_prefix() -> String {
     if grok_home() == xai_grok_config::default_grok_home() {
-        "~/.grok".to_string()
+        "~/.bum".to_string()
     } else {
-        "$GROK_HOME".to_string()
+        "$BUM_HOME".to_string()
     }
 }
 
-/// User-facing path under [`grok_home()`], e.g. ``~/.grok/config.toml``.
+/// User-facing path under [`grok_home()`], e.g. ``~/.bum/config.toml``.
 pub fn display_user_grok_path(relative: impl AsRef<Path>) -> String {
     let rel = relative.as_ref();
     let prefix = display_grok_home_prefix();
@@ -397,26 +397,26 @@ mod tests {
 
     #[test]
     fn display_grok_home_prefix_default_install() {
-        if std::env::var("GROK_HOME").is_ok() {
+        if std::env::var("BUM_HOME").is_ok() {
             return;
         }
-        assert_eq!(display_grok_home_prefix(), "~/.grok");
+        assert_eq!(display_grok_home_prefix(), "~/.bum");
     }
 
     #[test]
     fn display_user_grok_path_joins_relative() {
         let path = display_user_grok_path("config.toml");
         assert!(path.ends_with("/config.toml") || path.ends_with("\\config.toml"));
-        assert!(path.contains(".grok") || path.contains("$GROK_HOME"));
+        assert!(path.contains(".bum") || path.contains("$BUM_HOME"));
     }
 
     #[test]
-    fn abbreviate_path_uses_home_when_under_default_grok() {
+    fn abbreviate_path_uses_home_when_under_default_bum() {
         if let Ok(home) = std::env::var("HOME") {
             if home.is_empty() {
                 return;
             }
-            let full = format!("{home}/.grok/memory/MEMORY.md");
+            let full = format!("{home}/.bum/memory/MEMORY.md");
             let abbreviated = abbreviate_path(&full);
             assert!(
                 abbreviated.contains("memory/MEMORY.md"),
