@@ -1008,7 +1008,7 @@ fn resolve_model_override_to_config(
     ctx: &SubagentSpawnContext,
 ) -> Option<(xai_grok_sampler::SamplerConfig, acp::ModelId)> {
     use crate::agent::config::{
-        resolve_credentials_for_provider, sampling_config_for_model, EndpointsConfig, ModelProvider,
+        resolve_credentials_for_provider, sampling_config_for_model, ModelProvider,
     };
     let entry = crate::agent::config::find_model_by_id(&ctx.available_models, model_id).cloned()?;
     let canonical_model_id = if ctx.available_models.contains_key(model_id) {
@@ -1018,14 +1018,16 @@ fn resolve_model_override_to_config(
     };
     let session_key = ctx.auth.as_ref().map(|a| a.key.as_str());
     let has_session_key = session_key.is_some();
-    // Phase 4 minimum: provider-aware resolve so Codex models never pick up
-    // XAI_API_KEY. Full dual-slot subagent isolation is Phase 7 — parent session
-    // auth is still xAI-only today, so do not cross-apply that token into the
-    // Codex slot (codex_session_key = None).
-    let endpoints = EndpointsConfig::default();
+    // Provider-aware resolve: never cross-apply parent xAI token into the Codex
+    // slot. Codex uses the same prepare-time auth.json snapshot as main prepare.
+    // Endpoints come from the parent's ModelsManager (catalog stamp provenance),
+    // not a fresh EndpointsConfig::default() that can diverge from the catalog.
+    let endpoints = ctx.models_manager.endpoints();
+    let codex_session_owned =
+        crate::agent::config::snapshot_codex_session_key_from_auth_store();
     let (xai_key, codex_key) = match entry.info.provider {
         ModelProvider::Xai => (session_key, None),
-        ModelProvider::Codex => (None, None),
+        ModelProvider::Codex => (None, codex_session_owned.as_deref()),
     };
     let mut credentials =
         resolve_credentials_for_provider(&entry, &endpoints, xai_key, codex_key);
