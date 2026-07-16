@@ -3479,11 +3479,18 @@ fn default_models(endpoints: &EndpointsConfig) -> IndexMap<String, ModelEntryCon
             let context_window = m
                 .context_window
                 .unwrap_or_else(|| NonZeroU64::new(200_000).expect("200000 is non-zero"));
+            // Production authority for provider-default base (D-02 / D-05 / D-06).
+            // Do not parallel-table base strings outside resolve_provider_route.
+            let route = resolve_provider_route(m.provider, endpoints, None);
+            let api_base_url = match m.provider {
+                ModelProvider::Xai => Some(endpoints.xai_api_base_url.clone()),
+                ModelProvider::Codex => None,
+            };
             let config = ModelEntryConfig {
                 id: m.id,
                 model: m.model,
-                base_url: endpoints.resolve_inference_base_url(),
-                api_base_url: Some(endpoints.xai_api_base_url.clone()),
+                base_url: route.base_url,
+                api_base_url,
                 name: m.name,
                 description: m.description,
                 provider: m.provider,
@@ -3725,6 +3732,20 @@ impl ConfigModelOverride {
         }
         if let Some(v) = self.provider {
             entry.info.provider = v;
+        }
+        // Provider rebind without an explicit base_url: re-normalize base (and
+        // api_base_url) via resolve_provider_route so Codex/xAI endpoints stay
+        // consistent with the new provider (review HIGH rebind / T-04-12).
+        // Explicit base_url wins (D-04); session_oauth_allowed gates OAuth later.
+        if self.provider.is_some() && self.base_url.is_none() {
+            let route = resolve_provider_route(entry.info.provider, endpoints, None);
+            entry.info.base_url = route.base_url;
+            if self.api_base_url.is_none() {
+                entry.api_base_url = match entry.info.provider {
+                    ModelProvider::Xai => Some(endpoints.xai_api_base_url.clone()),
+                    ModelProvider::Codex => None,
+                };
+            }
         }
         if self.max_completion_tokens.is_some() {
             entry.info.max_completion_tokens = self.max_completion_tokens;
@@ -5693,28 +5714,54 @@ reasoning_effort = "low"
     fn default_models_dual_endpoint_routing() {
         let endpoints = EndpointsConfig::default();
         for (model_id, entry) in default_model_entries(&endpoints) {
-            if entry.api_base_url.is_none() {
-                continue;
+            match entry.info.provider {
+                ModelProvider::Xai => {
+                    assert_eq!(
+                        entry.info.base_url,
+                        endpoints.resolve_inference_base_url(),
+                        "{model_id}: xAI catalog base must be inference/proxy path"
+                    );
+                    assert_eq!(
+                        entry.api_base_url.as_deref(),
+                        Some(endpoints.xai_api_base_url.as_str()),
+                        "{model_id}: xAI catalog must stamp api_base_url"
+                    );
+                    let session_creds = resolve_credentials(&entry, Some("tok"));
+                    assert_eq!(
+                        session_creds.base_url,
+                        endpoints.proxy_url(),
+                        "{model_id}: SessionToken must route to cli-chat-proxy"
+                    );
+                    let api_key_creds = ResolvedCredentials {
+                        api_key: Some("key".into()),
+                        base_url: entry
+                            .api_base_url
+                            .clone()
+                            .unwrap_or(entry.info().base_url.clone()),
+                        auth_type: xai_chat_state::AuthType::ApiKey,
+                        auth_scheme: AuthScheme::Bearer,
+                    };
+                    assert_eq!(
+                        api_key_creds.base_url, endpoints.xai_api_base_url,
+                        "{model_id}: ExternalApiKey must route to api.x.ai"
+                    );
+                }
+                ModelProvider::Codex => {
+                    assert_eq!(
+                        entry.info.base_url,
+                        endpoints.resolve_codex_base_url(),
+                        "{model_id}: Codex catalog base must be resolve_codex_base_url"
+                    );
+                    assert!(
+                        entry.api_base_url.is_none(),
+                        "{model_id}: Codex catalog must not stamp xAI api_base_url"
+                    );
+                    assert!(
+                        !entry.info.base_url.contains("cli-chat-proxy"),
+                        "{model_id}: Codex base must not be cli-chat-proxy"
+                    );
+                }
             }
-            let session_creds = resolve_credentials(&entry, Some("tok"));
-            assert_eq!(
-                session_creds.base_url,
-                endpoints.proxy_url(),
-                "{model_id}: SessionToken must route to cli-chat-proxy"
-            );
-            let api_key_creds = ResolvedCredentials {
-                api_key: Some("key".into()),
-                base_url: entry
-                    .api_base_url
-                    .clone()
-                    .unwrap_or(entry.info().base_url.clone()),
-                auth_type: xai_chat_state::AuthType::ApiKey,
-                auth_scheme: AuthScheme::Bearer,
-            };
-            assert_eq!(
-                api_key_creds.base_url, endpoints.xai_api_base_url,
-                "{model_id}: ExternalApiKey must route to api.x.ai"
-            );
         }
     }
     #[test]

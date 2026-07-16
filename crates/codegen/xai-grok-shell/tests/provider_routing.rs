@@ -24,9 +24,9 @@ use indexmap::IndexMap;
 use serial_test::serial;
 use xai_grok_shell::agent::config::{
     inject_url_derived_headers, resolve_credentials, resolve_model_list,
-    resolve_provider_route, sampling_config_for_model, Config, EndpointsConfig, ModelEntry,
-    ModelProvider, CLI_CHAT_PROXY_BASE_URL_DEFAULT, CODEX_BASE_URL_DEFAULT,
-    XAI_API_BASE_URL_DEFAULT,
+    resolve_provider_route, sampling_config_for_model, Config, ConfigModelOverride,
+    EndpointsConfig, ModelEntry, ModelProvider, CLI_CHAT_PROXY_BASE_URL_DEFAULT,
+    CODEX_BASE_URL_DEFAULT, XAI_API_BASE_URL_DEFAULT,
 };
 use xai_grok_shell::sampling::ApiBackend;
 use xai_grok_test_support::EnvGuard;
@@ -282,11 +282,29 @@ fn provider_routing_harness_smoke() {
 #[test]
 fn xai_model_routes_to_proxy_with_xai_token() {
     let endpoints = deterministic_endpoints();
-    let entry = catalog_entry("grok-build");
+    let cfg = Config {
+        endpoints: endpoints.clone(),
+        ..Config::default()
+    };
+    let list = resolve_model_list(&cfg, None);
+    let entry = list
+        .get("grok-build")
+        .cloned()
+        .expect("catalog must include grok-build");
     assert_eq!(
         entry.info.provider.as_str(),
         "xai",
         "grok-build provider must be wire id \"xai\""
+    );
+    assert_eq!(
+        entry.info.base_url,
+        endpoints.resolve_inference_base_url(),
+        "catalog xAI base_url must be stamped via resolve_provider_route"
+    );
+    assert_eq!(
+        entry.api_base_url.as_deref(),
+        Some(endpoints.xai_api_base_url.as_str()),
+        "catalog xAI rows keep api_base_url (D-15 dual endpoint)"
     );
 
     let creds = resolve_credentials(&entry, Some(XAI_FAKE));
@@ -305,27 +323,43 @@ fn xai_model_routes_to_proxy_with_xai_token() {
 }
 
 /// MOD-05 / D-06 / D-09: Codex model → ChatGPT backend base + Codex fake token.
-/// Behavior-RED until Plans 02–03 stamp Codex base_url and dual-key credentials.
 #[test]
 fn codex_model_routes_to_codex_backend_with_codex_token() {
-    let entry = catalog_entry("gpt-5.6-sol");
+    let endpoints = deterministic_endpoints();
+    let cfg = Config {
+        endpoints: endpoints.clone(),
+        ..Config::default()
+    };
+    let list = resolve_model_list(&cfg, None);
+    let entry = list
+        .get("gpt-5.6-sol")
+        .cloned()
+        .expect("catalog must include gpt-5.6-sol");
     assert_eq!(
         entry.info.provider.as_str(),
         "codex",
         "gpt-5.6-sol provider must be wire id \"codex\" (D-02)"
     );
 
-    // Catalog-level RED: stamped base_url must be Codex default, not cli-chat-proxy.
     assert!(
         !entry.info.base_url.contains("cli-chat-proxy"),
-        "MOD-05 RED: gpt-5.6-sol base_url must not contain cli-chat-proxy; got {} \
-         (Plan 02/03: stamp Codex rows with {CODEX_BASE_URL_DEFAULT})",
+        "gpt-5.6-sol base_url must not contain cli-chat-proxy; got {}",
+        entry.info.base_url
+    );
+    assert_eq!(
+        entry.info.base_url,
+        endpoints.resolve_codex_base_url(),
+        "gpt-5.6-sol base_url must equal resolve_codex_base_url; got {}",
         entry.info.base_url
     );
     assert_eq!(
         entry.info.base_url, CODEX_BASE_URL_DEFAULT,
-        "MOD-05 RED: gpt-5.6-sol base_url must equal Codex default {CODEX_BASE_URL_DEFAULT}; got {}",
-        entry.info.base_url
+        "deterministic catalog Codex base must be {CODEX_BASE_URL_DEFAULT}"
+    );
+    assert!(
+        entry.api_base_url.is_none(),
+        "Codex catalog entries must have api_base_url None (D-15); got {:?}",
+        entry.api_base_url
     );
 
     let creds = resolve_credentials(&entry, Some(CODEX_FAKE));
@@ -336,13 +370,77 @@ fn codex_model_routes_to_codex_backend_with_codex_token() {
     );
     assert!(
         !creds.base_url.contains("cli-chat-proxy"),
-        "MOD-05: resolved Codex base_url must not contain cli-chat-proxy; got {}",
+        "resolved Codex base_url must not contain cli-chat-proxy; got {}",
         creds.base_url
     );
     assert_eq!(
         creds.base_url, CODEX_BASE_URL_DEFAULT,
-        "MOD-05 RED: resolved Codex base_url must be {CODEX_BASE_URL_DEFAULT}; got {}",
+        "resolved Codex base_url must be {CODEX_BASE_URL_DEFAULT}; got {}",
         creds.base_url
+    );
+}
+
+/// Review HIGH rebind: provider=codex without base_url re-normalizes base via resolver.
+#[test]
+fn provider_override_rebinds_base_url() {
+    let endpoints = deterministic_endpoints();
+    let mut config_models = IndexMap::new();
+    config_models.insert(
+        "grok-build".to_owned(),
+        ConfigModelOverride {
+            provider: Some(ModelProvider::Codex),
+            // no base_url — rebind must re-normalize
+            ..ConfigModelOverride::default()
+        },
+    );
+    let cfg = Config {
+        endpoints: endpoints.clone(),
+        config_models,
+        ..Config::default()
+    };
+    let list = resolve_model_list(&cfg, None);
+    let rebound = list
+        .get("grok-build")
+        .expect("catalog must include grok-build after provider override");
+    assert_eq!(rebound.info.provider, ModelProvider::Codex);
+    assert_eq!(
+        rebound.info.base_url,
+        endpoints.resolve_codex_base_url(),
+        "provider-only override must re-normalize base via resolve_provider_route"
+    );
+    assert!(
+        rebound.api_base_url.is_none(),
+        "provider rebind to Codex must clear xAI api_base_url"
+    );
+}
+
+/// D-04: provider + explicit base_url keeps the explicit base.
+#[test]
+fn provider_override_explicit_base_preserved() {
+    let endpoints = deterministic_endpoints();
+    let override_url = "https://byok.example/v1";
+    let mut config_models = IndexMap::new();
+    config_models.insert(
+        "grok-build".to_owned(),
+        ConfigModelOverride {
+            provider: Some(ModelProvider::Codex),
+            base_url: Some(override_url.to_owned()),
+            ..ConfigModelOverride::default()
+        },
+    );
+    let cfg = Config {
+        endpoints: endpoints.clone(),
+        config_models,
+        ..Config::default()
+    };
+    let list = resolve_model_list(&cfg, None);
+    let applied = list
+        .get("grok-build")
+        .expect("catalog must include grok-build after override");
+    assert_eq!(applied.info.provider, ModelProvider::Codex);
+    assert_eq!(
+        applied.info.base_url, override_url,
+        "explicit base_url on override must be preserved (D-04)"
     );
 }
 
