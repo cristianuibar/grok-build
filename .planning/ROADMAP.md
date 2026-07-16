@@ -59,7 +59,14 @@ Plans:
   2. Auth store is structured for multiple provider slots (xAI first; second slot reserved without overwriting xAI)
   3. After xAI login, user can start an agent turn that authenticates successfully against the xAI path
 
-**Plans**: TBD
+**Plans**: 4 plans
+
+Plans:
+
+- [ ] 02-01-PLAN.md — Multi-slot AuthDocument schema + read migrate + merge-safe nested write
+- [ ] 02-02-PLAN.md — API key isolation + multi-provider empty-delete / scope-removal prune
+- [ ] 02-03-PLAN.md — AuthManager + credential Bearer path proof against multi-slot store
+- [ ] 02-04-PLAN.md — bum login CLI/path seal + full auth lib suite gate
 
 ### Phase 3: Model catalog & GPT-5.6 entries
 
@@ -176,7 +183,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 →
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. Product identity & isolated home | 5/5 | In Progress|  |
-| 2. Multi-slot credentials & xAI OAuth | 0/TBD | Not started | - |
+| 2. Multi-slot credentials & xAI OAuth | 0/4 | Not started | - |
 | 3. Model catalog & GPT-5.6 entries | 0/TBD | Not started | - |
 | 4. Provider-aware request routing | 0/TBD | Not started | - |
 | 5. Codex OAuth & dual auth lifecycle | 0/TBD | Not started | - |
