@@ -1,15 +1,15 @@
 ---
 phase: 4
 reviewers: [codex]
-reviewed_at: 2026-07-16T13:07:42Z
-cycle: 2
+reviewed_at: 2026-07-16T13:18:04Z
+cycle: 3
 plans_reviewed:
   - 04-01-PLAN.md
   - 04-02-PLAN.md
   - 04-03-PLAN.md
   - 04-04-PLAN.md
   - 04-05-PLAN.md
-plans_commit: 1b9196d
+plans_commit: 851dc02
 ---
 # Cross-AI Plan Review — Phase 4
 
@@ -426,3 +426,142 @@ N/A — only Codex ran (`--codex` only).
 ```text
 /gsd:plan-phase 4 --reviews
 ```
+
+
+---
+
+# Cycle 3 Codex re-review (FINAL before max)
+
+Date: 2026-07-16  
+Plans: post-replan commits `51a30ee`/`851dc02` (HEAD `851dc02`)  
+Reviewer: Codex (source-grounded)  
+Max cycles: 3 — this is the final convergence review cycle
+
+# Cycle 3 Plan Review — Phase 4
+
+## Summary
+
+The five plans at HEAD `851dc027edcf54b4310a82d8bda49a98d40891a1` are implementation-ready for MOD-04/MOD-05. All five cycle-2 HIGH findings and the provider-store MEDIUM are now concretely addressed with named types, production call sites, shared production transforms, and automated verification. The plans correctly target the actual defects at HEAD: provider-blind catalog stamping, single-slot credential resolution, xAI-biased model switching, provider-blind resolver reconstruction, and unauthenticated requests when a live bearer resolver is empty. One new MEDIUM ambiguity remains around whether a custom xAI `models_base_url` is trusted for session OAuth.
+
+## Strengths
+
+- **Plan 01 establishes honest RED contracts.** It explicitly prevents the switch test from claiming success through two pure constructors and requires both credentials to coexist in `never_cross_slot` ([04-01-PLAN.md:15](/home/cristian/bum/grok-build/.planning/phases/04-provider-aware-request-routing/04-01-PLAN.md:15), [04-01-PLAN.md:206](/home/cristian/bum/grok-build/.planning/phases/04-provider-aware-request-routing/04-01-PLAN.md:206)). This matches the current unsafe single-key function, which accepts any supplied session token without provider provenance ([config.rs:4376](/home/cristian/bum/grok-build/crates/codegen/xai-grok-shell/src/agent/config.rs:4376), [config.rs:4384](/home/cristian/bum/grok-build/crates/codegen/xai-grok-shell/src/agent/config.rs:4384)).
+
+- **Plans 02–03 create one production routing authority.** `default_models()` currently assigns the xAI inference base and `api_base_url` to every model, including Codex entries ([config.rs:3432](/home/cristian/bum/grok-build/crates/codegen/xai-grok-shell/src/agent/config.rs:3432), [config.rs:3457](/home/cristian/bum/grok-build/crates/codegen/xai-grok-shell/src/agent/config.rs:3457)). Plans 02–03 require `resolve_provider_route` to drive catalog stamping, provider rebinds, and credential trust rather than duplicating route tables ([04-02-PLAN.md:81](/home/cristian/bum/grok-build/.planning/phases/04-provider-aware-request-routing/04-02-PLAN.md:81), [04-03-PLAN.md:162](/home/cristian/bum/grok-build/.planning/phases/04-provider-aware-request-routing/04-03-PLAN.md:162)).
+
+- **Provider override rebinding is correctly included.** Today `ConfigModelOverride::apply` updates `base_url` and `provider` independently, so changing only the provider leaves the old route attached ([config.rs:3689](/home/cristian/bum/grok-build/crates/codegen/xai-grok-shell/src/agent/config.rs:3689), [config.rs:3701](/home/cristian/bum/grok-build/crates/codegen/xai-grok-shell/src/agent/config.rs:3701)). Plan 03 requires re-normalization through the resolver while preserving explicit URL overrides ([04-03-PLAN.md:168](/home/cristian/bum/grok-build/.planning/phases/04-provider-aware-request-routing/04-03-PLAN.md:168)).
+
+- **Plan 04 now traces the real switch path.** Production currently sends only `SamplerConfig` through `SetSessionModel` ([commands.rs:161](/home/cristian/bum/grok-build/crates/codegen/xai-grok-shell/src/session/commands.rs:161), [model_switch handler:193](/home/cristian/bum/grok-build/crates/codegen/xai-grok-shell/src/agent/handlers/model_switch.rs:193)), then re-resolves `auth_type` from the xAI `AuthManager` inside the session ([model_switch.rs:61](/home/cristian/bum/grok-build/crates/codegen/xai-grok-shell/src/session/acp_session_impl/model_switch.rs:61)). The revised plan mandates a prepared carrier and shared transform A used by both production and tests ([04-04-PLAN.md:126](/home/cristian/bum/grok-build/.planning/phases/04-provider-aware-request-routing/04-04-PLAN.md:126), [04-04-PLAN.md:291](/home/cristian/bum/grok-build/.planning/phases/04-provider-aware-request-routing/04-04-PLAN.md:291)).
+
+- **Reconstruction is made provider-aware at the actual attachment point.** At HEAD, `reconstruct_full_config` activates the xAI resolver using only auth method, BYOK status, and xAI-host classification ([sampler_turn.rs:273](/home/cristian/bum/grok-build/crates/codegen/xai-grok-shell/src/session/acp_session_impl/sampler_turn.rs:273), [sampler_turn.rs:339](/home/cristian/bum/grok-build/crates/codegen/xai-grok-shell/src/session/acp_session_impl/sampler_turn.rs:339)). Plan 04 requires `Option<ModelProvider>` and production use of transform B, with resolver attachment limited to `Some(Xai)` ([04-04-PLAN.md:345](/home/cristian/bum/grok-build/.planning/phases/04-provider-aware-request-routing/04-04-PLAN.md:345), [04-04-PLAN.md:354](/home/cristian/bum/grok-build/.planning/phases/04-provider-aware-request-routing/04-04-PLAN.md:354)).
+
+- **Plan 05 verifies the HTTP boundary, not just configuration fields.** The current client only overrides headers when `current_bearer()` returns `Some`, so an empty resolver can leave the request unauthenticated ([client.rs:549](/home/cristian/bum/grok-build/crates/codegen/xai-grok-sampler/src/client.rs:549), [client.rs:596](/home/cristian/bum/grok-build/crates/codegen/xai-grok-sampler/src/client.rs:596)). The plan requires local authentication errors and zero requests for missing, blank, `None`, and whitespace resolver results ([04-05-PLAN.md:91](/home/cristian/bum/grok-build/.planning/phases/04-provider-aware-request-routing/04-05-PLAN.md:91), [04-05-PLAN.md:206](/home/cristian/bum/grok-build/.planning/phases/04-provider-aware-request-routing/04-05-PLAN.md:206)).
+
+## Cycle-2 Residual Status
+
+| Residual | Status | Plan and source evidence |
+|---|---|---|
+| Unknown provider typing | **FULLY RESOLVED** | Current `ModelAuthFacts` has no provider field ([config.rs:4487](/home/cristian/bum/grok-build/crates/codegen/xai-grok-shell/src/agent/config.rs:4487)). Plan 04 requires `provider: Option<ModelProvider>`, maps catalog hits to `Some`, all unknown/config-failure cases to `None`, and tests `None`, `Some(Xai)`, and `Some(Codex)` attachment behavior ([04-04-PLAN.md:135](/home/cristian/bum/grok-build/.planning/phases/04-provider-aware-request-routing/04-04-PLAN.md:135), [04-04-PLAN.md:334](/home/cristian/bum/grok-build/.planning/phases/04-provider-aware-request-routing/04-04-PLAN.md:334), [04-04-PLAN.md:374](/home/cristian/bum/grok-build/.planning/phases/04-provider-aware-request-routing/04-04-PLAN.md:374)). |
+| Switch test still simulates | **FULLY RESOLVED** | Current production field transfer occurs directly in `handle_set_session_model` ([model_switch.rs:48](/home/cristian/bum/grok-build/crates/codegen/xai-grok-shell/src/session/acp_session_impl/model_switch.rs:48)). Plan 04 mandates production transforms A/B, requires production to call them, forbids parallel field-copy helpers, and runs `switch_changes_next_sample_route` against those functions ([04-04-PLAN.md:116](/home/cristian/bum/grok-build/.planning/phases/04-provider-aware-request-routing/04-04-PLAN.md:116), [04-04-PLAN.md:140](/home/cristian/bum/grok-build/.planning/phases/04-provider-aware-request-routing/04-04-PLAN.md:140), [04-04-PLAN.md:302](/home/cristian/bum/grok-build/.planning/phases/04-provider-aware-request-routing/04-04-PLAN.md:302)). |
+| `auth_type` carrier undefined | **FULLY RESOLVED** | Current `SetSessionModel` lacks provenance and production re-resolves it from the xAI manager ([commands.rs:161](/home/cristian/bum/grok-build/crates/codegen/xai-grok-shell/src/session/commands.rs:161), [model_switch.rs:62](/home/cristian/bum/grok-build/crates/codegen/xai-grok-shell/src/session/acp_session_impl/model_switch.rs:62)). Plan 04 requires `PreparedSamplingConfig` or explicit command fields carrying `auth_type` and provider; model switching must consume the prepared value verbatim ([04-04-PLAN.md:156](/home/cristian/bum/grok-build/.planning/phases/04-provider-aware-request-routing/04-04-PLAN.md:156), [04-04-PLAN.md:282](/home/cristian/bum/grok-build/.planning/phases/04-provider-aware-request-routing/04-04-PLAN.md:282), [04-04-PLAN.md:293](/home/cristian/bum/grok-build/.planning/phases/04-provider-aware-request-routing/04-04-PLAN.md:293)). |
+| OAuth host trust provenance | **FULLY RESOLVED** | Current credential resolution has no endpoint/trust input ([config.rs:4376](/home/cristian/bum/grok-build/crates/codegen/xai-grok-shell/src/agent/config.rs:4376)). Plan 03 fixes the required signature to include the effective `EndpointsConfig`, explicitly bans fresh-default comparisons, requires the same endpoint instance at catalog/prepare time, and tests configured Codex endpoints plus custom-host denial ([04-03-PLAN.md:127](/home/cristian/bum/grok-build/.planning/phases/04-provider-aware-request-routing/04-03-PLAN.md:127), [04-03-PLAN.md:199](/home/cristian/bum/grok-build/.planning/phases/04-provider-aware-request-routing/04-03-PLAN.md:199), [04-03-PLAN.md:210](/home/cristian/bum/grok-build/.planning/phases/04-provider-aware-request-routing/04-03-PLAN.md:210)). |
+| Empty live resolver | **FULLY RESOLVED** | Current `post` silently does nothing when a resolver returns `None` ([client.rs:552](/home/cristian/bum/grok-build/crates/codegen/xai-grok-sampler/src/client.rs:552)). Plan 05 specifies the complete usable-material matrix, request-time protection, whitespace handling, and zero-request mock tests for resolver `None`, resolver whitespace, and blank-static combinations ([04-05-PLAN.md:91](/home/cristian/bum/grok-build/.planning/phases/04-provider-aware-request-routing/04-05-PLAN.md:91), [04-05-PLAN.md:188](/home/cristian/bum/grok-build/.planning/phases/04-provider-aware-request-routing/04-05-PLAN.md:188), [04-05-PLAN.md:200](/home/cristian/bum/grok-build/.planning/phases/04-provider-aware-request-routing/04-05-PLAN.md:200)). |
+| Provider-store errors treated as absence | **FULLY RESOLVED** | Existing parsing already distinguishes `NotFound`, `InvalidData`, and unsupported versions through `io::ErrorKind` ([storage.rs:95](/home/cristian/bum/grok-build/crates/codegen/xai-grok-shell/src/auth/storage.rs:95), [storage.rs:108](/home/cristian/bum/grok-build/crates/codegen/xai-grok-shell/src/auth/storage.rs:108), [storage.rs:122](/home/cristian/bum/grok-build/crates/codegen/xai-grok-shell/src/auth/storage.rs:122)). Plan 04 preserves this through `Result<Option<AuthStore>, E>`, redacted diagnostics, fail-closed callers, and a missing-vs-malformed test ([04-04-PLAN.md:173](/home/cristian/bum/grok-build/.planning/phases/04-provider-aware-request-routing/04-04-PLAN.md:173), [04-04-PLAN.md:280](/home/cristian/bum/grok-build/.planning/phases/04-provider-aware-request-routing/04-04-PLAN.md:280)). |
+
+## Concerns
+
+- **MEDIUM — xAI custom endpoint trust is internally inconsistent and lacks a regression test.** Plan 02 says that an empty model override gives `session_oauth_allowed: true` ([04-02-PLAN.md:108](/home/cristian/bum/grok-build/.planning/phases/04-provider-aware-request-routing/04-02-PLAN.md:108)), but its implementation task says trust is determined from the final URL ([04-02-PLAN.md:197](/home/cristian/bum/grok-build/.planning/phases/04-provider-aware-request-routing/04-02-PLAN.md:197)). This matters because `resolve_inference_base_url()` uses `models_base_url` when configured, even if it is a non-xAI host ([config.rs:310](/home/cristian/bum/grok-build/crates/codegen/xai-grok-shell/src/agent/config.rs:310)). The current reconstruction gate protects this case by requiring `is_first_party_xai_url(base_url)` ([sampler_turn.rs:43](/home/cristian/bum/grok-build/crates/codegen/xai-grok-shell/src/session/acp_session_impl/sampler_turn.rs:43), [sampler_turn.rs:52](/home/cristian/bum/grok-build/crates/codegen/xai-grok-shell/src/session/acp_session_impl/sampler_turn.rs:52)). If the executor follows the unconditional-default wording or persists that result as route trust, an xAI OAuth token could be attached to a custom `models_base_url`. Existing planned custom-host tests cover explicit model overrides, principally Codex, but do not lock this configured xAI endpoint case.
+
+## Suggestions
+
+- Resolve the Plan 02 contradiction explicitly: `session_oauth_allowed` should be derived from the final resolved URL for xAI routes, including when `models_base_url` supplied that URL.
+- Add a test with `provider=Xai`, `endpoints.models_base_url=https://byok.example/v1`, and an xAI session token. Assert `session_oauth_allowed == false` and that credential resolution does not select the session token. If custom xAI endpoint OAuth is intentionally supported, define that endpoint as an explicit trusted endpoint instead of treating every `models_base_url` as trusted.
+
+## Risk Assessment
+
+**Overall residual risk: MEDIUM.** The core MOD-04/MOD-05 routing, credential isolation, model-switch propagation, reconstruction policy, fail-closed behavior, and on-wire verification are all concretely planned against the correct production seams. No cycle-2 HIGH remains. The only actionable issue is a security-relevant ambiguity around xAI custom endpoint trust; clarifying one rule and adding one test should bring residual plan risk to LOW.
+
+- **Residual HIGH count: 0**
+- **Residual actionable MEDIUM/LOW count: 1**
+
+
+---
+
+## Consensus Summary — Cycle 3
+
+Single external reviewer (Codex). Weight is high: findings cite concrete `file:line` evidence against the current tree and against plan text at `851dc02`.
+
+### Progress vs cycle 2
+
+| Bucket | Count | Notes |
+|--------|-------|-------|
+| Cycle-2 residual HIGHs FULLY RESOLVED | **5/5** | unknown provider Option typing; production transforms (not simulation); auth_type carrier; EndpointsConfig OAuth trust; empty live-resolver fail-closed |
+| Cycle-2 residual MEDIUM FULLY RESOLVED | **1/1** | provider-store `Result<Option<AuthStore>>` + redacted diagnostics |
+| Net residual HIGH (cycle 3) | **0** | All prior HIGHs closed at plan level with concrete tasks/verify |
+| Actionable MEDIUM still open | **1** | Plan 02 internal inconsistency: empty override → session_oauth_allowed true vs final-URL first-party rule for custom `models_base_url` |
+
+### Agreed Strengths (cycle 3)
+
+- Plans are implementation-ready for MOD-04/MOD-05 against real production seams.
+- Dual-key credentials + EndpointsConfig trust provenance + production stamping authority.
+- PreparedSamplingConfig / SetSessionModel auth_type+provider carrier; shared transforms A/B.
+- Option\<ModelProvider\> fail-closed reconstruction; xAI resolver only on Some(Xai).
+- Local fail-closed matrix including empty/whitespace live resolver + on-wire Authorization mocks.
+- Sampler full-key log leak fix remains in scope.
+- Scope discipline (no Phase 5/6 OAuth UX).
+
+### Residual concerns (cycle 3)
+
+#### HIGH
+
+None. All cycle-1/2 HIGHs are FULLY RESOLVED in current PLAN.md text with concrete tasks and automated verify.
+
+#### Actionable non-HIGH
+
+1. **MEDIUM — xAI custom endpoint trust inconsistency** (`04-02-PLAN.md` ~108 vs ~197): narrative says empty model override → `session_oauth_allowed: true`, but Task 2 derives trust from **final** base_url first-party classification. `resolve_inference_base_url()` can return a non-xAI `models_base_url` ([config.rs:310](crates/codegen/xai-grok-shell/src/agent/config.rs)). Existing reconstruction already uses `is_first_party_xai_url` ([sampler_turn.rs:43](crates/codegen/xai-grok-shell/src/session/acp_session_impl/sampler_turn.rs)). Missing regression: `provider=Xai` + custom `models_base_url` must deny session OAuth. Not yet locked as an explicit test in plans.
+
+### Divergent Views
+
+N/A — only Codex ran (`--codex` only).
+
+### Cycle 3 status
+
+| Severity | Unresolved count |
+|----------|------------------|
+| HIGH | 0 |
+| MEDIUM actionable | 1 |
+| LOW actionable | 0 |
+
+**Converged on HIGH:** yes (0 residual HIGH)  
+**Fully clean (HIGH+actionable):** no (1 MEDIUM)  
+**Overall residual risk:** MEDIUM → LOW after clarifying Plan 02 final-URL rule + one regression test
+
+### Recommended disposition for the residual MEDIUM
+
+Optional micro-replan or absorb at execute time (executor-safe if Task 2 step 5 final-URL rule wins and test is added):
+
+1. Lock rule: `session_oauth_allowed` from **final resolved URL** first-party check for that provider (including when URL came from `models_base_url` / `codex_base_url`, not only from model override).
+2. Soften/remove the blanket “empty override ⇒ session_oauth_allowed true” narrative (04-02 ~108).
+3. Add test: `provider=Xai`, `endpoints.models_base_url=https://byok.example/v1` → `session_oauth_allowed == false`; credential path does not select xAI session token.
+
+Because this is **max cycle 3** and residual is MEDIUM (not HIGH), orchestrator may treat HIGH-convergence as achieved and proceed to execute, or run one optional replan for cleanliness.
+
+### Next step
+
+```text
+# HIGH-converged (preferred path at max cycles):
+/gsd:execute-phase 4
+
+# Optional cleanliness if MEDIUM must be plan-locked first:
+/gsd:plan-phase 4 --reviews
+```
+
+---
+
+## Current HIGH Concerns
+
+None.
+
+## Current Actionable Non-HIGH Concerns
+
+1. **MEDIUM — xAI custom `models_base_url` session OAuth trust** — Plan 02 narrative (empty override ⇒ `session_oauth_allowed: true`) conflicts with Task 2 final-URL first-party rule. Custom non-xAI `models_base_url` could be treated as trusted for OAuth if executor follows the narrative. Fix: derive trust from final URL + add regression test (`provider=Xai`, custom models_base_url → deny session OAuth). Not deferred; not yet explicit in PLAN verify list.
