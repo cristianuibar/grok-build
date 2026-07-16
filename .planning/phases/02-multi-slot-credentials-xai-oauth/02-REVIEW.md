@@ -25,7 +25,7 @@ findings:
   medium: 3
   low: 3
   total: 8
-status: findings
+status: findings_addressed
 ---
 
 # Phase 2: Code Review Report
@@ -249,3 +249,13 @@ _Reviewed: 2026-07-16T07:59:19Z_
 _Reviewer: gsd-code-reviewer (adversarial)_  
 _Depth: deep_  
 _Base: `89040e7^..HEAD` / `236bea6`_
+
+
+## Fix pass (2026-07-16)
+
+Addressed HI-01 and HI-02 from this review:
+
+- **HI-01:** `read_auth_document_for_write` preserves parseable sibling `providers.*` maps from corrupt multi-slot JSON before backup-rename; empty recovery only when nothing recoverable.
+- **HI-02:** `persist_scope` and enrichment insert the OAuth scope under locked `mutate_auth_document*` (no outside-lock full xAI-slot replace).
+
+MEDIUM (default-path symlink, Unchanged telemetry, lib harness) left as follow-ups / Phase 1 debt.
