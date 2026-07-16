@@ -2,8 +2,8 @@
 phase: 02
 title: Multi-slot credentials & xAI OAuth
 reviewers: [codex]
-cycle: 1
-status: pending_incorporation_c2
+cycle: 2
+status: incorporated
 date: 2026-07-16
 incorporated_date: 2026-07-16
 ---
@@ -324,3 +324,16 @@ Require canonical containment of the existing parent—or simply accept only the
 ## Summary
 
 Cycle 2 is not yet converged. Four prior HIGH findings and all prior MEDIUM findings are incorporated, but the central locking change is not safely threaded through existing lock-holding writers, and the path-isolation design still permits a symlink escape.
+
+---
+
+# Cycle 2 incorporation (planner)
+
+Date: 2026-07-16  
+Status: **incorporated** into PLAN.md files (executable contract updated).
+
+| Finding | Severity | Plan change |
+|---------|----------|-------------|
+| Lock reentrancy / dual mutation API + rewire lock-holders | HIGH | **02-01** Task 1 + Task 3: acquiring `mutate_auth_document` vs guard-held `mutate_auth_document_with_lock`; rewire manager startup cleanup, scope removal, update/save, enrichment; already-locked no-deadlock tests. **02-02** prune/devbox/scope-removal keep dual-API discipline (with-lock when held). |
+| GROK_AUTH_PATH symlink escape / lexical starts_with | HIGH | **02-04** Task 1: accept only exact product-home `auth.json` **or** `dunce::canonicalize` parent containment; forbid starts_with-only; Unix symlink-escape regression test; secure_file path corrected to `xai-grok-shell-base`. |
+| Prior HIGH/MEDIUM (devbox, API keys, purges, version, agent seam, mocks, FileDeleted, phase gate) | — | Kept; not regressed. |
