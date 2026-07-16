@@ -220,6 +220,86 @@ fn devbox_recovery_replaces_only_xai_provider() {
     );
 }
 
+#[tokio::test]
+async fn nested_multi_slot_load_supplies_valid_xai_token() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("auth.json");
+    let cfg = GrokComConfig::default();
+    let scope = cfg.auth_scope();
+    let mut xai = AuthStore::new();
+    xai.insert(
+        scope,
+        GrokAuth {
+            key: "nested-xai-token".to_owned(),
+            auth_mode: AuthMode::Oidc,
+            expires_at: Some(Utc::now() + Duration::hours(1)),
+            ..GrokAuth::test_default()
+        },
+    );
+    crate::auth::storage::write_fixture_auth_document(
+        &path,
+        xai,
+        Some(codex_fixture("nested-codex-token")),
+    )
+    .unwrap();
+
+    let manager = Arc::new(AuthManager::new(dir.path(), cfg));
+
+    assert_eq!(
+        manager.current().map(|auth| auth.key),
+        Some("nested-xai-token".to_owned())
+    );
+    assert_eq!(manager.get_valid_token().await.unwrap(), "nested-xai-token");
+}
+
+#[tokio::test]
+async fn manager_update_preserves_seeded_codex_provider() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("auth.json");
+    let cfg = GrokComConfig::default();
+    let scope = cfg.auth_scope();
+    let mut xai = AuthStore::new();
+    xai.insert(
+        scope,
+        GrokAuth {
+            key: "old-xai-token".to_owned(),
+            auth_mode: AuthMode::Oidc,
+            expires_at: Some(Utc::now() + Duration::hours(1)),
+            ..GrokAuth::test_default()
+        },
+    );
+    crate::auth::storage::write_fixture_auth_document(
+        &path,
+        xai,
+        Some(codex_fixture("codex-survives-update")),
+    )
+    .unwrap();
+    let manager = Arc::new(AuthManager::new(dir.path(), cfg));
+
+    manager
+        .update(GrokAuth {
+            key: "updated-xai-token".to_owned(),
+            auth_mode: AuthMode::Oidc,
+            expires_at: Some(Utc::now() + Duration::hours(1)),
+            ..GrokAuth::test_default()
+        })
+        .await
+        .unwrap();
+
+    let doc = crate::auth::storage::read_auth_document(&path).unwrap();
+    assert_eq!(
+        doc.providers
+            .get(crate::auth::model::PROVIDER_CODEX)
+            .and_then(|slot| slot.get("codex::fixture"))
+            .map(|auth| auth.key.as_str()),
+        Some("codex-survives-update")
+    );
+    assert_eq!(
+        manager.get_valid_token().await.unwrap(),
+        "updated-xai-token"
+    );
+}
+
 #[test]
 fn legacy_scope_fallback_reads_old_auth_json() {
     let dir = tempfile::tempdir().unwrap();

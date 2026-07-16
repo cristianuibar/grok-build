@@ -458,6 +458,117 @@ mod tests {
         }
         Arc::new(mgr)
     }
+
+    fn make_nested_multi_slot_manager(dir: &tempfile::TempDir, token: &str) -> Arc<AuthManager> {
+        let cfg = GrokComConfig::default();
+        let mut xai = crate::auth::model::AuthStore::new();
+        xai.insert(
+            cfg.auth_scope(),
+            GrokAuth {
+                key: token.to_owned(),
+                auth_mode: crate::auth::AuthMode::Oidc,
+                expires_at: Some(Utc::now() + ChronoDuration::hours(1)),
+                ..GrokAuth::test_default()
+            },
+        );
+        let mut codex = crate::auth::model::AuthStore::new();
+        codex.insert(
+            "codex::fixture".to_owned(),
+            GrokAuth {
+                key: "reserved-codex-token".to_owned(),
+                auth_mode: crate::auth::AuthMode::ApiKey,
+                ..GrokAuth::test_default()
+            },
+        );
+        crate::auth::storage::write_fixture_auth_document(
+            &dir.path().join("auth.json"),
+            xai,
+            Some(codex),
+        )
+        .unwrap();
+        Arc::new(AuthManager::new(dir.path(), cfg))
+    }
+
+    #[test]
+    fn nested_multi_slot_manager_supplies_provider_snapshot_and_bearer() {
+        let _guard = EarlyInvalidationGuard::pin_to_default();
+        let dir = tempfile::tempdir().unwrap();
+        let manager = make_nested_multi_slot_manager(&dir, "provider-xai-token");
+        let provider = ShellAuthCredentialProvider::new(manager, None, None);
+
+        assert_eq!(
+            provider.snapshot().token.as_deref(),
+            Some("provider-xai-token")
+        );
+        let request = xai_grok_auth::HttpAuth::apply(
+            &provider,
+            reqwest::Client::new().get("https://example.test"),
+            "https://example.test",
+        )
+        .build()
+        .unwrap();
+        assert_eq!(
+            request
+                .headers()
+                .get(reqwest::header::AUTHORIZATION)
+                .and_then(|value| value.to_str().ok()),
+            Some("Bearer provider-xai-token")
+        );
+        assert_eq!(
+            request
+                .headers()
+                .get("x-xai-token-auth")
+                .and_then(|value| value.to_str().ok()),
+            Some("xai-grok-cli")
+        );
+    }
+
+    #[tokio::test]
+    async fn nested_auth_seeds_sampling_api_key_and_sampler_bearer() {
+        use xai_grok_sampling_types::{
+            ContentPart, ConversationItem, ConversationRequest, UserItem,
+        };
+
+        let _guard = EarlyInvalidationGuard::pin_to_default();
+        let dir = tempfile::tempdir().unwrap();
+        let manager = make_nested_multi_slot_manager(&dir, "turn-xai-token");
+        let sampling_api_key = manager.get_valid_token().await.unwrap();
+        let (base_url, _accepts, heads) = xai_grok_test_support::spawn_counting_server().await;
+        let sampling_config = xai_grok_sampler::SamplerConfig {
+            api_key: Some(sampling_api_key),
+            base_url,
+            model: "test-model".to_owned(),
+            ..Default::default()
+        };
+        assert_eq!(
+            sampling_config.api_key.as_deref(),
+            Some("turn-xai-token"),
+            "agent_ops seeds sampling_config.api_key from AuthManager"
+        );
+        let client = xai_grok_sampler::SamplingClient::new(sampling_config).unwrap();
+        let request = ConversationRequest {
+            items: vec![ConversationItem::User(UserItem {
+                content: vec![ContentPart::Text {
+                    text: Arc::<str>::from("hello"),
+                }],
+                ..Default::default()
+            })],
+            ..Default::default()
+        };
+
+        let _ = client.conversation(request).await;
+
+        let heads = heads.lock().unwrap();
+        assert_eq!(heads.len(), 1);
+        assert!(
+            heads[0]
+                .to_ascii_lowercase()
+                .contains("authorization: bearer turn-xai-token"),
+            "sampler request must use the token seeded through sampling_config.api_key: {}",
+            heads[0]
+        );
+    }
+
     /// `apply()` and `snapshot()` agree (snapshot==wire invariant) when the
     /// in-memory token is fresh.
     #[test]
