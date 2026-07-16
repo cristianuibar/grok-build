@@ -155,8 +155,8 @@ Terminal monospaced — “size” is **role weight + Theme color**, not px. Exa
 | CLI default line | `Default model: {id}` |
 | CLI current row | `  * {id} ({name})` — id first for scripting; name carries provider |
 | CLI other row | `  - {id} ({name})` |
-| Empty state heading | `No models available` |
-| Empty state body | `No selectable models in the catalog. Check config models or restart bum.` |
+| Empty state heading | `No models available` — **N/A for slash `/model` when catalog empty**: authoritative behavior is `suggest_args` returns `None` (no dropdown). String reserved for surfaces that render an empty list panel (if any); do not invent new empty-state chrome this phase. |
+| Empty state body | `No selectable models in the catalog. Check config models or restart bum.` — same authority as heading: N/A when slash returns no dropdown |
 | Error state (unknown pick) | `Unknown model: {input}` |
 | Error state (empty `/model` args) | `Usage: /model <name> [effort]` |
 | Destructive confirmation | **none this phase** — no delete/logout in catalog UI |
@@ -182,8 +182,8 @@ Terminal monospaced — “size” is **role weight + Theme color**, not px. Exa
 
 | Surface | Behavior |
 |---------|----------|
-| `/model` / `/m` | Arg dropdown lists all user-selectable models in catalog order; display = name (with provider suffix); description = catalog description; resolve by name **or** id |
-| Settings → Default model | DynamicEnum from active catalog; same names/descriptions; no provider filter |
+| `/model` / `/m` | Arg dropdown lists all user-selectable models in catalog order; display = name (with provider suffix); description = catalog description when present; resolve by name **or** id |
+| Settings → Default model | DynamicEnum from active catalog; inherits **provider-labeled names only** (per-row descriptions may be empty / N/A — no extra description plumbing required this phase); no provider filter |
 | `bum models` | Prints default id + flat list with id and provider-bearing name; mark current with `*` |
 | ACP `ModelInfo` | `name` already includes provider suffix; optional meta key `provider` (`"xai"` \| `"codex"`) for machine consumers — discretion allowed if wire already crowded; UI must not depend on meta alone for the visible label |
 
@@ -214,7 +214,7 @@ Terminal monospaced — “size” is **role weight + Theme color**, not px. Exa
 | Shell model types | `xai-grok-shell` `ModelInfo` / `ModelEntry` | Persist/parse `provider`; default missing → `xai` |
 | ACP projection | `to_acp_model_info` | Pass through name (with suffix); optional meta `provider` |
 | Slash model items | `slash/commands/model.rs` `build_model_items` | No structural change if `info.name` already labeled |
-| Settings DynamicEnum | settings registry `default_model` | Inherits catalog names |
+| Settings DynamicEnum | settings registry `default_model` | Inherits provider-labeled catalog **names only** (descriptions empty OK) |
 | CLI list | `pager/src/models.rs` | Include display name with provider next to id |
 | Picker row renderer | `views/picker.rs` | Reuse; no new badge column |
 
@@ -229,7 +229,7 @@ Applicable state considerations resolved: **8 covered, 0 backstop, 0 unresolved*
 
 | Category | Element(s) | Status | Resolution / Reason |
 |----------|------------|--------|---------------------|
-| empty | model list-collection (`/model`, settings enum, CLI) | ✅ covered | Empty catalog renders **No models available** + body from Copywriting; slash `suggest_args` returns `None` when `models.is_empty()` (no dropdown) |
+| empty | model list-collection (`/model`, settings enum, CLI) | ✅ covered | **Authoritative:** slash `suggest_args` returns `None` when `models.is_empty()` (no dropdown). Copywriting “No models available” is N/A for that path. Settings empty enum / CLI empty list: no crash; no provider filter. |
 | loading | model list-collection | ✅ covered | Phase 3 catalog is embedded defaults (+ existing remote merge). No dedicated spinner: show last-known/merged catalog immediately; remote prefetch must not strip GPT rows while in flight |
 | error | model pick / unknown id | ✅ covered | **Unknown model: {input}** or usage string; list itself does not enter a hard error empty-state for partial remote failure — keep defaults |
 | populated | model list-collection | ✅ covered | Flat ordered list: Grok/xAI first, then Sol/Terra/Luna; each row shows provider suffix; Grok + GPT visible together |
@@ -271,6 +271,8 @@ Applicable state considerations resolved: **8 covered, 0 backstop, 0 unresolved*
 3. CLI lists both id and name for machine + human readers
 4. Optional ACP meta `provider` allowed; UI label does not depend on it alone
 5. No per-provider colors this phase
+6. **Settings names-only** (review cycle 1): DynamicEnum does not require per-row description plumbing this phase
+7. **Empty catalog authority** (review cycle 1): no-dropdown `None` for slash; empty-state copy N/A on that path
 
 ---
 

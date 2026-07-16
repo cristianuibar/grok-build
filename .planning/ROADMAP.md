@@ -83,9 +83,9 @@ Plans:
 **Plans:** 3 plans
 
 Plans:
-- [ ] 03-01-PLAN.md — Wave 0 model_catalog integration harness + provider schema + embedded mixed catalog
-- [ ] 03-02-PLAN.md — Prefetch Codex union-append merge + dual-auth visibility (integration tests)
-- [ ] 03-03-PLAN.md — ACP meta.provider + pub format_cli_model_row CLI surface (integration tests)
+- [ ] 03-01-PLAN.md — Wave 0 compiling harness + ModelProvider schema/override chain + embedded mixed catalog
+- [ ] 03-02-PLAN.md — Prefetch Codex union-append + collision authority + dual-auth visibility
+- [ ] 03-03-PLAN.md — ACP meta.provider + CLI format_cli_model_row + required /model UAT
 
 **UI hint**: yes
 
