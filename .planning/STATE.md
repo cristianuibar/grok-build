@@ -5,15 +5,15 @@ milestone_name: milestone
 current_phase: 3
 current_phase_name: Model catalog & GPT-5.6 entries
 status: in_progress
-stopped_at: Completed 03-01-PLAN.md
-last_updated: "2026-07-16T10:21:04.327Z"
+stopped_at: Completed 03-02-PLAN.md
+last_updated: "2026-07-16T10:25:37.223Z"
 last_activity: 2026-07-16
-last_activity_desc: Phase 3 plan 01 complete — ModelProvider + mixed catalog
+last_activity_desc: Phase 3 plan 02 prefetch Codex remove-then-append + visibility
 progress:
-  total_phases: 9
+  total_phases: 3
   completed_phases: 2
   total_plans: 12
-  completed_plans: 10
+  completed_plans: 11
 ---
 
 # Project State
@@ -28,11 +28,11 @@ See: .planning/PROJECT.md (updated 2026-07-16)
 ## Current Position
 
 Phase: 3 of 9 (Model catalog & GPT-5.6 entries)
-Plan: 2 of 3 (next: 03-02-PLAN.md)
-Status: In progress — 03-01 complete
-Last activity: 2026-07-16 — Phase 3 plan 01 ModelProvider + mixed GPT-5.6 catalog
+Plan: 3 of 3 (next: 03-03-PLAN.md)
+Status: In progress — 03-02 complete
+Last activity: 2026-07-16 — Phase 3 plan 02 prefetch Codex remove-then-append + dual-auth visibility
 
-Progress: [████████░░] 83%
+Progress: [█████████░] 92%
 
 ## Performance Metrics
 
@@ -64,6 +64,7 @@ Progress: [████████░░] 83%
 | Phase 01 P04 | 16min | 3 tasks | 61 files |
 | Phase 01 P05 | 20min | 3 tasks | 16 files |
 | Phase 03 P01 | 11min | 3 tasks | 9 files |
+| Phase 03 P02 | 3min | 3 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -95,6 +96,9 @@ Recent decisions affecting current work:
 - [Phase ?]: ModelProvider (xai|codex) explicit on catalog chain; missing defaults to xai
 - [Phase ?]: GPT-5.6 Sol/Terra/Luna ship with stock agent_type; routing deferred to Phase 4
 - [Phase ?]: Phase 3 catalog proofs use cargo test --test model_catalog (not shell --lib)
+- [Phase ?]: Prefetch collision uses remove-then-append of ModelProvider::Codex rows (Sol→Terra→Luna after remote), not replace-in-place
+- [Phase ?]: Empty Some(prefetched) still injects bundled Codex when !has_custom_endpoint (Q1)
+- [Phase ?]: GPT catalog visibility independent of Codex login; available_models only uses visible_for_auth
 
 ### Pending Todos
 
@@ -117,7 +121,7 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-07-16T10:21:04.319Z
-Stopped at: Completed 03-01-PLAN.md
+Last session: 2026-07-16T10:25:37.213Z
+Stopped at: Completed 03-02-PLAN.md
 Resume file: None
 Next: continue Phase 1 remaining plans (01-04, 01-05)
