@@ -2,7 +2,7 @@
 phase: 02
 title: Multi-slot credentials & xAI OAuth
 reviewers: [codex]
-cycle: 2
+cycle: 3
 status: incorporated
 date: 2026-07-16
 incorporated_date: 2026-07-16
@@ -337,3 +337,45 @@ Status: **incorporated** into PLAN.md files (executable contract updated).
 | Lock reentrancy / dual mutation API + rewire lock-holders | HIGH | **02-01** Task 1 + Task 3: acquiring `mutate_auth_document` vs guard-held `mutate_auth_document_with_lock`; rewire manager startup cleanup, scope removal, update/save, enrichment; already-locked no-deadlock tests. **02-02** prune/devbox/scope-removal keep dual-API discipline (with-lock when held). |
 | GROK_AUTH_PATH symlink escape / lexical starts_with | HIGH | **02-04** Task 1: accept only exact product-home `auth.json` **or** `dunce::canonicalize` parent containment; forbid starts_with-only; Unix symlink-escape regression test; secure_file path corrected to `xai-grok-shell-base`. |
 | Prior HIGH/MEDIUM (devbox, API keys, purges, version, agent seam, mocks, FileDeleted, phase gate) | — | Kept; not regressed. |
+---
+
+# Cycle 3 Codex re-review — CONVERGED
+
+Date: 2026-07-16
+
+## Resolution checklist
+
+1. **RESOLVED — Dual mutation API**
+   - Plan 01 now requires distinct acquiring and caller-held-guard APIs.
+   - Startup cleanup, scope removal, refresh persistence, and locked enrichment are explicitly rewired to the guard-held path.
+   - Enrichment after lock timeout uses the acquiring merge path.
+   - Concurrency and already-locked no-deadlock tests are mandatory.
+   - This matches the current lock ownership visible in [manager.rs](/home/cristian/bum/grok-build/crates/codegen/xai-grok-shell/src/auth/manager.rs:314) and [enrichment.rs](/home/cristian/bum/grok-build/crates/codegen/xai-grok-shell/src/auth/manager/enrichment.rs:145).
+
+2. **RESOLVED — Symlink-safe product-home containment**
+   - Plan 04 permits only exact product-home `auth.json` or canonical-parent containment using `dunce::canonicalize`.
+   - Lexical `starts_with` alone is explicitly forbidden.
+   - A Unix symlink-escape regression test is required.
+   - This directly addresses the current arbitrary override in [manager.rs](/home/cristian/bum/grok-build/crates/codegen/xai-grok-shell/src/auth/manager.rs:295) and the symlink-following writer in [secure_file.rs](/home/cristian/bum/grok-build/crates/codegen/xai-grok-shell-base/src/util/secure_file.rs:72).
+
+3. **Prior MEDIUMs**
+   - Unsupported-version fail-closed handling: incorporated.
+   - Honest `FileDeleted`: incorporated.
+   - Primary agent-turn Bearer seam: incorporated.
+   - Browser/device-code multi-slot assertions: incorporated.
+   - Credential-provider/util phase-gate filters: incorporated.
+
+**Unresolved HIGH: 0**  
+**Actionable MEDIUM absent from PLAN.md: 0**
+
+## New concerns (only if blocking)
+
+None.
+
+## Risk Assessment (MEDIUM)
+
+The plans are complete, but implementation remains moderately intricate because production has both unlocked login writers and caller-held refresh/enrichment writers. The dual API contract and required no-deadlock tests adequately control that risk.
+
+## Summary
+
+**CONVERGED.** Both cycle-2 HIGH findings are fully incorporated, all previously actionable MEDIUM findings remain covered, and no new blocking gap was found.
