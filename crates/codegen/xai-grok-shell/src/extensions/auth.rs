@@ -119,14 +119,59 @@ async fn handle_get_url(agent: &MvpAgent) -> ExtResult {
 async fn handle_logout(agent: &MvpAgent, args: &acp::ExtRequest) -> ExtResult {
     #[derive(Deserialize)]
     struct LogoutParams {
+        /// Legacy xAI scope key (only valid with `provider: "xai"`).
+        #[serde(default)]
         scope: Option<String>,
+        /// Dual-auth provider wire id (`xai` | `codex`).
+        #[serde(default)]
+        provider: Option<String>,
+        /// Explicit dual clear of both provider slots.
+        #[serde(default)]
+        all: bool,
     }
 
     let params: LogoutParams = serde_json::from_str(args.params.get())
         .map_err(|e| acp::Error::invalid_params().data(format!("invalid params: {e}")))?;
 
-    let result = crate::auth::perform_logout(&agent.auth_manager, params.scope.as_deref())
-        .map_err(|e| acp::Error::internal_error().data(format!("failed to logout: {e}")))?;
+    // Dual-safe contract (AUTH-03 / D-05 / T-05-14): bare ACP logout must not
+    // dual-wipe or report ok while nonblocking remove_scope skips disk.
+    // Require explicit provider or all=true. Prefer CLI for selective logout.
+    if !params.all && params.provider.is_none() {
+        return Err(acp::Error::invalid_params().data(
+            "Specify provider (xai|codex) or all=true. CLI: bum logout --provider … | --all",
+        ));
+    }
+
+    let auth_file = crate::util::grok_home::grok_home().join("auth.json");
+
+    let (was_logged_in, email, api_key_still_set) = if params.all {
+        let result = crate::auth::logout_all_provider_slots(&auth_file)
+            .map_err(|e| acp::Error::internal_error().data(format!("failed to logout: {e}")))?;
+        // Secondary in-memory xAI invalidate after blocking disk clear.
+        let _ = agent.auth_manager.clear();
+        crate::managed_config::clear_orphan();
+        (result.was_logged_in, result.email, result.api_key_still_set)
+    } else {
+        let provider_str = params.provider.as_deref().unwrap_or_default();
+        let provider = crate::auth::AuthProvider::parse(provider_str).ok_or_else(|| {
+            acp::Error::invalid_params().data(format!(
+                "Unknown provider: {provider_str}. Use provider xai or codex, or all=true."
+            ))
+        })?;
+        let result = crate::auth::logout_provider_slot(&auth_file, provider)
+            .map_err(|e| acp::Error::internal_error().data(format!("failed to logout: {e}")))?;
+        if matches!(provider, crate::auth::AuthProvider::Xai) {
+            // Secondary memory only — disk already cleared via blocking API.
+            if let Some(scope) = params.scope.as_deref() {
+                let _ = agent.auth_manager.remove_scope(scope);
+            } else {
+                let _ = agent.auth_manager.clear();
+            }
+            crate::managed_config::clear_orphan();
+        }
+        (result.was_logged_in, result.email, result.api_key_still_set)
+    };
+
     // `auth.lifecycle` (not `auth`) avoids colliding with the pre-existing
     // per-request `AuthManager::auth()` `#[instrument]` span.
     tracing::info_span!("auth.lifecycle", action = "logout", success = true).in_scope(|| {});
@@ -135,9 +180,9 @@ async fn handle_logout(agent: &MvpAgent, args: &acp::ExtRequest) -> ExtResult {
 
     to_raw_response(&serde_json::json!({
         "ok": true,
-        "was_logged_in": result.was_logged_in,
-        "email": result.email,
-        "api_key_still_set": result.api_key_still_set,
+        "was_logged_in": was_logged_in,
+        "email": email,
+        "api_key_still_set": api_key_still_set,
     }))
 }
 

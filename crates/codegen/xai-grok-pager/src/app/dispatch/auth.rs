@@ -15,9 +15,16 @@ use crate::scrollback::blocks::SessionEvent;
 // Auth dispatch
 // ---------------------------------------------------------------------------
 
-/// `/logout` -- ask the shell to clear auth, then return to the login screen.
-pub(super) fn dispatch_logout(_app: &mut AppView) -> Vec<Effect> {
-    vec![Effect::Logout]
+/// `/logout` — dual-auth fail-closed (D-03 / D-05 / AUTH-03).
+///
+/// Bare TUI `/logout` must **not** emit `Effect::Logout` that would clear
+/// credentials when both provider slots may exist. Point users at selective
+/// CLI logout; ACP bare logout is also fail-closed (extensions/auth.rs).
+pub(super) fn dispatch_logout(app: &mut AppView) -> Vec<Effect> {
+    app.show_toast(
+        "Log out via CLI: bum logout --provider xai|codex  or  bum logout --all",
+    );
+    vec![]
 }
 
 /// Ensure `login_method_id` is populated from stored auth methods.

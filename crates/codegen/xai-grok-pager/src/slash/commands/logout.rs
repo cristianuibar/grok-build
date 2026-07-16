@@ -1,4 +1,7 @@
-//! `/logout` -- remove auth credentials and return to the login screen.
+//! `/logout` -- dual-safe fail-closed pointer to selective CLI logout.
+//!
+//! Bare `/logout` must not dual-wipe both provider slots (AUTH-03 / D-03 / D-05).
+//! Use `bum logout --provider xai|codex` or `bum logout --all`.
 
 use crate::app::actions::Action;
 use crate::slash::command::{CommandExecCtx, CommandResult, SlashCommand};
@@ -11,7 +14,7 @@ impl SlashCommand for LogoutCommand {
     }
 
     fn description(&self) -> &str {
-        "Log out and return to the login screen"
+        "Log out of a provider (CLI: bum logout --provider …)"
     }
 
     fn usage(&self) -> &str {
