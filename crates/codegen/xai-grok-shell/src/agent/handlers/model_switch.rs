@@ -112,8 +112,8 @@ pub(crate) async fn apply(
             }
         }
     }
-    let mut model_sampling =
-        agent.prepare_sampling_config_for_model(&model, handle.origin_client.clone());
+    let mut prepared =
+        agent.prepare_prepared_sampling_config_for_model(&model, handle.origin_client.clone());
     if let Some(eff) = effort_override {
         if agent
             .models_manager
@@ -123,7 +123,7 @@ pub(crate) async fn apply(
                 session_id = % session_id.0, effort = % eff,
                 "set_session_model: applying reasoning_effort override from meta"
             );
-            model_sampling.reasoning_effort = Some(eff);
+            prepared.sampler_config.reasoning_effort = Some(eff);
         } else {
             tracing::warn!(
                 session_id = % session_id.0, model_id = % model_id.0, effort = % eff,
@@ -131,7 +131,10 @@ pub(crate) async fn apply(
             );
         }
     }
-    let applied_effort = model_sampling.reasoning_effort;
+    let applied_effort = prepared.sampler_config.reasoning_effort;
+    let prepared_auth_type = prepared.auth_type;
+    let prepared_provider = prepared.provider;
+    let model_sampling = prepared.sampler_config;
     let gate_closed = !handle
         .gateway_enabled
         .load(std::sync::atomic::Ordering::Relaxed);
@@ -192,6 +195,8 @@ pub(crate) async fn apply(
     let (tx, rx) = oneshot::channel();
     let _ = handle.cmd_tx.send(SessionCommand::SetSessionModel {
         sampling_config: model_sampling,
+        auth_type: prepared_auth_type,
+        provider: prepared_provider,
         use_concise,
         apply_prompt_override,
         skip_prompt_rewrite: did_rebuild || model_unchanged,

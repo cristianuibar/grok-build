@@ -834,6 +834,7 @@ async fn model_auth_facts_memo_serves_cached_status_and_keys_on_model() {
                 ModelAuthFacts {
                     byok: ModelByok::Byok,
                     auth_scheme: Default::default(),
+                    provider: Some(crate::agent::config::ModelProvider::Xai),
                 },
             )));
 
@@ -875,6 +876,7 @@ async fn reconstruct_full_config_no_bearer_resolver_for_byok_model_on_session_me
                 ModelAuthFacts {
                     byok: ModelByok::Byok,
                     auth_scheme: Default::default(),
+                    provider: Some(crate::agent::config::ModelProvider::Xai),
                 },
             )));
 
@@ -920,6 +922,7 @@ async fn set_session_model_invalidates_byok_memo_for_same_model_id() {
                 ModelAuthFacts {
                     byok: ModelByok::NotByok,
                     auth_scheme: Default::default(),
+                    provider: Some(crate::agent::config::ModelProvider::Xai),
                 },
             )));
 
@@ -955,7 +958,15 @@ async fn set_session_model_invalidates_byok_memo_for_same_model_id() {
                 header_injector: None,
             };
             let _ = actor
-                .handle_set_session_model(cfg, false, false, true, 85)
+                .handle_set_session_model(
+                    cfg,
+                    xai_chat_state::AuthType::ApiKey,
+                    crate::agent::config::ModelProvider::Xai,
+                    false,
+                    false,
+                    true,
+                    85,
+                )
                 .await;
 
             assert!(

@@ -9,7 +9,10 @@ use agent_client_protocol as acp;
 use chrono::{DateTime, Duration as ChronoDuration, Utc};
 use indexmap::IndexMap;
 
-use crate::agent::config::{self, ModelEntry, resolve_credentials, sampling_config_for_model};
+use crate::agent::config::{
+    self, ModelEntry, prepare_sampling_credentials, sampling_config_for_model,
+    snapshot_codex_session_key_from_auth_store,
+};
 use crate::auth::{AuthManager, GrokAuth, GrokComConfig};
 use crate::remote::{FetchModelsResult, fetch_models_blocking};
 use crate::sampling::SamplerConfig as SamplingConfig;
@@ -946,9 +949,19 @@ impl ModelsManager {
             }
         };
 
-        let session_auth = auth_manager.current_or_expired();
-        let credentials =
-            resolve_credentials(current_model, session_auth.as_ref().map(|a| a.key.as_str()));
+        // Dual-key: xAI AuthManager for xAI slot; Codex snapshot from
+        // providers.codex at prepare time (never cross-apply xAI key as Codex).
+        let xai_session_key = auth_manager
+            .current_or_expired()
+            .map(|a| a.key);
+        // Phase 4: Codex credentials are a disk snapshot (not live AuthManager).
+        let codex_session_key = snapshot_codex_session_key_from_auth_store();
+        let credentials = prepare_sampling_credentials(
+            current_model,
+            &config.endpoints,
+            xai_session_key.as_deref(),
+            codex_session_key.as_deref(),
+        );
 
         sampling_config_for_model(
             current_model,

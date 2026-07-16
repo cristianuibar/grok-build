@@ -274,7 +274,15 @@ impl SessionActor {
         let auth_method = self.auth_method_id.load();
         let gate =
             SessionTokenAuthGate::new(auth_method.as_deref(), model_facts.byok, &cfg.base_url);
-        let use_bearer_resolver = gate.active();
+        let session_token_gate_active = gate.active();
+        // Transform B: attach xAI AuthManagerBearerResolver only for Some(Xai).
+        // Unknown (None) and Codex never attach — credential ownership is catalog
+        // Option provider, not URL heuristics (T-04-02 / T-04-09).
+        // Phase 5: live multi-principal Codex AuthManager refresh (snapshot only here).
+        let use_bearer_resolver = crate::agent::config::reconstruct_attach_policy_from_facts(
+            &model_facts,
+            session_token_gate_active,
+        );
         self.log_auth_gate_unknown("reconstruct_full_config", gate, &cfg.base_url);
         let auth_scheme = model_facts.auth_scheme;
         let mut extra_headers = cfg.extra_headers;

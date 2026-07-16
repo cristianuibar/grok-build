@@ -5,6 +5,8 @@ impl SessionActor {
     pub(super) async fn handle_set_session_model(
         &self,
         sampling_config: xai_grok_sampler::SamplerConfig,
+        auth_type: xai_chat_state::AuthType,
+        provider: crate::agent::config::ModelProvider,
         use_concise: bool,
         apply_prompt_override: bool,
         skip_prompt_rewrite: bool,
@@ -45,35 +47,24 @@ impl SessionActor {
                 }
             )),
         );
-        self.chat_state_handle
-            .update_sampling_config(xai_grok_sampling_types::SamplingConfig {
-                base_url: sampling_config.base_url.clone(),
-                model: sampling_config.model.clone(),
-                max_completion_tokens: sampling_config.max_completion_tokens,
-                temperature: sampling_config.temperature,
-                top_p: sampling_config.top_p,
-                api_backend: sampling_config.api_backend.clone(),
-                extra_headers: sampling_config.extra_headers.clone(),
-                context_window: new_context_window,
-                reasoning_effort: sampling_config.reasoning_effort,
-                stream_tool_calls: Some(sampling_config.stream_tool_calls),
-            });
+        // Production transform A: prepared auth_type + api_key written verbatim.
+        // Do **not** re-resolve auth_type with xAI AuthManager (D-09 / T-04-16).
+        let prepared = crate::agent::config::PreparedSamplingConfig {
+            sampler_config: sampling_config,
+            auth_type,
+            provider,
+        };
         let existing = self.chat_state_handle.get_credentials().await;
-        let session_key = self
-            .auth_manager
-            .as_ref()
-            .and_then(|am| am.current_or_expired().map(|a| a.key));
-        self.chat_state_handle
-            .update_credentials(xai_chat_state::Credentials {
-                api_key: sampling_config.api_key.clone(),
-                auth_type: crate::agent::config::resolve_chat_state_auth_type(
-                    sampling_config.model.as_str(),
-                    session_key.as_deref(),
-                    existing.auth_type,
-                ),
-                alpha_test_key: existing.alpha_test_key,
-                client_version: sampling_config.client_version.clone(),
-            });
+        let (chat_sampling, credentials) =
+            crate::agent::config::apply_prepared_sampling_to_chat_state_fields(
+                &prepared,
+                &existing,
+                new_context_window,
+            );
+        self.chat_state_handle.update_sampling_config(chat_sampling);
+        self.chat_state_handle.update_credentials(credentials);
+        // Re-bind for subsequent uses of sampling_config fields below.
+        let sampling_config = prepared.sampler_config;
         self.model_auth_facts.replace(None);
         self.signals_handle()
             .record_model_usage(&sampling_config.model);

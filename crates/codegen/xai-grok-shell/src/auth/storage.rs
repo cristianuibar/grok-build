@@ -147,6 +147,106 @@ pub fn read_auth_json(auth_file: &Path) -> std::io::Result<AuthStore> {
     Ok(doc.providers.get(PROVIDER_XAI).cloned().unwrap_or_default())
 }
 
+/// Failures reading a provider slot from `auth.json`.
+///
+/// Diagnostics are **redacted** (path/kind only — never token material).
+/// Credential resolve treats any `Err` as fail-closed (no key).
+#[derive(Debug, Clone)]
+pub enum AuthStoreReadError {
+    /// File missing is **not** an error — see [`read_provider_auth_store`].
+    /// I/O failures other than not-found.
+    Io {
+        path: PathBuf,
+        kind: std::io::ErrorKind,
+    },
+    /// Malformed JSON or non-object root.
+    Parse { path: PathBuf },
+    /// Nested document `version` newer than this binary supports.
+    UnsupportedVersion { path: PathBuf, version: u32 },
+}
+
+impl std::fmt::Display for AuthStoreReadError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Io { path, kind } => {
+                write!(
+                    f,
+                    "auth store I/O error at {} ({kind:?})",
+                    path.display()
+                )
+            }
+            Self::Parse { path } => {
+                write!(f, "auth store parse error at {}", path.display())
+            }
+            Self::UnsupportedVersion { path, version } => {
+                write!(
+                    f,
+                    "unsupported auth store version {version} at {}",
+                    path.display()
+                )
+            }
+        }
+    }
+}
+
+impl std::error::Error for AuthStoreReadError {}
+
+/// Read one provider's scope map from `auth.json`.
+///
+/// - Missing file → [`Ok`]`(`[`None`]`)` (no credentials)
+/// - Missing provider slot → [`Ok`]`(`[`None`]`)`
+/// - Malformed JSON / unsupported version / other I/O → [`Err`] with redacted
+///   diagnostic (callers fail closed for keys; tests distinguish kinds)
+///
+/// Prefer this over collapsing every failure to `None`. Does **not** open
+/// stock credential homes (D-13).
+pub fn read_provider_auth_store(
+    path: &Path,
+    provider: &str,
+) -> Result<Option<AuthStore>, AuthStoreReadError> {
+    match read_auth_document(path) {
+        Ok(doc) => Ok(doc.providers.get(provider).cloned()),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
+        Err(e) if e.kind() == std::io::ErrorKind::InvalidData => {
+            tracing::warn!(
+                path = %path.display(),
+                "auth store parse failed (redacted); fail-closed for credentials"
+            );
+            Err(AuthStoreReadError::Parse {
+                path: path.to_path_buf(),
+            })
+        }
+        Err(e) if e.kind() == std::io::ErrorKind::Unsupported => {
+            // Message embeds version from unsupported_version_error; parse if present.
+            let version = e
+                .to_string()
+                .split_whitespace()
+                .find_map(|tok| tok.parse::<u32>().ok())
+                .unwrap_or(0);
+            tracing::warn!(
+                path = %path.display(),
+                version,
+                "auth store unsupported version (redacted); fail-closed for credentials"
+            );
+            Err(AuthStoreReadError::UnsupportedVersion {
+                path: path.to_path_buf(),
+                version,
+            })
+        }
+        Err(e) => {
+            tracing::warn!(
+                path = %path.display(),
+                kind = ?e.kind(),
+                "auth store I/O failed (redacted); fail-closed for credentials"
+            );
+            Err(AuthStoreReadError::Io {
+                path: path.to_path_buf(),
+                kind: e.kind(),
+            })
+        }
+    }
+}
+
 /// Read auth.json, returning an empty map if the file does not exist.
 ///
 /// Non-empty corrupt JSON, permission errors, etc. are returned as errors

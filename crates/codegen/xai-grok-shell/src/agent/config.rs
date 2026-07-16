@@ -4548,6 +4548,156 @@ fn non_blank_session_key(key: Option<&str>) -> Option<&str> {
     key.map(str::trim).filter(|s| !s.is_empty())
 }
 
+/// Pick the provider-slot session key from dual-key inputs.
+///
+/// Returns only the matching slot (never the other provider's token). Blank /
+/// whitespace-only keys are treated as absent.
+pub fn session_key_for_model_provider<'a>(
+    provider: ModelProvider,
+    xai: Option<&'a str>,
+    codex: Option<&'a str>,
+) -> Option<&'a str> {
+    match provider {
+        ModelProvider::Xai => non_blank_session_key(xai),
+        ModelProvider::Codex => non_blank_session_key(codex),
+    }
+}
+
+/// Dual-key credential resolve used by prepare + ModelsManager (thin public
+/// wrapper over [`resolve_credentials_for_provider`]).
+///
+/// Callers pass the same effective [`EndpointsConfig`] used at catalog stamp.
+pub fn prepare_sampling_credentials(
+    model: &ModelEntry,
+    endpoints: &EndpointsConfig,
+    xai_session_key: Option<&str>,
+    codex_session_key: Option<&str>,
+) -> ResolvedCredentials {
+    resolve_credentials_for_provider(model, endpoints, xai_session_key, codex_session_key)
+}
+
+/// Carrier from prepare through SetSessionModel (auth_type + provider provenance).
+///
+/// Session model_switch must consume `auth_type` **verbatim** and must not
+/// re-resolve via xAI AuthManager (`resolve_chat_state_auth_type` with the
+/// live xAI session key).
+#[derive(Debug, Clone)]
+pub struct PreparedSamplingConfig {
+    pub sampler_config: SamplerConfig,
+    pub auth_type: xai_chat_state::AuthType,
+    pub provider: ModelProvider,
+}
+
+/// Build a [`PreparedSamplingConfig`] from resolved credentials + model entry.
+///
+/// `auth_type` is stamped from credential provenance for **this** model’s
+/// provider (SessionToken when a session slot key was used; ApiKey for BYOK/env).
+pub fn prepared_sampling_config_from_credentials(
+    model: &ModelEntry,
+    credentials: ResolvedCredentials,
+    alpha_test_key: Option<String>,
+    client_version: Option<String>,
+    deployment_id: Option<String>,
+    user_id: Option<String>,
+) -> PreparedSamplingConfig {
+    let auth_type = credentials.auth_type;
+    let provider = model.info.provider;
+    let sampler_config = sampling_config_for_model(
+        model,
+        credentials,
+        alpha_test_key,
+        client_version,
+        deployment_id,
+        user_id,
+    );
+    PreparedSamplingConfig {
+        sampler_config,
+        auth_type,
+        provider,
+    }
+}
+
+/// Production transform A: map prepared sampling → chat-state fields.
+///
+/// Used by `session/.../model_switch.rs` and by
+/// `switch_changes_next_sample_route` — **no parallel field-copy**.
+///
+/// Writes `prepared.auth_type` into [`xai_chat_state::Credentials`] without
+/// consulting AuthManager.
+pub fn apply_prepared_sampling_to_chat_state_fields(
+    prepared: &PreparedSamplingConfig,
+    existing_credentials: &xai_chat_state::Credentials,
+    context_window: NonZeroU64,
+) -> (
+    xai_grok_sampling_types::SamplingConfig,
+    xai_chat_state::Credentials,
+) {
+    let sampling = xai_grok_sampling_types::SamplingConfig {
+        base_url: prepared.sampler_config.base_url.clone(),
+        model: prepared.sampler_config.model.clone(),
+        max_completion_tokens: prepared.sampler_config.max_completion_tokens,
+        temperature: prepared.sampler_config.temperature,
+        top_p: prepared.sampler_config.top_p,
+        api_backend: prepared.sampler_config.api_backend.clone(),
+        extra_headers: prepared.sampler_config.extra_headers.clone(),
+        context_window,
+        reasoning_effort: prepared.sampler_config.reasoning_effort,
+        stream_tool_calls: Some(prepared.sampler_config.stream_tool_calls),
+    };
+    let credentials = xai_chat_state::Credentials {
+        api_key: prepared.sampler_config.api_key.clone(),
+        auth_type: prepared.auth_type,
+        alpha_test_key: existing_credentials.alpha_test_key.clone(),
+        client_version: prepared.sampler_config.client_version.clone(),
+    };
+    (sampling, credentials)
+}
+
+/// Whether reconstruct may wire live xAI [`AuthManager`] bearer resolver.
+///
+/// True **only** for `Some(ModelProvider::Xai)` when the session-token gate is
+/// active. `None` (unknown/absent model) and `Some(Codex)` never attach.
+pub fn should_attach_xai_auth_manager_bearer_resolver(
+    provider: Option<ModelProvider>,
+    session_token_gate_active: bool,
+) -> bool {
+    session_token_gate_active && matches!(provider, Some(ModelProvider::Xai))
+}
+
+/// Production transform B: reconstruct attach policy from catalog facts + gate.
+///
+/// Production `reconstruct_full_config` **must** call this (or
+/// [`should_attach_xai_auth_manager_bearer_resolver`] with `facts.provider`).
+pub fn reconstruct_attach_policy_from_facts(
+    facts: &ModelAuthFacts,
+    session_token_gate_active: bool,
+) -> bool {
+    should_attach_xai_auth_manager_bearer_resolver(facts.provider, session_token_gate_active)
+}
+
+/// Snapshot Codex access token from the product `auth.json` providers.codex slot.
+///
+/// Phase 4: read **once at prepare/switch** and stamp into chat-state
+/// Credentials — not on every reconstruct/sample. Full live multi-principal
+/// Codex AuthManager refresh is Phase 5.
+///
+/// Fail-closed: missing file, parse errors, empty selection → `None`.
+/// Diagnostics from [`crate::auth::read_provider_auth_store`] are redacted.
+pub fn snapshot_codex_session_key_from_auth_store() -> Option<String> {
+    let path = crate::util::grok_home::grok_home().join("auth.json");
+    match crate::auth::read_provider_auth_store(&path, crate::auth::PROVIDER_CODEX) {
+        Ok(Some(store)) => crate::auth::select_provider_access_token(&store).map(|a| a.key),
+        Ok(None) => None,
+        Err(e) => {
+            tracing::warn!(
+                error = %e,
+                "codex auth store snapshot failed; fail-closed (no Codex session key)"
+            );
+            None
+        }
+    }
+}
+
 /// Dual-key, endpoint-trust credential resolve (MOD-04 / MOD-05 / D-09 / D-15).
 ///
 /// # Endpoint trust provenance
@@ -4739,22 +4889,30 @@ pub fn try_resolve_model_credentials(
     );
     Some(credentials)
 }
-/// Per-model auth facts (BYOK status + auth scheme) from one effective-config
-/// load, memoized by the session actor.
+/// Per-model auth facts (BYOK status + auth scheme + catalog provider) from one
+/// effective-config load, memoized by the session actor.
+///
+/// `provider` is the **catalog** authority for credential ownership / live
+/// bearer attach. Catalog hit → `Some(entry.provider)`. Empty model id, config
+/// unavailable, or model absent → **`None`** (never default to Xai).
 #[derive(Clone, Copy)]
 pub struct ModelAuthFacts {
     pub byok: ModelByok,
     pub auth_scheme: AuthScheme,
+    /// Catalog provider for this model id; `None` when unknown/absent.
+    pub provider: Option<ModelProvider>,
 }
 /// Resolve `model_id` to its auth facts from one effective-config load.
-/// Load/parse failure → `byok = Unknown`; model absent from the catalog →
-/// `NotByok`. An empty `model_id` (no sampling config yet) → `Unknown`, not
-/// `NotByok`, so the gate isn't activated for an unidentified model.
+/// Load/parse failure → `byok = Unknown`, `provider = None`; model absent from
+/// the catalog → `NotByok`, `provider = None`. An empty `model_id` (no sampling
+/// config yet) → `Unknown` / `None`, not Xai — so the gate isn't activated for
+/// an unidentified model and reconstruct never attaches xAI live resolver.
 pub fn resolve_model_auth_facts(model_id: &str) -> ModelAuthFacts {
     if model_id.is_empty() {
         return ModelAuthFacts {
             byok: ModelByok::Unknown,
             auth_scheme: AuthScheme::default(),
+            provider: None,
         };
     }
     with_resolved_model(model_id, |lookup| ModelAuthFacts {
@@ -4762,6 +4920,10 @@ pub fn resolve_model_auth_facts(model_id: &str) -> ModelAuthFacts {
         auth_scheme: match lookup {
             ModelLookup::Loaded(Some(e)) => e.info().auth_scheme,
             _ => AuthScheme::default(),
+        },
+        provider: match lookup {
+            ModelLookup::Loaded(Some(e)) => Some(e.info.provider),
+            ModelLookup::Loaded(None) | ModelLookup::ConfigUnavailable => None,
         },
     })
 }

@@ -1081,39 +1081,62 @@ impl MvpAgent {
         );
         Ok(entry.clone())
     }
-    pub(crate) fn prepare_sampling_config_for_model(
+    /// Provider-aware prepare returning sampler config + auth_type + provider.
+    ///
+    /// xAI session key comes from AuthManager only for the xAI dual-key slot.
+    /// Codex uses a snapshot of `providers.codex` via
+    /// [`crate::agent::config::snapshot_codex_session_key_from_auth_store`]
+    /// (Phase 4: prepare/switch only — not per-sample reconstruct).
+    pub(crate) fn prepare_prepared_sampling_config_for_model(
         &self,
         model: &ModelEntry,
         origin_client: Option<crate::http::OriginClientInfo>,
-    ) -> SamplingConfig {
+    ) -> crate::agent::config::PreparedSamplingConfig {
         let preferred = self.cfg.borrow().grok_com_config.preferred_method;
-        let session = match preferred {
+        // xAI AuthManager key — dual-key xAI slot only (never as Codex session).
+        let xai_session = match preferred {
             Some(crate::auth::PreferredAuthMethod::ApiKey) => None,
             _ if self.is_session_based_auth() => self.auth_manager.current_or_expired(),
             _ => None,
         };
-        let has_session_key = session.is_some();
-        let mut credentials = resolve_credentials(
-            model,
-            session.as_ref().map(|a| a.key.as_str()),
+        let xai_session_key = xai_session.as_ref().map(|a| a.key.as_str());
+        // Codex: snapshot providers.codex once at prepare (D-09 / Phase 4 snapshot).
+        // Blocking I/O is prepare/switch only — not per-stream reconstruct.
+        let codex_session_owned =
+            crate::agent::config::snapshot_codex_session_key_from_auth_store();
+        let codex_session_key = codex_session_owned.as_deref();
+        let provider_session_key = crate::agent::config::session_key_for_model_provider(
+            model.info.provider,
+            xai_session_key,
+            codex_session_key,
         );
-        if matches!(preferred, Some(crate ::auth::PreferredAuthMethod::Oidc))
+        let has_session_key = provider_session_key.is_some();
+        let endpoints = self.cfg.borrow().endpoints.clone();
+        let mut credentials = crate::agent::config::prepare_sampling_credentials(
+            model,
+            &endpoints,
+            xai_session_key,
+            codex_session_key,
+        );
+        if matches!(preferred, Some(crate::auth::PreferredAuthMethod::Oidc))
             && !model.has_own_credentials()
             && credentials.auth_type == xai_chat_state::AuthType::ApiKey
         {
             credentials.api_key = None;
             credentials.auth_type = xai_chat_state::AuthType::SessionToken;
         }
+        // disable_api_key_auth only rewrites first-party xAI URLs; pass xAI session key.
         crate::agent::config::enforce_disable_api_key_auth(
             &mut credentials,
             self.cfg.borrow().grok_com_config.api_key_auth_disabled(),
-            session.as_ref().map(|a| a.key.as_str()),
+            xai_session_key,
         );
         if !has_session_key && credentials.auth_type == xai_chat_state::AuthType::ApiKey
             && !model.has_own_credentials() && self.is_session_based_auth()
         {
             tracing::info!(
                 model = model.info().model.as_str(),
+                provider = model.info.provider.as_str(),
                 "auth: overriding auth_type to SessionToken (session-based auth method)",
             );
             xai_grok_telemetry::unified_log::info(
@@ -1125,17 +1148,20 @@ impl MvpAgent {
         }
         if !has_session_key && !model.has_own_credentials() {
             tracing::warn!(
-                model = model.info().model.as_str(), is_expired = self.auth_manager
-                .is_expired(), auth_type = ? credentials.auth_type,
-                "auth: prepare_sampling_config has no session key",
+                model = model.info().model.as_str(),
+                provider = model.info.provider.as_str(),
+                is_expired = self.auth_manager.is_expired(),
+                auth_type = ?credentials.auth_type,
+                "auth: prepare_sampling_config has no session key for provider slot",
             );
             xai_grok_telemetry::unified_log::warn(
                 "auth: prepare_sampling_config has no session key",
                 None,
                 Some(
                     serde_json::json!(
-                        { "model" : model.info().model.as_str(), "is_expired" : self
-                        .auth_manager.is_expired(), "auth_type" : format!("{:?}",
+                        { "model" : model.info().model.as_str(), "provider" : model.info
+                        .provider.as_str(), "is_expired" : self.auth_manager
+                        .is_expired(), "auth_type" : format!("{:?}",
                         credentials.auth_type), }
                     ),
                 ),
@@ -1153,7 +1179,7 @@ impl MvpAgent {
             .current_or_expired()
             .filter(|a| a.is_xai_auth())
             .map(|a| a.user_id);
-        let mut config = crate::agent::config::sampling_config_for_model(
+        let mut prepared = crate::agent::config::prepared_sampling_config_from_credentials(
             model,
             credentials,
             alpha_test_key,
@@ -1161,8 +1187,16 @@ impl MvpAgent {
             deployment_id,
             user_id,
         );
-        config.origin_client = origin_client;
-        config
+        prepared.sampler_config.origin_client = origin_client;
+        prepared
+    }
+    pub(crate) fn prepare_sampling_config_for_model(
+        &self,
+        model: &ModelEntry,
+        origin_client: Option<crate::http::OriginClientInfo>,
+    ) -> SamplingConfig {
+        self.prepare_prepared_sampling_config_for_model(model, origin_client)
+            .sampler_config
     }
     /// Resolve sampling config for a model by ID, falling back to the global
     /// default on resolution failure. This ensures API-key auth routes to

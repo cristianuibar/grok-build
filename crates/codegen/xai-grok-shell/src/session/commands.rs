@@ -160,6 +160,11 @@ pub enum SessionCommand {
     },
     SetSessionModel {
         sampling_config: xai_grok_sampler::SamplerConfig,
+        /// Prepared auth provenance from `prepare_prepared_sampling_config_for_model`.
+        /// Consumed **verbatim** by model_switch — do not re-resolve with xAI AuthManager.
+        auth_type: xai_chat_state::AuthType,
+        /// Catalog provider for the switched model (from prepare).
+        provider: crate::agent::config::ModelProvider,
         use_concise: bool,
         /// When `false`, skip the system prompt rewrite (concise/default swap).
         /// Set to `false` for forked sessions so mid-session model switches

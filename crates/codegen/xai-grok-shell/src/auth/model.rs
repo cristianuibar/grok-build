@@ -252,7 +252,8 @@ impl GrokAuth {
     }
 }
 
-pub(crate) type AuthStore = BTreeMap<String, GrokAuth>;
+/// Scope → credential map for one provider slot (`providers.xai` / `providers.codex`).
+pub type AuthStore = BTreeMap<String, GrokAuth>;
 
 /// User information from the cli-chat-proxy `GET /v1/user` endpoint.
 #[derive(Debug, Clone, Deserialize)]
@@ -324,6 +325,53 @@ pub fn lookup_auth(map: &AuthStore, scope: &str) -> Option<GrokAuth> {
         return None;
     }
     Some(auth)
+}
+
+/// Mode preference for multi-scope provider token selection (lower = better).
+///
+/// Oidc (session OAuth) > ApiKey > External. WebLogin is never selected
+/// ([`select_provider_access_token`] skips it before ranking).
+fn provider_token_mode_rank(mode: &AuthMode) -> u8 {
+    match mode {
+        AuthMode::Oidc => 0,
+        AuthMode::ApiKey => 1,
+        AuthMode::External => 2,
+        AuthMode::WebLogin => 3,
+    }
+}
+
+/// Select the best access token from a provider's scope map.
+///
+/// Rules (lookup_auth quality — **never** `BTreeMap` first/arbitrary entry):
+/// 1. Skip [`AuthMode::WebLogin`]
+/// 2. Skip blank/whitespace keys
+/// 3. Prefer non-expired tokens when any exist
+/// 4. Prefer Oidc > ApiKey > External
+/// 5. Among equal ranks, prefer lexicographically smaller scope (fixture-stable)
+///
+/// Phase 5 may pin a ChatGPT OAuth scope constant; ranking accepts that without
+/// redesign (scope-key preference can be layered on the final sort).
+pub fn select_provider_access_token(store: &AuthStore) -> Option<GrokAuth> {
+    let mut candidates: Vec<(&str, &GrokAuth)> = store
+        .iter()
+        .filter(|(_, auth)| auth.auth_mode != AuthMode::WebLogin)
+        .filter(|(_, auth)| !auth.key.trim().is_empty())
+        .map(|(scope, auth)| (scope.as_str(), auth))
+        .collect();
+    if candidates.is_empty() {
+        return None;
+    }
+    // Prefer non-expired when any fresh token exists; otherwise fall back to expired.
+    let any_fresh = candidates.iter().any(|(_, auth)| !is_expired(auth));
+    if any_fresh {
+        candidates.retain(|(_, auth)| !is_expired(auth));
+    }
+    candidates.sort_by(|(scope_a, auth_a), (scope_b, auth_b)| {
+        provider_token_mode_rank(&auth_a.auth_mode)
+            .cmp(&provider_token_mode_rank(&auth_b.auth_mode))
+            .then_with(|| scope_a.cmp(scope_b))
+    });
+    candidates.first().map(|(_, auth)| (*auth).clone())
 }
 
 /// Early-invalidation buffer. Override with `GROK_AUTH_EARLY_INVALIDATION_SECS`

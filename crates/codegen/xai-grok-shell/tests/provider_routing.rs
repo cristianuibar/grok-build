@@ -5,26 +5,25 @@
 //! `--lib` gates. Fake tokens only (`xai-fake-token` / `codex-fake-token`) — no live
 //! ChatGPT OAuth, no Phase 5 login UX, no Phase 6 missing-provider gate.
 //!
-//! **CI RED policy:** catalog + dual-key credential contracts are GREEN as of
-//! Plan 03. `switch_changes_next_sample_route` remains intentional RED until
-//! Plan 04 (prepare/reconstruct). Do not `#[ignore]` core contracts.
-//!
-//! **04-REVIEWS (HIGH):**
-//! - `switch_changes_next_sample_route` is the production-path contract
-//!   (prepare → chat-state / SetSessionModel → reconstruct). Plan 04 wires transforms
-//!   A/B — pure dual `sampling_config_for_model` does **not** fulfill SC-3.
-//! - `never_cross_slot` dual-token isolation is GREEN via
-//!   `resolve_credentials_for_provider`.
-//!
 //! Prefer `cargo test -p xai-grok-shell --test provider_routing` only.
 
+use chrono::{Duration, Utc};
 use indexmap::IndexMap;
 use serial_test::serial;
+use std::num::NonZeroU64;
 use xai_grok_shell::agent::config::{
-    inject_url_derived_headers, resolve_credentials, resolve_credentials_for_provider,
-    resolve_model_list, resolve_provider_route, sampling_config_for_model, Config,
-    ConfigModelOverride, EndpointsConfig, ModelEntry, ModelProvider,
-    CLI_CHAT_PROXY_BASE_URL_DEFAULT, CODEX_BASE_URL_DEFAULT, XAI_API_BASE_URL_DEFAULT,
+    apply_prepared_sampling_to_chat_state_fields, inject_url_derived_headers,
+    prepare_sampling_credentials, prepared_sampling_config_from_credentials,
+    reconstruct_attach_policy_from_facts, resolve_credentials, resolve_credentials_for_provider,
+    resolve_model_auth_facts, resolve_model_list, resolve_provider_route,
+    sampling_config_for_model, session_key_for_model_provider,
+    should_attach_xai_auth_manager_bearer_resolver, Config, ConfigModelOverride, EndpointsConfig,
+    ModelAuthFacts, ModelEntry, ModelProvider, CLI_CHAT_PROXY_BASE_URL_DEFAULT,
+    CODEX_BASE_URL_DEFAULT, XAI_API_BASE_URL_DEFAULT,
+};
+use xai_grok_shell::auth::{
+    read_provider_auth_store, select_provider_access_token, AuthMode, AuthStore, AuthStoreReadError,
+    GrokAuth, PROVIDER_CODEX,
 };
 use xai_grok_shell::sampling::ApiBackend;
 use xai_grok_test_support::EnvGuard;
@@ -683,21 +682,339 @@ fn never_cross_slot() {
     );
 }
 
-/// SC-3 production-path scaffold (04-REVIEWS HIGH cycles 1+2).
-///
-/// Final GREEN (Plan 04): compose production transforms A/B —
-/// `PreparedSamplingConfig` → chat-state apply → reconstruct attach —
-/// so prepare → SetSessionModel/chat-state → reconstruct changes next sample
-/// route (base_url + credential slot). Pure dual `sampling_config_for_model`
-/// does **not** fulfill this contract.
+fn fixture_grok_auth(key: &str, mode: AuthMode, scope_expires_hours: Option<i64>) -> GrokAuth {
+    GrokAuth {
+        key: key.to_owned(),
+        auth_mode: mode,
+        create_time: Utc::now(),
+        user_id: "fixture-user".into(),
+        email: None,
+        first_name: None,
+        last_name: None,
+        profile_image_asset_id: None,
+        principal_type: None,
+        principal_id: None,
+        team_id: None,
+        team_name: None,
+        team_role: None,
+        organization_id: None,
+        organization_name: None,
+        organization_role: None,
+        user_blocked_reason: None,
+        team_blocked_reasons: vec![],
+        coding_data_retention_opt_out: false,
+        has_grok_code_access: None,
+        refresh_token: None,
+        expires_at: scope_expires_hours.map(|h| Utc::now() + Duration::hours(h)),
+        oidc_issuer: None,
+        oidc_client_id: None,
+    }
+}
+
+/// D-09: only the matching provider slot key is returned.
+#[test]
+fn session_key_for_model_provider_xai() {
+    assert_eq!(
+        session_key_for_model_provider(ModelProvider::Xai, Some(XAI_FAKE), Some(CODEX_FAKE)),
+        Some(XAI_FAKE)
+    );
+    assert_eq!(
+        session_key_for_model_provider(ModelProvider::Xai, None, Some(CODEX_FAKE)),
+        None
+    );
+}
+
+#[test]
+fn session_key_for_model_provider_codex() {
+    assert_eq!(
+        session_key_for_model_provider(ModelProvider::Codex, Some(XAI_FAKE), Some(CODEX_FAKE)),
+        Some(CODEX_FAKE)
+    );
+    assert_eq!(
+        session_key_for_model_provider(ModelProvider::Codex, Some(XAI_FAKE), None),
+        None
+    );
+}
+
+/// Multi-scope: prefer Oidc, skip WebLogin, skip blank keys.
+#[test]
+fn select_provider_access_token_prefers_oidc_skips_weblogin_skips_blank() {
+    let mut store = AuthStore::new();
+    store.insert(
+        "aaa-weblogin".into(),
+        fixture_grok_auth("web-token", AuthMode::WebLogin, Some(24)),
+    );
+    store.insert(
+        "blank-key".into(),
+        fixture_grok_auth("   ", AuthMode::Oidc, Some(24)),
+    );
+    store.insert(
+        "zzz-apikey".into(),
+        fixture_grok_auth("api-token", AuthMode::ApiKey, Some(24)),
+    );
+    store.insert(
+        "mid-oidc".into(),
+        fixture_grok_auth("oidc-token", AuthMode::Oidc, Some(24)),
+    );
+    let selected = select_provider_access_token(&store).expect("must select Oidc");
+    assert_eq!(selected.key, "oidc-token");
+    assert_eq!(selected.auth_mode, AuthMode::Oidc);
+}
+
+/// Never first BTreeMap entry: WebLogin is first lexicographically but skipped.
+#[test]
+fn select_provider_access_token_never_first_arbitrary_only() {
+    let mut store = AuthStore::new();
+    // Lexicographically first scope is WebLogin — must not win.
+    store.insert(
+        "aaa-first".into(),
+        fixture_grok_auth("web-should-skip", AuthMode::WebLogin, Some(24)),
+    );
+    store.insert(
+        "zzz-oidc".into(),
+        fixture_grok_auth("oidc-winner", AuthMode::Oidc, Some(24)),
+    );
+    let selected = select_provider_access_token(&store).expect("must select Oidc");
+    assert_eq!(selected.key, "oidc-winner");
+}
+
+/// Dual-key prepare credentials: Codex model ignores xAI session key.
+#[test]
+fn prepare_sampling_credentials_codex_ignores_xai_session() {
+    let endpoints = deterministic_endpoints();
+    let entry = catalog_entry("gpt-5.6-sol");
+    let creds = prepare_sampling_credentials(
+        &entry,
+        &endpoints,
+        Some(XAI_FAKE),
+        Some(CODEX_FAKE),
+    );
+    assert_eq!(creds.api_key.as_deref(), Some(CODEX_FAKE));
+    assert_ne!(creds.api_key.as_deref(), Some(XAI_FAKE));
+    assert_eq!(
+        creds.auth_type,
+        xai_chat_state::AuthType::SessionToken,
+        "session slot key yields SessionToken provenance"
+    );
+}
+
+/// Prepared carrier stamps auth_type from credential provenance (not xAI re-resolve).
+#[test]
+fn prepared_sampling_config_carries_auth_type() {
+    let endpoints = deterministic_endpoints();
+    let codex = catalog_entry("gpt-5.6-sol");
+    let creds = prepare_sampling_credentials(
+        &codex,
+        &endpoints,
+        Some(XAI_FAKE),
+        Some(CODEX_FAKE),
+    );
+    let prepared = prepared_sampling_config_from_credentials(
+        &codex,
+        creds,
+        None,
+        None,
+        None,
+        None,
+    );
+    assert_eq!(prepared.provider, ModelProvider::Codex);
+    assert_eq!(prepared.auth_type, xai_chat_state::AuthType::SessionToken);
+    assert_eq!(prepared.sampler_config.api_key.as_deref(), Some(CODEX_FAKE));
+    assert_ne!(
+        prepared.sampler_config.api_key.as_deref(),
+        Some(XAI_FAKE),
+        "Codex prepare must not stamp xAI session key"
+    );
+}
+
+/// Transform A writes prepared auth_type without AuthManager.
+#[test]
+fn apply_prepared_sampling_to_chat_state_fields_preserves_auth_type() {
+    let endpoints = deterministic_endpoints();
+    let codex = catalog_entry("gpt-5.6-sol");
+    let creds = prepare_sampling_credentials(
+        &codex,
+        &endpoints,
+        Some(XAI_FAKE),
+        Some(CODEX_FAKE),
+    );
+    let prepared = prepared_sampling_config_from_credentials(
+        &codex,
+        creds,
+        None,
+        None,
+        None,
+        None,
+    );
+    let existing = xai_chat_state::Credentials {
+        api_key: Some(XAI_FAKE.to_owned()),
+        auth_type: xai_chat_state::AuthType::SessionToken,
+        alpha_test_key: None,
+        client_version: None,
+    };
+    let cw = NonZeroU64::new(256_000).unwrap();
+    let (chat_sampling, out_creds) =
+        apply_prepared_sampling_to_chat_state_fields(&prepared, &existing, cw);
+    assert_eq!(out_creds.auth_type, prepared.auth_type);
+    assert_eq!(out_creds.api_key.as_deref(), Some(CODEX_FAKE));
+    assert_eq!(chat_sampling.base_url, prepared.sampler_config.base_url);
+    assert_eq!(chat_sampling.model, prepared.sampler_config.model);
+}
+
+/// SC-3: compose production transforms A/B only (no parallel field-copy).
 #[test]
 fn switch_changes_next_sample_route() {
+    let endpoints = deterministic_endpoints();
+    let xai_entry = catalog_entry("grok-build");
+    let codex_entry = catalog_entry("gpt-5.6-sol");
+    let existing = xai_chat_state::Credentials::default();
+    let cw = NonZeroU64::new(256_000).unwrap();
+
+    // 1) Prepare for model A (xAI) via production dual-key path
+    let xai_creds = prepare_sampling_credentials(
+        &xai_entry,
+        &endpoints,
+        Some(XAI_FAKE),
+        Some(CODEX_FAKE),
+    );
+    let prepared_xai = prepared_sampling_config_from_credentials(
+        &xai_entry,
+        xai_creds,
+        None,
+        None,
+        None,
+        None,
+    );
+    // 2) Transform A → chat-state
+    let (chat_xai, creds_xai) =
+        apply_prepared_sampling_to_chat_state_fields(&prepared_xai, &existing, cw);
+
+    // Switch to Codex: prepare + transform A again
+    let codex_creds = prepare_sampling_credentials(
+        &codex_entry,
+        &endpoints,
+        Some(XAI_FAKE),
+        Some(CODEX_FAKE),
+    );
+    let prepared_codex = prepared_sampling_config_from_credentials(
+        &codex_entry,
+        codex_creds,
+        None,
+        None,
+        None,
+        None,
+    );
+    let (chat_codex, creds_codex) =
+        apply_prepared_sampling_to_chat_state_fields(&prepared_codex, &creds_xai, cw);
+
+    // 3) Transform B / should_attach from catalog Option provider
+    let facts_xai = ModelAuthFacts {
+        byok: xai_grok_shell::agent::auth_method::ModelByok::NotByok,
+        auth_scheme: Default::default(),
+        provider: Some(ModelProvider::Xai),
+    };
+    let facts_codex = ModelAuthFacts {
+        byok: xai_grok_shell::agent::auth_method::ModelByok::NotByok,
+        auth_scheme: Default::default(),
+        provider: Some(ModelProvider::Codex),
+    };
+    let attach_xai = reconstruct_attach_policy_from_facts(&facts_xai, true);
+    let attach_codex = reconstruct_attach_policy_from_facts(&facts_codex, true);
+
+    assert_ne!(
+        chat_xai.base_url, chat_codex.base_url,
+        "switch must change base_url"
+    );
+    assert_eq!(creds_xai.api_key.as_deref(), Some(XAI_FAKE));
+    assert_eq!(creds_codex.api_key.as_deref(), Some(CODEX_FAKE));
     assert!(
-        false,
-        "Plan 04: wire prepare/reconstruct production transforms A/B — \
-         switch_changes_next_sample_route is the production-path contract \
-         (prepare → chat-state/SetSessionModel → reconstruct); pure dual \
-         sampling_config_for_model alone does not fulfill SC-3"
+        attach_xai,
+        "xAI model with gate active must allow xAI bearer attach"
+    );
+    assert!(
+        !attach_codex,
+        "Codex model must never attach xAI AuthManager bearer"
+    );
+    assert_eq!(chat_codex.base_url, CODEX_BASE_URL_DEFAULT);
+}
+
+/// Missing file vs parse error are distinguishable; both fail closed for keys.
+#[test]
+fn read_provider_auth_store_missing_vs_parse_error() {
+    let dir = tempfile::tempdir().unwrap();
+    let missing = dir.path().join("no-such-auth.json");
+    let missing_result = read_provider_auth_store(&missing, PROVIDER_CODEX);
+    assert!(
+        matches!(missing_result, Ok(None)),
+        "missing file must be Ok(None); got {missing_result:?}"
+    );
+
+    let bad = dir.path().join("auth.json");
+    std::fs::write(&bad, "{not-valid-json").unwrap();
+    let parse_result = read_provider_auth_store(&bad, PROVIDER_CODEX);
+    assert!(
+        matches!(parse_result, Err(AuthStoreReadError::Parse { .. })),
+        "malformed JSON must be Parse error; got {parse_result:?}"
+    );
+}
+
+#[test]
+fn should_attach_xai_auth_manager_bearer_resolver_matrix() {
+    assert!(should_attach_xai_auth_manager_bearer_resolver(
+        Some(ModelProvider::Xai),
+        true
+    ));
+    assert!(!should_attach_xai_auth_manager_bearer_resolver(
+        Some(ModelProvider::Xai),
+        false
+    ));
+    assert!(!should_attach_xai_auth_manager_bearer_resolver(
+        Some(ModelProvider::Codex),
+        true
+    ));
+    assert!(!should_attach_xai_auth_manager_bearer_resolver(None, true));
+    assert!(!should_attach_xai_auth_manager_bearer_resolver(None, false));
+}
+
+#[test]
+fn model_auth_facts_provider_some_for_catalog() {
+    let grok = resolve_model_auth_facts("grok-build");
+    assert_eq!(
+        grok.provider,
+        Some(ModelProvider::Xai),
+        "grok-build must resolve Some(Xai); got {:?}",
+        grok.provider
+    );
+    let sol = resolve_model_auth_facts("gpt-5.6-sol");
+    assert_eq!(
+        sol.provider,
+        Some(ModelProvider::Codex),
+        "gpt-5.6-sol must resolve Some(Codex); got {:?}",
+        sol.provider
+    );
+}
+
+#[test]
+fn model_auth_facts_provider_none_for_unknown() {
+    let empty = resolve_model_auth_facts("");
+    assert_eq!(empty.provider, None, "empty model id → provider None");
+    let absent = resolve_model_auth_facts("definitely-not-a-real-model-id-zzzz");
+    assert_eq!(
+        absent.provider, None,
+        "absent model id → provider None (never default Xai)"
+    );
+}
+
+#[test]
+fn reconstruct_policy_unknown_model_no_xai_resolver() {
+    let facts = ModelAuthFacts {
+        byok: xai_grok_shell::agent::auth_method::ModelByok::Unknown,
+        auth_scheme: Default::default(),
+        provider: None,
+    };
+    assert!(
+        !reconstruct_attach_policy_from_facts(&facts, true),
+        "provider None must not attach xAI resolver even when gate active"
     );
 }
 
