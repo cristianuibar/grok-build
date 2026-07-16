@@ -4692,9 +4692,39 @@ pub fn reconstruct_attach_policy_from_facts(
 ///
 /// Fail-closed: missing file, parse errors, empty selection → `None`.
 /// Diagnostics from [`crate::auth::read_provider_auth_store`] are redacted.
+///
+/// Disk reads are mitigated with an mtime/len cache so repeated prepare /
+/// ModelsManager sampling_config paths do not re-parse `auth.json` when the
+/// file is unchanged. Phase 5 live AuthManager should remove prepare-time
+/// disk reads entirely.
 pub fn snapshot_codex_session_key_from_auth_store() -> Option<String> {
+    use std::sync::Mutex;
+    use std::time::SystemTime;
+
+    struct Cache {
+        path: PathBuf,
+        modified: Option<SystemTime>,
+        len: u64,
+        token: Option<String>,
+    }
+
+    static CACHE: Mutex<Option<Cache>> = Mutex::new(None);
+
     let path = crate::util::grok_home::grok_home().join("auth.json");
-    match crate::auth::read_provider_auth_store(&path, crate::auth::PROVIDER_CODEX) {
+    let meta = std::fs::metadata(&path).ok();
+    let modified = meta.as_ref().and_then(|m| m.modified().ok());
+    let len = meta.as_ref().map(|m| m.len()).unwrap_or(0);
+
+    if let Ok(guard) = CACHE.lock()
+        && let Some(cached) = guard.as_ref()
+        && cached.path == path
+        && cached.modified == modified
+        && cached.len == len
+    {
+        return cached.token.clone();
+    }
+
+    let token = match crate::auth::read_provider_auth_store(&path, crate::auth::PROVIDER_CODEX) {
         Ok(Some(store)) => crate::auth::select_provider_access_token(&store).map(|a| a.key),
         Ok(None) => None,
         Err(e) => {
@@ -4704,7 +4734,17 @@ pub fn snapshot_codex_session_key_from_auth_store() -> Option<String> {
             );
             None
         }
+    };
+
+    if let Ok(mut guard) = CACHE.lock() {
+        *guard = Some(Cache {
+            path,
+            modified,
+            len,
+            token: token.clone(),
+        });
     }
+    token
 }
 
 /// Dual-key, endpoint-trust credential resolve (MOD-04 / MOD-05 / D-09 / D-15).
