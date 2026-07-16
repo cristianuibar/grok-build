@@ -125,10 +125,11 @@ Plans:
   3. User can inspect per-provider auth status (which providers are logged in / usable)
   4. Access tokens for each provider refresh independently without wiping or invalidating the other provider’s session
 
-**Plans:** 6 plans
+**Plans:** 1/6 plans executed
 
 Plans:
-- [ ] 05-01-PLAN.md — Wave 0 RED harness (Option C reconstruct + BYOK/custom + identity names + clap)
+
+- [x] 05-01-PLAN.md — Wave 0 RED harness (Option C reconstruct + BYOK/custom + identity names + clap)
 - [ ] 05-02-PLAN.md — Public AuthProvider RMW + clear_with_lock + usable status semantics
 - [ ] 05-03-PLAN.md — Codex OAuth (PKCE + device multi-step) + login branch before xAI sync
 - [ ] 05-04-PLAN.md — Blocking dual logout + status Write + TUI/ACP dual-safe
@@ -210,7 +211,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 →
 | 2. Multi-slot credentials & xAI OAuth | 4/4 | Complete    | 2026-07-16 |
 | 3. Model catalog & GPT-5.6 entries | 3/3 | Complete    | 2026-07-16 |
 | 4. Provider-aware request routing | 5/5 | Complete    | 2026-07-16 |
-| 5. Codex OAuth & dual auth lifecycle | 0/6 | Not started | - |
+| 5. Codex OAuth & dual auth lifecycle | 1/6 | In Progress|  |
 | 6. Mid-session switch & missing-provider gate | 0/TBD | Not started | - |
 | 7. Cross-provider multi-agent orchestration | 0/TBD | Not started | - |
 | 8. Quiet fork & rebrand polish | 0/TBD | Not started | - |

@@ -4,17 +4,17 @@ milestone: v1.0
 milestone_name: milestone
 current_phase: 5
 current_phase_name: Codex OAuth & dual auth lifecycle
-current_plan: Not started
-status: planning
-stopped_at: Completed 04-05-PLAN.md
-last_updated: "2026-07-16T14:35:12.878Z"
+current_plan: 2
+status: in_progress
+stopped_at: Completed 05-01-PLAN.md
+last_updated: "2026-07-16T17:12:22.339Z"
 last_activity: 2026-07-16
-last_activity_desc: Phase 4 complete, transitioned to Phase 5
+last_activity_desc: Completed 05-01 Wave 0 dual-auth harness + clap scaffolds
 progress:
-  total_phases: 4
+  total_phases: 9
   completed_phases: 4
-  total_plans: 17
-  completed_plans: 17
+  total_plans: 24
+  completed_plans: 18
 ---
 
 # Project State
@@ -24,19 +24,18 @@ progress:
 See: .planning/PROJECT.md (updated 2026-07-16)
 
 **Core value:** One CLI (`bum`) can log into both xAI and Codex and freely switch between Grok and GPT-5.6 models in a real coding session — including cross-provider subagent orchestration.
-**Current focus:** Phase 5 — Codex OAuth & dual auth lifecycle (ready to plan)
+**Current focus:** Phase 5 — Codex OAuth & dual auth lifecycle (executing)
 
 ## Current Position
 
 Phase: 5 of 9 (Codex OAuth & dual auth lifecycle)
-Plan: Not started
-Status: Ready to plan
-Last activity: 2026-07-16 — Phase 4 complete (provider-aware routing verified + review fixes), transitioned to Phase 5
-Current Plan: Not started
-Total Plans in Phase: TBD
+Plan: 2 of 6 (next: 05-02)
+Status: In progress
+Last activity: 2026-07-16 — Completed 05-01 Wave 0 dual-auth harness + clap scaffolds
+Current Plan: 2
+Total Plans in Phase: 6
 
-Progress: [████░░░░░░] 44% (4/9 phases)
-
+Progress: [████████░░] 75% (18/24 plans)
 
 ## Performance Metrics
 
@@ -77,6 +76,7 @@ Progress: [████░░░░░░] 44% (4/9 phases)
 | Phase 04 P03 | 9min | 2 tasks | 3 files |
 | Phase 04 P04 | 8min | 2 tasks | 13 files |
 | Phase 04 P05 | 9min | 2 tasks | 4 files |
+| Phase 05 P01 | 15min | 2 tasks | 6 files |
 
 ## Accumulated Context
 
@@ -130,6 +130,8 @@ Recent decisions affecting current work:
 - [Phase ?]: Fail-closed lives in SamplingClient::post (Result); construct allows empty keys
 - [Phase ?]: Invalid-header logs api_key_len only; short Authorization prefixes accepted pre-existing
 - [Phase ?]: No Phase 5 OAuth / Phase 6 missing-provider UX in Phase 4 (D-13)
+- [Phase ?]: Wave 0 dual-auth harness + early clap --provider/logout/auth status; no production Codex OAuth in 05-01
+- [Phase ?]: Runnable clap verify uses --test auth_cli_parse (pager lib-test target pre-broken)
 
 ### Pending Todos
 
@@ -152,7 +154,7 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-07-16T14:02:13.039Z
-Stopped at: Completed 04-05-PLAN.md
+Last session: 2026-07-16T17:12:22.332Z
+Stopped at: Completed 05-01-PLAN.md
 Resume file: None
 Next: continue Phase 1 remaining plans (01-04, 01-05)
