@@ -21,15 +21,14 @@
 //! Prefer `cargo test -p xai-grok-shell --test provider_routing` only.
 
 use indexmap::IndexMap;
+use serial_test::serial;
 use xai_grok_shell::agent::config::{
     inject_url_derived_headers, resolve_credentials, resolve_model_list,
     sampling_config_for_model, Config, EndpointsConfig, ModelEntry, ModelProvider,
-    CLI_CHAT_PROXY_BASE_URL_DEFAULT, XAI_API_BASE_URL_DEFAULT,
+    CLI_CHAT_PROXY_BASE_URL_DEFAULT, CODEX_BASE_URL_DEFAULT, XAI_API_BASE_URL_DEFAULT,
 };
 use xai_grok_shell::sampling::ApiBackend;
-
-/// Locked Codex/ChatGPT backend default (Plan 02 exports `CODEX_BASE_URL_DEFAULT`).
-const CODEX_BASE_URL_DEFAULT: &str = "https://chatgpt.com/backend-api/codex";
+use xai_grok_test_support::EnvGuard;
 
 const XAI_FAKE: &str = "xai-fake-token";
 const CODEX_FAKE: &str = "codex-fake-token";
@@ -39,8 +38,83 @@ fn deterministic_endpoints() -> EndpointsConfig {
     EndpointsConfig {
         cli_chat_proxy_base_url: Some(CLI_CHAT_PROXY_BASE_URL_DEFAULT.to_owned()),
         xai_api_base_url: XAI_API_BASE_URL_DEFAULT.to_owned(),
+        codex_base_url: CODEX_BASE_URL_DEFAULT.to_owned(),
         ..EndpointsConfig::default()
     }
+}
+
+/// D-07: product Codex default is ChatGPT backend, not Platform OpenAI.
+#[test]
+fn codex_base_url_default_constant() {
+    assert_eq!(
+        CODEX_BASE_URL_DEFAULT,
+        "https://chatgpt.com/backend-api/codex",
+        "CODEX_BASE_URL_DEFAULT must be ChatGPT/Codex backend (D-15/D-06)"
+    );
+}
+
+/// D-07: empty/default codex field resolves to CODEX_BASE_URL_DEFAULT (field override, no env).
+#[test]
+fn resolve_codex_base_url_default() {
+    let endpoints = EndpointsConfig {
+        codex_base_url: String::new(),
+        ..deterministic_endpoints()
+    };
+    assert_eq!(
+        endpoints.resolve_codex_base_url(),
+        CODEX_BASE_URL_DEFAULT,
+        "blank codex_base_url must fall back to CODEX_BASE_URL_DEFAULT"
+    );
+
+    let whitespace = EndpointsConfig {
+        codex_base_url: "   \t  ".to_owned(),
+        ..deterministic_endpoints()
+    };
+    assert_eq!(
+        whitespace.resolve_codex_base_url(),
+        CODEX_BASE_URL_DEFAULT,
+        "whitespace-only codex_base_url must fall back to CODEX_BASE_URL_DEFAULT"
+    );
+
+    let stock = deterministic_endpoints();
+    assert_eq!(
+        stock.resolve_codex_base_url(),
+        CODEX_BASE_URL_DEFAULT,
+        "deterministic stock codex_base_url must resolve to default"
+    );
+}
+
+/// D-07: field override wins without env (parallel-CI safe).
+#[test]
+fn resolve_codex_base_url_field_override() {
+    let override_url = "https://codex.enterprise.example/backend-api/codex";
+    let endpoints = EndpointsConfig {
+        codex_base_url: override_url.to_owned(),
+        ..deterministic_endpoints()
+    };
+    assert_eq!(
+        endpoints.resolve_codex_base_url(),
+        override_url,
+        "non-empty codex_base_url field must win over default"
+    );
+}
+
+/// D-07: `GROK_CODEX_BASE_URL` env fills `EndpointsConfig::default().codex_base_url`.
+#[test]
+#[serial]
+fn resolve_codex_base_url_env_override() {
+    let override_url = "https://codex.env-override.example/backend-api/codex";
+    let _guard = EnvGuard::set("GROK_CODEX_BASE_URL", override_url);
+    let endpoints = EndpointsConfig::default();
+    assert_eq!(
+        endpoints.codex_base_url, override_url,
+        "Default must read GROK_CODEX_BASE_URL into codex_base_url"
+    );
+    assert_eq!(
+        endpoints.resolve_codex_base_url(),
+        override_url,
+        "resolve_codex_base_url must return GROK_CODEX_BASE_URL value"
+    );
 }
 
 fn catalog_entry(id: &str) -> ModelEntry {

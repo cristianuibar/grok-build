@@ -46,6 +46,11 @@ pub fn default_agent_type() -> String {
 pub const CLI_CHAT_PROXY_BASE_URL_DEFAULT: &str = "https://cli-chat-proxy.grok.com/v1";
 /// Default base URL for the public xAI API.
 pub const XAI_API_BASE_URL_DEFAULT: &str = "https://api.x.ai/v1";
+/// Default base URL for the ChatGPT / Codex backend (not Platform `api.openai.com`).
+///
+/// Product Codex routing targets ChatGPT's Codex backend path. Platform OpenAI
+/// is intentionally not the product first-party OAuth endpoint for `provider=codex`.
+pub const CODEX_BASE_URL_DEFAULT: &str = "https://chatgpt.com/backend-api/codex";
 /// Default base URL for the asset server (profile images, etc.).
 pub const ASSET_SERVER_URL_DEFAULT: &str = "https://assets.grok.com";
 /// One or more environment variable names that may hold a model API key.
@@ -148,6 +153,13 @@ pub struct EndpointsConfig {
     pub cli_chat_proxy_base_url: Option<String>,
     /// Base URL for the public xAI API.
     pub xai_api_base_url: String,
+    /// Base URL for the ChatGPT / Codex backend used by `provider=codex` models.
+    /// Env: `GROK_CODEX_BASE_URL`. Blank/whitespace falls back to
+    /// [`CODEX_BASE_URL_DEFAULT`] via [`Self::resolve_codex_base_url`].
+    ///
+    /// Field shape is `String` (not `Option`) to match [`Self::xai_api_base_url`];
+    /// asymmetry with optional proxy is intentional.
+    pub codex_base_url: String,
     /// Optional extra access-header value (applied only with the optional
     /// non-production feature, and only for matching first-party hosts).
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -311,6 +323,17 @@ impl EndpointsConfig {
         self.models_base_url
             .clone()
             .unwrap_or_else(|| self.proxy_url())
+    }
+    /// ChatGPT / Codex backend base for `provider=codex` models.
+    ///
+    /// Blank or whitespace-only `codex_base_url` falls back to
+    /// [`CODEX_BASE_URL_DEFAULT`]; otherwise the configured string is returned.
+    pub fn resolve_codex_base_url(&self) -> String {
+        if self.codex_base_url.trim().is_empty() {
+            CODEX_BASE_URL_DEFAULT.to_owned()
+        } else {
+            self.codex_base_url.clone()
+        }
     }
     /// Feedback endpoint — an auxiliary service, so it defaults to the
     /// cli-chat-proxy, never `xai_api_base_url`.
@@ -543,6 +566,8 @@ impl Default for EndpointsConfig {
             cli_chat_proxy_base_url: std::env::var("GROK_CLI_CHAT_PROXY_BASE_URL").ok(),
             xai_api_base_url: std::env::var("GROK_XAI_API_BASE_URL")
                 .unwrap_or_else(|_| XAI_API_BASE_URL_DEFAULT.to_owned()),
+            codex_base_url: std::env::var("GROK_CODEX_BASE_URL")
+                .unwrap_or_else(|_| CODEX_BASE_URL_DEFAULT.to_owned()),
             alpha_test_key: None,
             models_base_url: env_string("GROK_MODELS_BASE_URL"),
             models_list_url: env_string("GROK_MODELS_LIST_URL"),
@@ -7755,6 +7780,7 @@ reasoning_effort = "low"
         for k in [
             "GROK_CLI_CHAT_PROXY_BASE_URL",
             "GROK_XAI_API_BASE_URL",
+            "GROK_CODEX_BASE_URL",
             "GROK_FEEDBACK_BASE_URL",
             "GROK_TRACE_UPLOAD_URL",
             "GROK_MANAGED_CONFIG_URL",
