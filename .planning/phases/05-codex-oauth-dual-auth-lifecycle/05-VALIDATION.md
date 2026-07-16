@@ -6,16 +6,22 @@ nyquist_compliant: false
 wave_0_complete: false
 created: 2026-07-16
 updated: 2026-07-16
-replan_source: 05-REVIEWS.md cycle 1
+replan_source: 05-REVIEWS.md cycle 2
 ---
 
 # Phase 5 — Validation Strategy
 
 > Per-phase validation contract for feedback sampling during execution.
-> Wave 0 uses **integration tests on public APIs** — do **not** repair the broken shell `--lib` suite.
+> Wave 0 uses **integration tests on public APIs** — do **not** repair the broken full shell `--lib` suite.
 > Prove AUTH-02..05 with **fake tokens + mock IdP only** — no live ChatGPT / Codex OAuth required for CI gates.
 >
-> **AUTH-05 depth (review cycle 1):** proofs must include pure `CodexRefresher` isolation **and** a production **async reconstruct / ensure_fresh_codex_auth** call site in `sampler_turn.rs` that spends the refresh token under `auth.json.lock`, persists via guard-held mutate, and returns typed `{ bearer, account_id }` into request construction. Prepare/snapshot alone is insufficient.
+> **AUTH-05 depth (review cycle 1 + cycle 2 residual):**
+> - Pure `CodexRefresher` isolation + lock-held `ensure_fresh_codex_auth`
+> - Production invoker on **`SessionActor::reconstruct_full_config`** (sampler_turn.rs)
+> - **Executable seam (cycle 2 Option C):** crate-local actor tests in `session/acp_session_tests/codex_reconstruct_refresh_tests.rs` call `actor.reconstruct_full_config().await` (pattern: `auth_error_no_retry_tests.rs`) and assert `SamplingConfig.api_key` / headers — **not** public `ensure_fresh` alone
+> - OAuth bearer override only for `AuthType::SessionToken` + `session_oauth_allowed`; BYOK/custom endpoint tests required
+> - Permanent fail clear via `clear_provider_slot_with_lock` (no lock reacquire)
+> - Identity preserve when refresh response omits RT/claims
 >
 > **Cargo verify hygiene:** one TESTNAME filter per `cargo test`; never bare `| tail` without `set -o pipefail`; chain with `&&` only.
 
@@ -28,8 +34,8 @@ replan_source: 05-REVIEWS.md cycle 1
 | **Framework** | Cargo built-in `cargo test` (crate integration tests + pager unit clap tests) |
 | **Config file** | none global — per-crate; `rust-toolchain.toml` (1.92.0) |
 | **Quick run command** | `cargo test -p xai-grok-shell --test auth_codex_lifecycle -- --nocapture` |
-| **Full suite command** | `cargo test -p xai-grok-shell --test auth_codex_lifecycle -- --nocapture && cargo test -p xai-grok-shell --test auth_multi_slot -- --nocapture && cargo test -p xai-grok-shell --test provider_routing -- --nocapture && cargo test -p xai-grok-pager bum_login_provider_codex_parses -- --nocapture && cargo test -p xai-grok-pager bum_auth_status_parses -- --nocapture && cargo check -p xai-grok-shell && cargo check -p xai-grok-pager-bin && cargo fmt --all --check` |
-| **Estimated runtime** | ~60–240 seconds after first compile (lifecycle + mock HTTP + regressions) |
+| **Full suite command** | `cargo test -p xai-grok-shell --test auth_codex_lifecycle -- --nocapture && cargo test -p xai-grok-shell codex_reconstruct_refreshes_mid_session_expiry -- --nocapture && cargo test -p xai-grok-shell codex_byok_key_not_overridden -- --nocapture && cargo test -p xai-grok-shell codex_oauth_bearer_absent_on_custom_endpoint -- --nocapture && cargo test -p xai-grok-shell --test auth_multi_slot -- --nocapture && cargo test -p xai-grok-shell --test provider_routing -- --nocapture && cargo test -p xai-grok-pager bum_login_provider_codex_parses -- --nocapture && cargo test -p xai-grok-pager bum_auth_status_parses -- --nocapture && cargo check -p xai-grok-shell && cargo check -p xai-grok-pager-bin && cargo fmt --all --check` |
+| **Estimated runtime** | ~60–240 seconds after first compile (lifecycle + mock HTTP + reconstruct seam + regressions) |
 
 ### Cargo verify hygiene (locked)
 
@@ -39,18 +45,30 @@ replan_source: 05-REVIEWS.md cycle 1
 | Multi-test coverage | Run full binary without filter **or** chain single-filter invocations with `&&` |
 | Exit status | Never pipe cargo through bare `\| tail` without `set -o pipefail`. Prefer **no pipe** |
 | Chains | Use `&&` only — never `;` that masks failures |
-| Forbidden gates | `cargo test -p xai-grok-shell --lib` |
+| Forbidden gates | Unfiltered `cargo test -p xai-grok-shell --lib` |
+| Option C exception | Narrow crate TESTNAME filters for reconstruct seam only (`codex_reconstruct_…`, `codex_byok_…`, `codex_oauth_bearer_absent_…`) |
+
+### AUTH-05 executable seam (cycle 2 — Option C locked)
+
+| Item | Value |
+|------|-------|
+| **Seam name** | `SessionActor::reconstruct_full_config` |
+| **Test location** | `session/acp_session_tests/codex_reconstruct_refresh_tests.rs` |
+| **Pattern** | `auth_error_no_retry_tests.rs` — build actor, `reconstruct_full_config().await`, assert api_key/headers |
+| **Required names** | `codex_reconstruct_refreshes_mid_session_expiry`, `codex_byok_key_not_overridden`, `codex_oauth_bearer_absent_on_custom_endpoint` |
+| **Not sufficient** | Public `ensure_fresh_codex_auth` isolation alone |
 
 ### Harness policy
 
 | Allowed | Forbidden |
 |---------|-----------|
-| `cargo test -p xai-grok-shell --test auth_codex_lifecycle …` | `cargo test -p xai-grok-shell --lib …` for Phase 5 gates |
+| `cargo test -p xai-grok-shell --test auth_codex_lifecycle …` | Unfiltered `cargo test -p xai-grok-shell --lib` for Phase 5 gates |
+| Narrow reconstruct seam TESTNAME filters (Option C) | Treating ensure_fresh-only as AUTH-05 production proof |
 | `cargo test -p xai-grok-shell --test auth_multi_slot …` (AUTH-01 regression) | Fixing entire shell lib-test compile errors |
 | `cargo test -p xai-grok-shell --test provider_routing …` (MOD-04/05 regression) | Live ChatGPT login as phase gate |
 | `cargo test -p xai-grok-pager <clap_test_name>` | Full ACP e2e as required gate |
 | `cargo check -p xai-grok-shell` / `-p xai-grok-pager-bin` | Stock `~/.codex` import as product path |
-| Public path-taking helpers + mock IdP HTTP + **reconstruct** call-site proofs | Pure unit-only refresh without reconstruct invoker |
+| Public path-taking helpers + mock IdP HTTP + **reconstruct seam** proofs | Pure unit-only refresh without reconstruct invoker |
 | Explicit auth_file paths (OnceLock-safe) | Multi-BUM_HOME mutation in one process |
 
 ### CI RED policy (Wave 0)
@@ -66,9 +84,11 @@ replan_source: 05-REVIEWS.md cycle 1
 - Codex login persist / device / claims (Plan 03)
 - `run_cli_login` / `run_cli_logout` / `run_cli_auth_status` (Plans 03–04; status returns String or Write)
 - Pure status formatter (`auth/status.rs`) with logged_in vs usable
-- `CodexRefresher` (data-only) + pure `codex/refresh` + **`ensure_fresh_codex_auth` → reconstruct_full_config**
+- `CodexRefresher` (data-only) + pure `codex/refresh` + **`ensure_fresh_codex_auth` → SessionActor::reconstruct_full_config`**
+- `clear_provider_slot_with_lock` (permanent fail while lock held)
 - `CodexAuthMaterial { bearer, account_id }`
-- Trusted-host ChatGPT-Account-ID inject (not arbitrary hosts)
+- Reconstruct OAuth override gates: `AuthType::SessionToken` + `session_oauth_allowed`
+- Trusted-host ChatGPT-Account-ID inject (not arbitrary hosts) — same trust rules as bearer
 - Pager clap: `Command::Login` / `Logout` / `Auth { Status }`
 
 **Wire strings:** assert `"xai"` / `"codex"` literals in CLI/status as needed.
@@ -107,7 +127,10 @@ replan_source: 05-REVIEWS.md cycle 1
 | AUTH-04 | `bum auth status` clap parses | unit (pager) | `cargo test -p xai-grok-pager bum_auth_status_parses` | ❌ Wave 0 scaffold |
 | AUTH-05 | Mock refresh updates only codex | integration | `… codex_refresh_isolates` | ❌ Wave 0 RED |
 | AUTH-05 | invalid_grant codex only | integration | `… codex_invalid_grant_no_xai_wipe` | ❌ Wave 0 RED |
-| AUTH-05 | **reconstruct mid-session refresh** returns fresh bearer | integration | `… codex_reconstruct_refreshes_mid_session_expiry` | ❌ Wave 0 RED |
+| AUTH-05 | Identity preserve when response omits RT | integration | `… codex_refresh_preserves_identity` | ❌ Wave 0 RED |
+| AUTH-05 | **reconstruct mid-session** (Option C seam) | crate-local actor | `cargo test -p xai-grok-shell codex_reconstruct_refreshes_mid_session_expiry` | ❌ Wave 0/Plan 05 |
+| AUTH-05 | BYOK key not overridden by OAuth | crate-local actor | `cargo test -p xai-grok-shell codex_byok_key_not_overridden` | ❌ Wave 0/Plan 05 |
+| AUTH-05 | OAuth bearer absent on custom endpoint | crate-local actor | `cargo test -p xai-grok-shell codex_oauth_bearer_absent_on_custom_endpoint` | ❌ Wave 0/Plan 05 |
 | AUTH-05 | Concurrent refresh single IdP spend | integration | `… codex_concurrent_refresh_single_idp_spend` | ❌ Wave 0 RED |
 | AUTH-05 | Fresh token skips IdP | integration | `… codex_fresh_token_skips_idp` | ❌ Wave 0 RED |
 | AUTH-05 | Transient hard-unexpired keeps token | integration | `… codex_transient_fail_hard_unexpired_keeps_token` | ❌ Wave 0 RED |
@@ -125,16 +148,16 @@ replan_source: 05-REVIEWS.md cycle 1
 |---------|------|------|-------------|-----------------|-----------------|-----------|-------------------|-------------|--------|
 | 05-01-01 | 01 | 1 | AUTH-02..05 | T-05-01/02 | Wave 0 list + smoke + RED contracts incl. reconstruct AUTH-05 | integration scaffold | `--list` + smoke | ❌ | ⬜ pending |
 | 05-01-02 | 01 | 1 | AUTH-02/03/04 | T-05-02 | Clap scaffolds + pager-bin check; verify new parser names | unit + check | multi clap filters + check pager-bin | ❌ | ⬜ pending |
-| 05-02-01 | 02 | 2 | AUTH-03 | T-05-04 | Public AuthProvider mutate/clear isolation | integration | mutate_provider + clear_provider + multi_slot | ❌ | ⬜ pending |
+| 05-02-01 | 02 | 2 | AUTH-03 | T-05-04/26 | Public AuthProvider mutate/clear + with_lock clear | integration | mutate_provider + clear_provider + multi_slot | ❌ | ⬜ pending |
 | 05-02-02 | 02 | 2 | AUTH-04 | T-05-03 | Paste-safe status + usable semantics | integration | auth_status_format_paste_safe + auth_status_usable | ❌ | ⬜ pending |
 | 05-03-01 | 03 | 3 | AUTH-02 | T-05-06/09 | Authorize + login persist + state mismatch | integration | authorize + login + state_mismatch | ❌ | ⬜ pending |
 | 05-03-02 | 03 | 3 | AUTH-02 | T-05-07/22 | Device multi-step + CLI provider; no xAI post_login_sync | integration + unit | clap provider + deviceauth + device multi-step + login | ❌ | ⬜ pending |
 | 05-04-01 | 04 | 4 | AUTH-03 | T-05-11/23 | Blocking clear; selective / all / bare | integration | selective + bare + logout_all | ❌ | ⬜ pending |
 | 05-04-02 | 04 | 4 | AUTH-04 | T-05-12/14 | status handler + dual-safe TUI/ACP | integration + unit | clap status + run_cli_auth_status + format | ❌ | ⬜ pending |
-| 05-05-01 | 05 | 5 | AUTH-05 | T-05-15/16/24 | Pure data-only refresher + isolation | integration | refresh_isolates + invalid_grant | ❌ | ⬜ pending |
-| 05-05-02 | 05 | 5 | AUTH-05 | T-05-15/21 | **reconstruct ensure_fresh** + lock + concurrent + transient | integration | reconstruct_mid_session + concurrent + fresh_skip + transient | ❌ | ⬜ pending |
+| 05-05-01 | 05 | 5 | AUTH-05 | T-05-15/16/24 | Pure data-only refresher + isolation + identity preserve | integration | refresh_isolates + invalid_grant + preserves_identity | ❌ | ⬜ pending |
+| 05-05-02 | 05 | 5 | AUTH-05 | T-05-15/21/25/26 | **Option C reconstruct** + BYOK/custom + lock + concurrent + transient | actor + integration | reconstruct_mid + byok + custom_endpoint + concurrent + fresh_skip + transient | ❌ | ⬜ pending |
 | 05-05-03 | 05 | 5 | AUTH-05 | T-05-18 | Trusted-host account header + absences | integration | chatgpt_account_id_header* + no_proxy regression | ❌ | ⬜ pending |
-| 05-06-01 | 06 | 6 | AUTH-02..05 | T-05-19/21 | Full lifecycle suite green | integration | full auth_codex_lifecycle | ❌ | ⬜ pending |
+| 05-06-01 | 06 | 6 | AUTH-02..05 | T-05-19/21/25 | Full lifecycle + Option C seam green | integration + actor | full lifecycle + reconstruct seam filters | ❌ | ⬜ pending |
 | 05-06-02 | 06 | 6 | AUTH-01 + MOD-04/05 | T-05-20 | Regressions + clap + check + fmt + deferred audit | integration + check | Full suite command | ❌ | ⬜ pending |
 
 *Status: ⬜ pending · ✅ green · ❌ red · ⚠️ flaky*
@@ -154,14 +177,17 @@ replan_source: 05-REVIEWS.md cycle 1
   - `selective_logout_isolates` / `logout_all_clears_both` / `bare_logout_fail_closed`
   - `auth_status_format_paste_safe` / `auth_status_usable_*` / `run_cli_auth_status`
   - `codex_refresh_isolates` / `codex_invalid_grant_no_xai_wipe`
-  - `codex_reconstruct_refreshes_mid_session_expiry` (**production reconstruct path**)
+  - `codex_refresh_preserves_identity_when_response_omits_refresh_token`
+  - `codex_reconstruct_refreshes_mid_session_expiry` (**Option C: SessionActor::reconstruct_full_config**)
+  - `codex_byok_key_not_overridden`
+  - `codex_oauth_bearer_absent_on_custom_endpoint`
   - `codex_concurrent_refresh_single_idp_spend`
   - `codex_fresh_token_skips_idp`
   - `codex_transient_fail_hard_unexpired_keeps_token` / `codex_transient_fail_hard_expired_no_credential`
   - `chatgpt_account_id_header_on_codex` / `chatgpt_account_id_header_absent_*`
 - [ ] Clap scaffolds in pager cli + pager-bin compile for `--provider`, logout `--all`, `auth status`
 - [ ] Framework install: none
-- [ ] No shell `--lib` gate
+- [ ] No unfiltered shell `--lib` gate (Option C narrow filters allowed)
 - [ ] OnceLock policy documented in harness
 
 ---
@@ -181,12 +207,12 @@ replan_source: 05-REVIEWS.md cycle 1
 
 - [ ] All tasks have `<automated>` verify or Wave 0 dependencies
 - [ ] Sampling continuity: no 3 consecutive tasks without automated verify
-- [ ] Wave 0 covers all MISSING references (including reconstruct refresh + concurrent + device multi-step + usable + status handler)
-- [ ] AUTH-05 production invoker proven on **reconstruct/ensure_fresh** — not pure unit or prepare-only
+- [ ] Wave 0 covers all MISSING references (including reconstruct seam names + BYOK/custom + identity + concurrent + device multi-step + usable + status handler)
+- [ ] AUTH-05 production invoker proven on **Option C SessionActor::reconstruct_full_config seam** — not pure unit, prepare-only, or ensure_fresh-only
 - [ ] No watch-mode flags
 - [ ] Feedback latency < 240s (warm)
-- [ ] Cargo hygiene: one TESTNAME; never shell `--lib` as phase gate
+- [ ] Cargo hygiene: one TESTNAME; never unfiltered shell `--lib` as phase gate
 - [ ] `nyquist_compliant: true` set in frontmatter after phase execution gate green
 - [ ] `wave_0_complete: true` after Plan 01 harness lands
 
-**Approval:** pending (replan from 05-REVIEWS cycle 1)
+**Approval:** pending (replan from 05-REVIEWS cycle 2)
