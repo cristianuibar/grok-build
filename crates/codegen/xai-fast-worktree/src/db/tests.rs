@@ -712,6 +712,34 @@ fn resolve_grok_home_override_via_bum_home() {
 }
 
 #[test]
+fn resolve_grok_home_relative_bum_home_is_absolutized() {
+    let _fx_lock = super::GROK_HOME_ENV_LOCK
+        .lock()
+        .unwrap_or_else(|e| e.into_inner());
+    let prev = std::env::var_os("BUM_HOME");
+    // Relative override must not stay cwd-relative after resolution (lockstep
+    // with xai_grok_config::resolve_product_home).
+    unsafe { std::env::set_var("BUM_HOME", "relative-bum-root") };
+    let resolved = resolve_grok_home().unwrap();
+    assert!(
+        resolved.is_absolute(),
+        "relative BUM_HOME must be absolutized, got {}",
+        resolved.display()
+    );
+    assert!(resolved.ends_with("relative-bum-root"));
+    let expected = std::env::current_dir()
+        .unwrap()
+        .join("relative-bum-root");
+    assert_eq!(resolved, expected);
+    unsafe {
+        match prev {
+            Some(p) => std::env::set_var("BUM_HOME", p),
+            None => std::env::remove_var("BUM_HOME"),
+        }
+    }
+}
+
+#[test]
 fn resolve_grok_home_empty_bum_home_falls_through_to_default_bum() {
     let _fx_lock = super::GROK_HOME_ENV_LOCK
         .lock()

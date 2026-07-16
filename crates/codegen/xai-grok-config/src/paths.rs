@@ -14,7 +14,9 @@ const CLAUDE_MANAGED_SETTINGS_PATH: &str = "/etc/claude-code/managed-settings.js
 
 /// Pure product-home resolver: does not read process env or touch [`GROK_HOME`] OnceLock.
 ///
-/// Precedence: non-empty `bum_home` wins; otherwise join `.bum` under `user_home`
+/// Precedence: non-empty `bum_home` wins (relative values are absolutized against
+/// the process cwd so a later `chdir` cannot retarget the OnceLock cache);
+/// empty `bum_home` is treated as unset. Otherwise join `.bum` under `user_home`
 /// (dunce-canonicalized when present). If `user_home` is `None`, uses `"."` then
 /// `.bum` (same shape as the historical cwd-relative fallback).
 ///
@@ -26,7 +28,14 @@ pub(crate) fn resolve_product_home(
     if let Some(v) = bum_home
         && !v.is_empty()
     {
-        return PathBuf::from(v);
+        let path = PathBuf::from(v);
+        if path.is_absolute() {
+            return path;
+        }
+        // Absolutize relative override once so the product-home cache is stable.
+        return std::env::current_dir()
+            .map(|cwd| cwd.join(&path))
+            .unwrap_or(path);
     }
     let home = user_home.unwrap_or_else(|| PathBuf::from("."));
     dunce::canonicalize(&home).unwrap_or(home).join(".bum")
@@ -64,13 +73,16 @@ pub fn grok_home() -> PathBuf {
 }
 
 /// The user-global product home, but only when one genuinely resolves: `Some` when
-/// `$BUM_HOME` is set or a home directory is found, `None` otherwise. Unlike
-/// [`grok_home()`], this never falls back to a cwd-relative `.bum`, so callers
-/// that *scan* user-global product resources (hooks, marketplace sources, ...) don't
-/// mistake a project's local tree for the user-global one when no home resolves.
+/// `$BUM_HOME` is set to a **non-empty** value or a home directory is found, `None`
+/// otherwise. Empty `BUM_HOME` is treated as unset (aligned with
+/// [`resolve_product_home`]). Unlike [`grok_home()`], this never falls back to a
+/// cwd-relative `.bum`, so callers that *scan* user-global product resources
+/// (hooks, marketplace sources, ...) don't mistake a project's local tree for the
+/// user-global one when no home resolves.
 pub fn user_grok_home() -> Option<PathBuf> {
+    let bum_set = std::env::var_os("BUM_HOME").is_some_and(|v| !v.is_empty());
     #[allow(deprecated)]
-    let resolvable = std::env::var_os("BUM_HOME").is_some() || std::env::home_dir().is_some();
+    let resolvable = bum_set || std::env::home_dir().is_some();
     resolvable.then(grok_home)
 }
 
@@ -335,6 +347,25 @@ mod tests {
             Some(user),
         );
         assert_eq!(resolved, PathBuf::from("/custom/bum-root"));
+    }
+
+    #[test]
+    fn resolve_product_home_relative_bum_is_absolutized() {
+        let user = PathBuf::from("/tmp/fake-user-home");
+        let resolved = resolve_product_home(
+            Some(OsString::from("relative-bum-root")),
+            Some(user),
+        );
+        assert!(
+            resolved.is_absolute(),
+            "relative BUM_HOME must be absolutized, got {}",
+            resolved.display()
+        );
+        assert!(resolved.ends_with("relative-bum-root"));
+        let expected = std::env::current_dir()
+            .unwrap()
+            .join("relative-bum-root");
+        assert_eq!(resolved, expected);
     }
 
     #[test]

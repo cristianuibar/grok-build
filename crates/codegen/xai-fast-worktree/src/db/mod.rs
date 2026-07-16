@@ -356,7 +356,15 @@ pub fn resolve_grok_home() -> Result<PathBuf> {
     if let Some(v) = std::env::var_os("BUM_HOME")
         && !v.is_empty()
     {
-        return Ok(PathBuf::from(v));
+        let path = PathBuf::from(v);
+        // Absolutize relative overrides (lockstep with config `resolve_product_home`)
+        // so a later chdir cannot retarget worktree DB paths.
+        if path.is_absolute() {
+            return Ok(path);
+        }
+        return Ok(std::env::current_dir()
+            .map(|cwd| cwd.join(&path))
+            .unwrap_or(path));
     }
     #[allow(deprecated)]
     let user_home = std::env::home_dir().or_else(|| std::env::var_os("HOME").map(PathBuf::from));
