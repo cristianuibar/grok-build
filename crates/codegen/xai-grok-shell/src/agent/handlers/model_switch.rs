@@ -1,6 +1,12 @@
-//! Applies a model switch to a session — the ungated path. `set_session_model`
-//! enforces the `allowed_models` gate before delegating here; internal callers
+//! Applies a model switch to a session. `set_session_model` enforces the
+//! `allowed_models` gate before delegating here; internal callers
 //! (`new_session`, `load_session`) call `apply` directly.
+//!
+//! **Auth gate (MOD-06 / D-01):** after `resolve_model_id`, missing-provider
+//! fails closed with `MODEL_SWITCH_MISSING_PROVIDER` before prepare /
+//! `SetSessionModel` / `ModelChanged`. BYOK models (`has_own_credentials`) skip
+//! the OAuth-slot check. `allowed_models` remains gated only in
+//! `set_session_model`.
 use crate::agent::config;
 use crate::agent::mvp_agent::{
     MvpAgent, agent_name_after_model_switch, harnesses_are_compatible, resolve_required_agent_type,
@@ -9,7 +15,36 @@ use crate::session::SessionCommand;
 use agent_client_protocol::{self as acp};
 use tokio::sync::oneshot;
 use xai_grok_sampling_types::parse_reasoning_effort_meta;
-/// Apply a model switch to a session (no gate — `set_session_model` gates first).
+
+/// Whether the OAuth credential slot for `provider` is usable for switch-time
+/// gating (D-02). Disk store via [`crate::auth::store_usable`] /
+/// [`crate::auth::credential_usable`] is the baseline (refreshable OK). For
+/// xAI only, a live AuthManager session that is usable under the same pure
+/// semantics also counts — Codex never uses the xAI AuthManager alone.
+fn provider_oauth_slot_usable(agent: &MvpAgent, provider: config::ModelProvider) -> bool {
+    let path = crate::util::grok_home::grok_home().join("auth.json");
+    let slot = match provider {
+        config::ModelProvider::Xai => crate::auth::PROVIDER_XAI,
+        config::ModelProvider::Codex => crate::auth::PROVIDER_CODEX,
+    };
+    let disk_usable = match crate::auth::read_provider_auth_store(&path, slot) {
+        Ok(store) => crate::auth::provider_slot_usable(store.as_ref()),
+        // Fail closed on parse / unsupported version (no credential disclosure).
+        Err(_) => false,
+    };
+    if disk_usable {
+        return true;
+    }
+    if matches!(provider, config::ModelProvider::Xai) {
+        if let Some(auth) = agent.auth_manager.current_or_expired() {
+            return crate::auth::credential_usable(&auth);
+        }
+    }
+    false
+}
+
+/// Apply a model switch to a session (`allowed_models` is gated by
+/// `set_session_model`; missing-provider is gated here for all callers).
 pub(crate) async fn apply(
     agent: &MvpAgent,
     args: acp::SetSessionModelRequest,
@@ -32,6 +67,34 @@ pub(crate) async fn apply(
         .await
         .ok_or_else(|| acp::Error::invalid_params().data("unknown session id"))?;
     let model = agent.resolve_model_id(&model_id)?;
+    // MOD-06 / D-01: fail closed before prepare / agent-type rebuild / SetSessionModel.
+    // Provider comes only from the trusted in-process catalog entry (T-06-02).
+    let target_provider = model.info.provider;
+    if let Some(err_payload) = config::missing_provider_gate_error(
+        target_provider,
+        model_id.0.as_ref(),
+        model.has_own_credentials(),
+        provider_oauth_slot_usable(agent, target_provider),
+    ) {
+        let previous_model_id = handle.model_id.0.clone();
+        tracing::warn!(
+            session_id = %session_id.0,
+            model_id = %model_id.0,
+            provider = %target_provider.as_str(),
+            previous_model_id = %previous_model_id,
+            "set_session_model: missing usable provider credentials — rejected"
+        );
+        xai_grok_telemetry::session_ctx::log_event(xai_grok_telemetry::events::ModelSwitched {
+            session_id: session_id.0.to_string(),
+            previous_model_id: previous_model_id.to_string(),
+            new_model_id: model_id.0.to_string(),
+            success: false,
+            error_code: Some(config::MODEL_SWITCH_MISSING_PROVIDER.to_string()),
+            required_agent_type: None,
+            current_agent_type: None,
+        });
+        return Err(err_payload.into_acp_error());
+    }
     let use_concise = model.info().use_concise;
     let session_default = handle
         .session_default_agent_profile
