@@ -46,6 +46,11 @@ use xai_grok_shell::agent::config::{
     inject_url_derived_headers, is_first_party_codex_url, EndpointsConfig, CODEX_BASE_URL_DEFAULT,
     XAI_API_BASE_URL_DEFAULT,
 };
+use xai_grok_shell::auth::codex::{
+    self, CODEX_AUTH_SCOPE, CODEX_CLIENT_ID, CODEX_ISSUER, CODEX_PREFERRED_PORT, CodexAuthorizeSession,
+    CodexTokenResponse, apply_codex_oauth_callback, build_codex_authorize_url, codex_device_token_url,
+    codex_device_usercode_url, codex_redirect_uri, persist_codex_tokens,
+};
 use xai_grok_shell::auth::{
     clear_all_provider_slots, clear_provider_slot, credential_usable, format_auth_status,
     inspect_provider_store, mutate_provider_store_or_prune, read_provider_auth_store,
@@ -157,14 +162,24 @@ fn auth_codex_lifecycle_harness_smoke() {
     );
 }
 
-// ── AUTH-02: Codex login (RED until Plan 03) ───────────────────────────────
+// ── AUTH-02: Codex login (Plan 03 GREEN) ───────────────────────────────────
+
+fn fixture_jwt_with_account(account_id: &str, exp: i64) -> String {
+    use base64::Engine;
+    let enc = base64::engine::general_purpose::URL_SAFE_NO_PAD;
+    let header = enc.encode(r#"{"alg":"RS256","typ":"JWT"}"#);
+    let payload = enc.encode(format!(
+        r#"{{"email":"codex-login@example.test","exp":{exp},"https://api.openai.com/auth":{{"chatgpt_account_id":"{account_id}","chatgpt_user_id":"u-codex"}}}}"#
+    ));
+    format!("{header}.{payload}.fake-signature")
+}
 
 /// Login(provider=codex) must persist Oidc under providers.codex and leave xAI.
 #[test]
 fn codex_login_persists_slot() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("auth.json");
-    // Pre-populate only xAI so a future codex login can prove sibling preservation.
+    // Pre-populate only xAI so codex login proves sibling preservation.
     let mut xai: AuthStore = BTreeMap::new();
     xai.insert(xai_scope(), sample_xai_auth());
     let document = serde_json::json!({
@@ -173,69 +188,174 @@ fn codex_login_persists_slot() {
     });
     std::fs::write(&path, serde_json::to_vec_pretty(&document).unwrap()).unwrap();
 
-    // Public surface today has no path-taking Codex login writer. Contract RED
-    // until Plan 03 implements in-tree PKCE/device login → providers.codex.
-    let codex = read_provider_auth_store(&path, PROVIDER_CODEX).expect("read ok");
-    assert!(
-        codex.is_some()
-            && select_provider_access_token(codex.as_ref().unwrap())
-                .is_some_and(|a| a.auth_mode == AuthMode::Oidc && !a.key.is_empty()),
-        "Plan 03: codex_login_persists_slot — expect Codex OAuth login to write Oidc \
-         providers.codex (access/refresh/expiry/account) while preserving providers.xai \
-         (auth_file={})",
-        path.display()
+    let exp = chrono::Utc::now().timestamp() + 3600;
+    let id_token = fixture_jwt_with_account(CODEX_ACCOUNT, exp);
+    let access = fixture_jwt_with_account(CODEX_ACCOUNT, exp);
+    let tokens = CodexTokenResponse {
+        access_token: access,
+        refresh_token: Some("codex-rt-injected".to_owned()),
+        id_token: Some(id_token),
+        expires_in: None, // force JWT exp path
+    };
+    let auth = persist_codex_tokens(&path, &tokens).expect("persist codex");
+    assert_eq!(auth.auth_mode, AuthMode::Oidc);
+    assert!(!auth.key.is_empty());
+    assert_eq!(auth.organization_id.as_deref(), Some(CODEX_ACCOUNT));
+    assert_eq!(auth.email.as_deref(), Some("codex-login@example.test"));
+    assert!(auth.expires_at.is_some(), "expires_at from JWT exp");
+    assert_eq!(auth.oidc_issuer.as_deref(), Some(CODEX_ISSUER));
+    assert_eq!(auth.oidc_client_id.as_deref(), Some(CODEX_CLIENT_ID));
+
+    let codex = read_provider_auth_store(&path, PROVIDER_CODEX)
+        .expect("read ok")
+        .expect("codex slot present");
+    let tok = select_provider_access_token(&codex).expect("codex token");
+    assert_eq!(tok.auth_mode, AuthMode::Oidc);
+    assert!(!tok.key.is_empty());
+    assert_eq!(tok.organization_id.as_deref(), Some(CODEX_ACCOUNT));
+    assert!(codex.contains_key(CODEX_AUTH_SCOPE));
+
+    // Sibling xAI preserved.
+    let on_disk: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+    assert_eq!(
+        pointer_key(&on_disk, PROVIDER_XAI, &xai_scope()).as_deref(),
+        Some(XAI_FAKE)
     );
 }
 
 /// Authorize URL must include PKCE S256 challenge + localhost callback (1455/1457).
 #[test]
 fn codex_authorize_url_includes_pkce_and_localhost_callback() {
-    // No public Codex authorize-URL builder yet (Plan 03: auth/codex browser flow).
-    let authorize_url: Option<String> = None;
-    let url = authorize_url.as_deref().unwrap_or("");
+    let session = CodexAuthorizeSession::new(CODEX_PREFERRED_PORT);
+    let url = &session.authorize_url;
+    // redirect_uri is query-encoded (`auth%2Fcallback`); scopes encode spaces as %20.
     assert!(
         url.contains("code_challenge")
-            && (url.contains("S256") || url.contains("code_challenge_method=S256"))
-            && (url.contains("localhost") || url.contains("127.0.0.1"))
-            && (url.contains("1455") || url.contains("1457"))
-            && url.contains("auth/callback"),
-        "Plan 03: codex_authorize_url_includes_pkce_and_localhost_callback — expect \
-         authorize URL with PKCE S256 + http://localhost:{{1455|1457}}/auth/callback \
-         (client_id app_EMoamEEZ73f0CkXaXp7hrann)"
+            && url.contains("code_challenge_method=S256")
+            && url.contains("localhost")
+            && url.contains("1455")
+            && (url.contains("auth/callback") || url.contains("auth%2Fcallback"))
+            && url.contains(CODEX_CLIENT_ID)
+            && url.contains("originator=bum")
+            && url.contains("offline_access"),
+        "authorize URL missing PKCE/localhost/callback: {url}"
     );
+    assert_eq!(
+        session.redirect_uri,
+        codex_redirect_uri(CODEX_PREFERRED_PORT)
+    );
+    assert!(session.redirect_uri.starts_with("http://localhost:"));
+    // Bind host is 127.0.0.1; redirect host string must remain localhost.
+    assert!(!session.redirect_uri.contains("127.0.0.1"));
+
+    let rebuilt = build_codex_authorize_url(
+        CODEX_ISSUER,
+        CODEX_CLIENT_ID,
+        &session.redirect_uri,
+        &session.code_challenge,
+        &session.state,
+    );
+    assert_eq!(rebuilt, session.authorize_url);
 }
 
 /// Device endpoints must use OpenAI deviceauth paths under auth.openai.com.
 #[test]
 fn codex_device_endpoints_use_deviceauth() {
-    let usercode: Option<&str> = None;
-    let token_poll: Option<&str> = None;
+    let usercode = codex_device_usercode_url(CODEX_ISSUER);
+    let token_poll = codex_device_token_url(CODEX_ISSUER);
     assert!(
-        usercode.is_some_and(|u| u.contains("deviceauth") && u.contains("usercode"))
-            && token_poll.is_some_and(|t| t.contains("deviceauth") && t.contains("token")),
-        "Plan 03: codex_device_endpoints_use_deviceauth — expect \
-         {{issuer}}/api/accounts/deviceauth/usercode and .../token endpoints"
+        usercode.contains("deviceauth") && usercode.contains("usercode"),
+        "usercode endpoint: {usercode}"
     );
+    assert!(
+        token_poll.contains("deviceauth") && token_poll.contains("token"),
+        "token poll endpoint: {token_poll}"
+    );
+    assert!(usercode.starts_with("https://auth.openai.com/api/accounts/deviceauth/usercode"));
+    assert!(token_poll.starts_with("https://auth.openai.com/api/accounts/deviceauth/token"));
 }
 
-/// Device multi-step: pending → slow_down → exchange denied must not write tokens.
-#[test]
-fn codex_device_pending_slowdown_exchange_denied() {
+/// Device multi-step: pending → slow_down → access_denied must not write tokens.
+#[tokio::test]
+async fn codex_device_pending_slowdown_exchange_denied() {
+    use axum::{
+        Json, Router,
+        extract::State,
+        http::StatusCode,
+        routing::post,
+    };
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::sync::Arc;
+
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("auth.json");
     write_dual_auth_fixture(&path);
     let before = std::fs::read(&path).unwrap();
 
-    // No public device multi-step runner yet.
-    let device_exchange_completed = false;
+    #[derive(Clone)]
+    struct MockState {
+        polls: Arc<AtomicUsize>,
+    }
+
+    async fn usercode() -> Json<serde_json::Value> {
+        Json(serde_json::json!({
+            "device_auth_id": "dev-auth-1",
+            "user_code": "ABCD-EFGH",
+            "interval": 1
+        }))
+    }
+
+    async fn token_poll(State(st): State<MockState>) -> (StatusCode, Json<serde_json::Value>) {
+        let n = st.polls.fetch_add(1, Ordering::SeqCst);
+        match n {
+            0 => (
+                StatusCode::BAD_REQUEST,
+                Json(serde_json::json!({"error": "authorization_pending"})),
+            ),
+            1 => (
+                StatusCode::BAD_REQUEST,
+                Json(serde_json::json!({"error": "slow_down"})),
+            ),
+            _ => (
+                StatusCode::BAD_REQUEST,
+                Json(serde_json::json!({"error": "access_denied"})),
+            ),
+        }
+    }
+
+    let st = MockState {
+        polls: Arc::new(AtomicUsize::new(0)),
+    };
+    let app = Router::new()
+        .route("/api/accounts/deviceauth/usercode", post(usercode))
+        .route("/api/accounts/deviceauth/token", post(token_poll))
+        .with_state(st.clone());
+
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    let server = tokio::spawn(async move {
+        axum::serve(listener, app).await.ok();
+    });
+
+    let issuer = format!("http://{addr}");
+    let result = codex::run_codex_device_poll_only_with_base(&path, &issuer, CODEX_CLIENT_ID).await;
+    server.abort();
+
     assert!(
-        device_exchange_completed,
-        "Plan 03: codex_device_pending_slowdown_exchange_denied — expect device poll \
-         handling authorization_pending / slow_down / access_denied without mutating \
-         auth.json (auth_file={})",
-        path.display()
+        result.is_err(),
+        "access_denied must fail without writing tokens"
     );
-    let _ = before;
+    assert_eq!(
+        std::fs::read(&path).unwrap(),
+        before,
+        "device denied/pending path must not mutate auth.json"
+    );
+    assert!(
+        st.polls.load(Ordering::SeqCst) >= 3,
+        "expected pending + slow_down + denied polls, got {}",
+        st.polls.load(Ordering::SeqCst)
+    );
 }
 
 /// OAuth state mismatch must write nothing to either provider slot.
@@ -252,19 +372,59 @@ fn codex_oauth_state_mismatch_writes_nothing() {
     std::fs::write(&path, serde_json::to_vec_pretty(&document).unwrap()).unwrap();
     let before = std::fs::read(&path).unwrap();
 
-    // No public Codex callback handler yet; contract requires zero writes on state mismatch.
-    let state_mismatch_handler_present = false;
+    let tokens = CodexTokenResponse {
+        access_token: "should-not-write".to_owned(),
+        refresh_token: Some("rt".to_owned()),
+        id_token: None,
+        expires_in: Some(3600),
+    };
+    let err = apply_codex_oauth_callback(
+        &path,
+        "expected-state",
+        Some("wrong-state"),
+        None,
+        Some(&tokens),
+    )
+    .expect_err("state mismatch must fail");
     assert!(
-        state_mismatch_handler_present,
-        "Plan 03: codex_oauth_state_mismatch_writes_nothing — expect callback state \
-         mismatch to reject without writing providers.codex or mutating xAI \
-         (auth_file={})",
-        path.display()
+        matches!(err, codex::CodexLoginError::StateMismatch),
+        "got {err:?}"
     );
+
+    // OAuth error path also no-write.
+    let err = apply_codex_oauth_callback(
+        &path,
+        "expected-state",
+        Some("expected-state"),
+        Some("access_denied"),
+        Some(&tokens),
+    )
+    .expect_err("oauth error must fail");
+    assert!(matches!(err, codex::CodexLoginError::OAuthError(_)));
+
+    // Exchange failure (no tokens) no-write.
+    let err = apply_codex_oauth_callback(
+        &path,
+        "expected-state",
+        Some("expected-state"),
+        None,
+        None,
+    )
+    .expect_err("missing tokens must fail");
+    assert!(matches!(err, codex::CodexLoginError::TokenExchange(_)));
+
     assert_eq!(
         std::fs::read(&path).unwrap(),
         before,
-        "fixture must remain unchanged while seam is missing"
+        "fixture must remain unchanged on state/error/exchange failure"
+    );
+    assert!(
+        read_provider_auth_store(&path, PROVIDER_CODEX)
+            .unwrap()
+            .is_none()
+            || read_provider_auth_store(&path, PROVIDER_CODEX)
+                .unwrap()
+                .is_some_and(|s| s.is_empty())
     );
 }
 

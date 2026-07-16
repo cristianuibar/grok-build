@@ -1,5 +1,7 @@
 pub(crate) mod attribution;
 mod config;
+/// ChatGPT / Codex OAuth (browser PKCE + deviceauth) → `providers.codex`.
+pub mod codex;
 pub mod credential_provider;
 #[path = "devbox_login_stub.rs"]
 pub(crate) mod devbox_login;
@@ -29,7 +31,7 @@ pub(crate) use flow::{
 pub use flow::{
     AuthUrlInfo, AuthUrlMode, LoginTransportOverride, LogoutResult, ensure_authenticated,
     ensure_authenticated_or_noninteractive, ensure_authenticated_with_override, perform_logout,
-    run_cli_login, run_cli_logout, try_ensure_fresh_auth,
+    run_cli_login, run_cli_login_for_provider, run_cli_logout, try_ensure_fresh_auth,
 };
 pub use jwt::{is_jwt_expired_or_near, parse_jwt_expiration};
 mod meta;

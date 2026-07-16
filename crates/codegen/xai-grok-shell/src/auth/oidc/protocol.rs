@@ -330,11 +330,13 @@ async fn discover_once(issuer_key: &str) -> anyhow::Result<Discovery> {
 pub(super) fn clear_discovery_cache() {
     DISCOVERY_CACHE.write().clear();
 }
-pub(super) struct Pkce {
-    pub(super) code_verifier: String,
-    pub(super) code_challenge: String,
+/// PKCE verifier + S256 challenge. Shared with Codex login (pub(crate)).
+pub(crate) struct Pkce {
+    pub(crate) code_verifier: String,
+    pub(crate) code_challenge: String,
 }
-pub(super) fn generate_pkce() -> Pkce {
+/// Generate a cryptographically random PKCE pair (S256).
+pub(crate) fn generate_pkce() -> Pkce {
     let random_bytes: [u8; 32] = rand::random();
     let code_verifier = URL_SAFE_NO_PAD.encode(random_bytes);
     let code_challenge = URL_SAFE_NO_PAD.encode(Sha256::digest(code_verifier.as_bytes()));
