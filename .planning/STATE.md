@@ -2,15 +2,15 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-current_phase: 2
-current_phase_name: Multi-slot credentials & xAI OAuth
-status: verifying
+current_phase: 3
+current_phase_name: Model catalog & GPT-5.6 entries
+status: in_progress
 stopped_at: Completed 03-01-PLAN.md
 last_updated: "2026-07-16T10:21:04.327Z"
 last_activity: 2026-07-16
-last_activity_desc: Phase 2 multi-slot credentials & xAI OAuth delivered
+last_activity_desc: Phase 3 plan 01 complete — ModelProvider + mixed catalog
 progress:
-  total_phases: 3
+  total_phases: 9
   completed_phases: 2
   total_plans: 12
   completed_plans: 10
@@ -23,14 +23,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-07-16)
 
 **Core value:** One CLI (`bum`) can log into both xAI and Codex and freely switch between Grok and GPT-5.6 models in a real coding session — including cross-provider subagent orchestration.
-**Current focus:** Phase 1 — Product identity & isolated home (executing)
+**Current focus:** Phase 3 — Model catalog & GPT-5.6 entries (executing)
 
 ## Current Position
 
-Phase: 2 of 9 (Multi-slot credentials & xAI OAuth)
-Plan: 4 of 4 complete
-Status: Phase complete — ready for verification
-Last activity: 2026-07-16 — Phase 2 multi-slot credentials & xAI OAuth delivered
+Phase: 3 of 9 (Model catalog & GPT-5.6 entries)
+Plan: 2 of 3 (next: 03-02-PLAN.md)
+Status: In progress — 03-01 complete
+Last activity: 2026-07-16 — Phase 3 plan 01 ModelProvider + mixed GPT-5.6 catalog
 
 Progress: [████████░░] 83%
 
