@@ -862,6 +862,7 @@ async fn codex_refresh_isolates() {
     set_ensure_fresh_codex_synthetic_success(path.clone(), fresh_rotated_codex(), counter);
     let material = ensure_fresh_codex_auth_at(&path, EnsureFreshCodexOptions::default())
         .await
+        .material()
         .expect("ensure_fresh should return material");
     clear_ensure_fresh_codex_test_hooks();
 
@@ -889,10 +890,14 @@ async fn codex_invalid_grant_no_xai_wipe() {
     let path = dir.path().join("auth.json");
     write_near_expiry_codex_dual(&path, near_expiry_codex(CODEX_FAKE));
     set_ensure_fresh_codex_synthetic_permanent(path.clone());
-    let material = ensure_fresh_codex_auth_at(&path, EnsureFreshCodexOptions::default()).await;
+    let result = ensure_fresh_codex_auth_at(&path, EnsureFreshCodexOptions::default()).await;
     clear_ensure_fresh_codex_test_hooks();
 
-    assert!(material.is_none(), "permanent fail returns no material");
+    assert!(
+        result.is_unusable(),
+        "permanent fail returns Unusable (not Unavailable)"
+    );
+    assert!(result.material().is_none(), "permanent fail returns no material");
     let on_disk: serde_json::Value =
         serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
     assert_eq!(
@@ -967,7 +972,7 @@ async fn codex_concurrent_refresh_single_idp_spend() {
     );
     clear_ensure_fresh_codex_test_hooks();
 
-    assert!(a.is_some() && b.is_some());
+    assert!(a.is_fresh() && b.is_fresh());
     assert_eq!(
         counter.load(Ordering::SeqCst),
         1,
@@ -988,6 +993,7 @@ async fn codex_fresh_token_skips_idp() {
     set_ensure_fresh_codex_synthetic_success(path.clone(), fresh_rotated_codex(), counter.clone());
     let material = ensure_fresh_codex_auth_at(&path, EnsureFreshCodexOptions::default())
         .await
+        .material()
         .expect("fresh token returns material");
     clear_ensure_fresh_codex_test_hooks();
 
@@ -1009,11 +1015,11 @@ async fn codex_transient_fail_hard_unexpired_keeps_token() {
     // Near-expiry (buffer) but hard-unexpired (real exp in future).
     write_near_expiry_codex_dual(&path, near_expiry_codex(CODEX_FAKE));
     set_ensure_fresh_codex_synthetic_transient(path.clone());
-    let material = ensure_fresh_codex_auth_at(&path, EnsureFreshCodexOptions::default()).await;
+    let result = ensure_fresh_codex_auth_at(&path, EnsureFreshCodexOptions::default()).await;
     clear_ensure_fresh_codex_test_hooks();
 
     assert_eq!(
-        material.as_ref().map(|m| m.bearer.as_str()),
+        result.material().as_ref().map(|m| m.bearer.as_str()),
         Some(CODEX_FAKE),
         "transient fail with hard-unexpired keeps old codex key"
     );
@@ -1031,11 +1037,11 @@ async fn codex_transient_fail_hard_expired_no_credential() {
     expired.expires_at = Some(Utc::now() - Duration::minutes(1));
     write_near_expiry_codex_dual(&path, expired);
     set_ensure_fresh_codex_synthetic_transient(path.clone());
-    let material = ensure_fresh_codex_auth_at(&path, EnsureFreshCodexOptions::default()).await;
+    let result = ensure_fresh_codex_auth_at(&path, EnsureFreshCodexOptions::default()).await;
     clear_ensure_fresh_codex_test_hooks();
 
     assert!(
-        material.is_none(),
+        result.is_unusable(),
         "transient fail with hard-expired access must not surface usable bearer"
     );
 }

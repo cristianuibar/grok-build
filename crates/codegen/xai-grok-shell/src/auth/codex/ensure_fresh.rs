@@ -35,6 +35,43 @@ impl CodexAuthMaterial {
     }
 }
 
+/// Ternary ensure_fresh outcome for reconstruct (CR-02).
+///
+/// Distinguishes permanent unusable credentials from transient availability
+/// failures so reconstruct can keep a still-valid prepared SessionToken on
+/// lock/IO/timeout instead of wiping it as if the user were logged out.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum EnsureFreshCodexResult {
+    /// Fresh (or still hard-unexpired) material safe to put on the wire.
+    Fresh(CodexAuthMaterial),
+    /// Hard-expired, missing slot, permanent IdP clear — do not serve prepared key.
+    Unusable,
+    /// Lock/IO/timeout/persist-availability — keep prepared SessionToken; not permanent logout.
+    Unavailable,
+}
+
+impl EnsureFreshCodexResult {
+    /// Convenience for tests that only care about material presence.
+    pub fn material(self) -> Option<CodexAuthMaterial> {
+        match self {
+            Self::Fresh(m) => Some(m),
+            Self::Unusable | Self::Unavailable => None,
+        }
+    }
+
+    pub fn is_fresh(&self) -> bool {
+        matches!(self, Self::Fresh(_))
+    }
+
+    pub fn is_unusable(&self) -> bool {
+        matches!(self, Self::Unusable)
+    }
+
+    pub fn is_unavailable(&self) -> bool {
+        matches!(self, Self::Unavailable)
+    }
+}
+
 /// Options for ensure_fresh (test hooks + production defaults).
 #[derive(Debug, Clone, Default)]
 pub struct EnsureFreshCodexOptions {
@@ -44,6 +81,9 @@ pub struct EnsureFreshCodexOptions {
 
 /// Process-wide test hooks so `reconstruct_full_config` can target a temp
 /// `auth.json` + mock IdP without mutating `BUM_HOME` (OnceLock).
+///
+/// Only compiled into test / debug / `unstable` builds (WR-01).
+#[cfg(any(test, feature = "unstable", debug_assertions))]
 #[derive(Default)]
 struct EnsureFreshTestHooks {
     auth_file: Option<PathBuf>,
@@ -53,12 +93,14 @@ struct EnsureFreshTestHooks {
     synthetic: Option<SyntheticIdp>,
 }
 
+#[cfg(any(test, feature = "unstable", debug_assertions))]
 #[derive(Clone)]
 struct SyntheticIdp {
     outcome: SyntheticOutcome,
     call_counter: std::sync::Arc<std::sync::atomic::AtomicUsize>,
 }
 
+#[cfg(any(test, feature = "unstable", debug_assertions))]
 #[derive(Clone)]
 enum SyntheticOutcome {
     Success(GrokAuth),
@@ -66,8 +108,10 @@ enum SyntheticOutcome {
     Transient,
 }
 
+#[cfg(any(test, feature = "unstable", debug_assertions))]
 static TEST_HOOKS: OnceLock<Mutex<EnsureFreshTestHooks>> = OnceLock::new();
 
+#[cfg(any(test, feature = "unstable", debug_assertions))]
 fn test_hooks() -> &'static Mutex<EnsureFreshTestHooks> {
     TEST_HOOKS.get_or_init(|| Mutex::new(EnsureFreshTestHooks::default()))
 }
@@ -75,7 +119,7 @@ fn test_hooks() -> &'static Mutex<EnsureFreshTestHooks> {
 /// Install test hooks for crate-local reconstruct / isolation tests.
 ///
 /// Call [`clear_ensure_fresh_codex_test_hooks`] when done (or RAII via guard).
-#[cfg(any(test, feature = "unstable"))]
+#[cfg(any(test, feature = "unstable", debug_assertions))]
 pub fn set_ensure_fresh_codex_test_hooks(
     auth_file: Option<PathBuf>,
     token_url: Option<String>,
@@ -86,22 +130,23 @@ pub fn set_ensure_fresh_codex_test_hooks(
 }
 
 /// Public test surface for integration binary (same crate public API).
+#[cfg(any(test, feature = "unstable", debug_assertions))]
 pub fn set_ensure_fresh_codex_test_hooks_public(
     auth_file: Option<PathBuf>,
     token_url: Option<String>,
 ) {
-    let mut g = test_hooks().lock().unwrap_or_else(|e| e.into_inner());
-    g.auth_file = auth_file;
-    g.token_url = token_url;
+    set_ensure_fresh_codex_test_hooks(auth_file, token_url);
 }
 
 /// Clear all ensure_fresh test hooks.
+#[cfg(any(test, feature = "unstable", debug_assertions))]
 pub fn clear_ensure_fresh_codex_test_hooks() {
     let mut g = test_hooks().lock().unwrap_or_else(|e| e.into_inner());
     *g = EnsureFreshTestHooks::default();
 }
 
 /// Install a synthetic IdP that returns success with `fresh` and counts spends.
+#[cfg(any(test, feature = "unstable", debug_assertions))]
 pub fn set_ensure_fresh_codex_synthetic_success(
     auth_file: PathBuf,
     fresh: GrokAuth,
@@ -117,6 +162,7 @@ pub fn set_ensure_fresh_codex_synthetic_success(
 }
 
 /// Synthetic permanent invalid_grant.
+#[cfg(any(test, feature = "unstable", debug_assertions))]
 pub fn set_ensure_fresh_codex_synthetic_permanent(auth_file: PathBuf) {
     let mut g = test_hooks().lock().unwrap_or_else(|e| e.into_inner());
     g.auth_file = Some(auth_file);
@@ -127,6 +173,7 @@ pub fn set_ensure_fresh_codex_synthetic_permanent(auth_file: PathBuf) {
 }
 
 /// Synthetic transient failure.
+#[cfg(any(test, feature = "unstable", debug_assertions))]
 pub fn set_ensure_fresh_codex_synthetic_transient(auth_file: PathBuf) {
     let mut g = test_hooks().lock().unwrap_or_else(|e| e.into_inner());
     g.auth_file = Some(auth_file);
@@ -136,6 +183,8 @@ pub fn set_ensure_fresh_codex_synthetic_transient(auth_file: PathBuf) {
     });
 }
 
+/// Snapshot of test hooks. Production release builds always return empty hooks (WR-01).
+#[cfg(any(test, feature = "unstable", debug_assertions))]
 fn take_hooks_snapshot() -> EnsureFreshTestHooks {
     let g = test_hooks().lock().unwrap_or_else(|e| e.into_inner());
     EnsureFreshTestHooks {
@@ -160,12 +209,18 @@ fn resolve_auth_file(explicit: Option<&Path>) -> PathBuf {
     if let Some(p) = explicit {
         return p.to_path_buf();
     }
-    let hooks = take_hooks_snapshot();
-    hooks.auth_file.unwrap_or_else(product_auth_file)
+    #[cfg(any(test, feature = "unstable", debug_assertions))]
+    {
+        let hooks = take_hooks_snapshot();
+        if let Some(p) = hooks.auth_file {
+            return p;
+        }
+    }
+    product_auth_file()
 }
 
 /// Production entry: product home auth.json (or test hook override).
-pub async fn ensure_fresh_codex_auth() -> Option<CodexAuthMaterial> {
+pub async fn ensure_fresh_codex_auth() -> EnsureFreshCodexResult {
     let path = resolve_auth_file(None);
     ensure_fresh_codex_auth_at(&path, EnsureFreshCodexOptions::default()).await
 }
@@ -174,72 +229,87 @@ pub async fn ensure_fresh_codex_auth() -> Option<CodexAuthMaterial> {
 pub async fn ensure_fresh_codex_auth_at(
     auth_file: &Path,
     options: EnsureFreshCodexOptions,
-) -> Option<CodexAuthMaterial> {
-    let hooks = take_hooks_snapshot();
-    let token_url = options
-        .token_url_override
-        .or(hooks.token_url)
-        .filter(|s| !s.is_empty());
-    // Synthetic IdP is path-scoped: only apply when the hook's auth_file matches
-    // this call's path (avoids cross-fixture bleed if hooks are left installed).
-    let synthetic = hooks.synthetic.filter(|_| {
-        hooks
-            .auth_file
-            .as_ref()
-            .is_some_and(|p| p.as_path() == auth_file)
-    });
+) -> EnsureFreshCodexResult {
+    #[cfg(any(test, feature = "unstable", debug_assertions))]
+    let (token_url, synthetic) = {
+        let hooks = take_hooks_snapshot();
+        let token_url = options
+            .token_url_override
+            .or(hooks.token_url)
+            .filter(|s| !s.is_empty());
+        // Synthetic IdP is path-scoped: only apply when the hook's auth_file matches
+        // this call's path (avoids cross-fixture bleed if hooks are left installed).
+        let synthetic = hooks.synthetic.filter(|_| {
+            hooks
+                .auth_file
+                .as_ref()
+                .is_some_and(|p| p.as_path() == auth_file)
+        });
+        (token_url, synthetic)
+    };
+    #[cfg(not(any(test, feature = "unstable", debug_assertions)))]
+    let (token_url, synthetic): (Option<String>, Option<()>) = {
+        let token_url = options.token_url_override.filter(|s| !s.is_empty());
+        (token_url, None)
+    };
+    // Silence unused in release when synthetic is unit type placeholder.
+    let _ = &synthetic;
 
     let _in_process = refresh_mutex().lock().await;
 
-    let lock = match crate::auth::manager::lock::lock_auth_file_blocking(auth_file) {
-        Ok(l) => l,
-        Err(e) => {
-            tracing::warn!(
-                error_len = e.to_string().len(),
-                "codex ensure_fresh: failed to acquire auth.json.lock"
-            );
-            return None;
+    // CR-01: timed async lock (spawn_blocking + timeout + stale recovery).
+    // Never block the Tokio worker indefinitely on flock.
+    let lock = match crate::auth::manager::lock::try_lock_auth_file_async(
+        auth_file,
+        crate::auth::manager::AUTH_LOCK_TIMEOUT,
+    )
+    .await
+    {
+        Some(l) => l,
+        None => {
+            tracing::warn!("codex ensure_fresh: auth.json.lock timeout/unavailable");
+            return EnsureFreshCodexResult::Unavailable;
         }
     };
 
     if !lock.still_live(auth_file) {
         tracing::warn!("codex ensure_fresh: lock not live after acquire");
-        return None;
+        return EnsureFreshCodexResult::Unavailable;
     }
 
     let store = match read_provider_auth_store(auth_file, PROVIDER_CODEX) {
         Ok(Some(s)) => s,
-        Ok(None) => return None,
+        Ok(None) => return EnsureFreshCodexResult::Unusable,
         Err(e) => {
             tracing::debug!(
                 error_len = e.to_string().len(),
                 "codex ensure_fresh: read providers.codex failed"
             );
-            return None;
+            return EnsureFreshCodexResult::Unavailable;
         }
     };
 
     let Some(auth) = select_provider_access_token(&store) else {
-        return None;
+        return EnsureFreshCodexResult::Unusable;
     };
 
     // No selectable OIDC session (ApiKey-only slot is not session OAuth).
     if auth.auth_mode != crate::auth::AuthMode::Oidc {
-        return None;
+        return EnsureFreshCodexResult::Unusable;
     }
 
     // Fresh enough (outside 5-min early-invalidation buffer) → no IdP.
     if !is_expired(&auth) {
-        return Some(CodexAuthMaterial::from_auth(&auth));
+        return EnsureFreshCodexResult::Fresh(CodexAuthMaterial::from_auth(&auth));
     }
 
     // Near-expiry / expired but no refresh_token.
     if auth.refresh_token.as_ref().is_none_or(|t| t.is_empty()) {
         // Hard-unexpired access (buffer-only expiry) → keep material.
         if !is_expired_with_buffer(&auth, Duration::zero()) {
-            return Some(CodexAuthMaterial::from_auth(&auth));
+            return EnsureFreshCodexResult::Fresh(CodexAuthMaterial::from_auth(&auth));
         }
-        return None;
+        return EnsureFreshCodexResult::Unusable;
     }
 
     // Sibling adopt: if selected token is already non-expired we returned above.
@@ -247,6 +317,7 @@ pub async fn ensure_fresh_codex_auth_at(
     // and lock acquire is visible as a non-expired selection.
 
     // IdP refresh while holding lock.
+    #[cfg(any(test, feature = "unstable", debug_assertions))]
     let outcome = if let Some(syn) = synthetic.as_ref() {
         syn.call_counter
             .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
@@ -300,6 +371,22 @@ pub async fn ensure_fresh_codex_auth_at(
         }
     };
 
+    #[cfg(not(any(test, feature = "unstable", debug_assertions)))]
+    let outcome = if let Some(ref url) = token_url {
+        let refresher = CodexRefresher::new(auth.clone()).with_token_url(url.clone());
+        refresher.refresh(RefreshReason::PreRequest).await
+    } else {
+        match codex_token_exchange(&auth, None).await {
+            CodexRefreshResult::Success(a) => RefreshOutcome::Success(a),
+            CodexRefreshResult::TerminalError { reason } => {
+                RefreshOutcome::permanent(reason, Some(auth.key.clone()))
+            }
+            CodexRefreshResult::Failed => {
+                RefreshOutcome::transient("Codex token refresh failed")
+            }
+        }
+    };
+
     match outcome {
         RefreshOutcome::Success(new_auth) => {
             let to_store = (*new_auth).clone();
@@ -312,15 +399,18 @@ pub async fn ensure_fresh_codex_auth_at(
                     store.insert(scope, to_store);
                 },
             ) {
-                tracing::warn!(
+                // WR-02: do not advertise rotated tokens that are not durable.
+                // Prefer Unavailable so reconstruct keeps prepared hard-unexpired
+                // bearer rather than lying that the store holds the new RT.
+                tracing::error!(
                     error_len = e.to_string().len(),
-                    "codex ensure_fresh: failed to persist rotated tokens"
+                    "codex ensure_fresh: failed to persist rotated tokens — not returning unpersisted material"
                 );
-                // Still return material — tokens are valid even if disk write failed.
+                return EnsureFreshCodexResult::Unavailable;
             }
             // Best-effort invalidate prepare-time mtime snapshot.
             crate::agent::config::invalidate_codex_session_key_snapshot();
-            Some(CodexAuthMaterial::from_auth(&new_auth))
+            EnsureFreshCodexResult::Fresh(CodexAuthMaterial::from_auth(&new_auth))
         }
         RefreshOutcome::PermanentFailure { error, .. } => {
             tracing::warn!(
@@ -337,7 +427,7 @@ pub async fn ensure_fresh_codex_auth_at(
                 );
             }
             crate::agent::config::invalidate_codex_session_key_snapshot();
-            None
+            EnsureFreshCodexResult::Unusable
         }
         RefreshOutcome::TransientFailure { message } => {
             tracing::warn!(
@@ -346,16 +436,17 @@ pub async fn ensure_fresh_codex_auth_at(
             );
             if is_expired_with_buffer(&auth, Duration::zero()) {
                 // Hard-expired: no usable credential.
-                None
+                EnsureFreshCodexResult::Unusable
             } else {
                 // Buffer-only expiry: keep old bearer.
-                Some(CodexAuthMaterial::from_auth(&auth))
+                EnsureFreshCodexResult::Fresh(CodexAuthMaterial::from_auth(&auth))
             }
         }
     }
 }
 
 /// Return IdP call counter from last synthetic install (for concurrent tests).
+#[cfg(any(test, feature = "unstable", debug_assertions))]
 pub fn synthetic_idp_call_count(
     counter: &std::sync::Arc<std::sync::atomic::AtomicUsize>,
 ) -> usize {

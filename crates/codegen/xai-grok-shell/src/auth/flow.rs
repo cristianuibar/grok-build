@@ -1072,6 +1072,11 @@ pub fn logout_provider_slot(
     }
     // Disk SoT: blocking clear — independent of AuthManager nonblocking lock.
     let _mutation = super::clear_provider_slot(auth_file, provider)?;
+    // Bump prepare-time Codex snapshot epoch so in-session reconstruct cannot
+    // re-stamp a stale SessionToken after selective Codex clear (WR-04).
+    if matches!(provider, super::AuthProvider::Codex) {
+        crate::agent::config::invalidate_codex_session_key_snapshot();
+    }
     Ok(DualLogoutResult {
         was_logged_in,
         email,
@@ -1104,6 +1109,8 @@ pub fn logout_all_provider_slots(
         flush_identity_on_logout();
     }
     let _mutation = super::clear_all_provider_slots(auth_file)?;
+    // Dual clear always invalidates Codex prepare-time snapshot (WR-04).
+    crate::agent::config::invalidate_codex_session_key_snapshot();
     Ok(DualLogoutResult {
         was_logged_in,
         email: None,

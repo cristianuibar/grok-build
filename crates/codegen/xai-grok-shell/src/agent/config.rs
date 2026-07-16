@@ -4761,10 +4761,14 @@ static CODEX_SNAPSHOT_EPOCH: std::sync::atomic::AtomicU64 = std::sync::atomic::A
 
 /// Re-export AUTH-05 ensure_fresh + material for reconstruct / integration.
 pub use crate::auth::codex::{
-    clear_ensure_fresh_codex_test_hooks, ensure_fresh_codex_auth, ensure_fresh_codex_auth_at,
-    set_ensure_fresh_codex_synthetic_permanent, set_ensure_fresh_codex_synthetic_success,
-    set_ensure_fresh_codex_synthetic_transient, set_ensure_fresh_codex_test_hooks_public,
-    CodexAuthMaterial, EnsureFreshCodexOptions,
+    ensure_fresh_codex_auth, ensure_fresh_codex_auth_at, CodexAuthMaterial, EnsureFreshCodexOptions,
+    EnsureFreshCodexResult,
+};
+#[cfg(any(test, feature = "unstable", debug_assertions))]
+pub use crate::auth::codex::{
+    clear_ensure_fresh_codex_test_hooks, set_ensure_fresh_codex_synthetic_permanent,
+    set_ensure_fresh_codex_synthetic_success, set_ensure_fresh_codex_synthetic_transient,
+    set_ensure_fresh_codex_test_hooks_public,
 };
 
 /// Inject `ChatGPT-Account-ID` only for trusted first-party Codex endpoints.

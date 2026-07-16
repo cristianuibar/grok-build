@@ -384,11 +384,13 @@ async fn handle_callback(
         CallbackOutcome::MissingCode
     };
 
+    // Soften success HTML: token exchange + persist happen after this response
+    // (WR-03). Never claim "Signed in" before exchange completes.
     let (status, title, message) = match &outcome {
         CallbackOutcome::Success { .. } => (
             StatusCode::OK,
-            "Signed in to Codex",
-            "You can close this window and return to the terminal.",
+            "Authorization received",
+            "Finish sign-in in the terminal. You can close this window after the CLI confirms success.",
         ),
         CallbackOutcome::StateMismatch => (
             StatusCode::BAD_REQUEST,

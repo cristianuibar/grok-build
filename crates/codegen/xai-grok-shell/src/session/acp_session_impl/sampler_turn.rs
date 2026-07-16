@@ -297,13 +297,17 @@ impl SessionActor {
             && crate::agent::config::is_first_party_codex_url(&cfg.base_url, &endpoints);
         if codex_session_oauth {
             match crate::agent::config::ensure_fresh_codex_auth().await {
-                Some(material) => {
+                crate::agent::config::EnsureFreshCodexResult::Fresh(material) => {
                     api_key = Some(material.bearer);
                     codex_account_id = material.account_id;
                 }
-                None => {
-                    // Permanent fail / hard-expired: do not serve stale prepared bearer.
+                crate::agent::config::EnsureFreshCodexResult::Unusable => {
+                    // Permanent fail / hard-expired / empty slot: do not serve prepared bearer.
                     api_key = None;
+                }
+                crate::agent::config::EnsureFreshCodexResult::Unavailable => {
+                    // Lock/IO/timeout: keep prepared SessionToken; not permanent logout.
+                    // codex_account_id stays None → header omitted if unknown.
                 }
             }
         }
