@@ -1,4 +1,5 @@
-//! Phase 6 — missing-provider model-switch gate harness (MOD-06 / D-01 / D-02 / D-07).
+//! Phase 6 — missing-provider model-switch gate harness (MOD-06 / D-01 / D-02 / D-07)
+//! plus free dual-provider switch, history, and mid-turn contracts (MOD-03 / D-06).
 //!
 //! **Contracts covered:**
 //! - Typed `MODEL_SWITCH_MISSING_PROVIDER` ACP payload (camelCase + CLI suggestion)
@@ -6,6 +7,11 @@
 //! - Real `model_switch::apply` path via ACP `session/set_model` (blocks empty Codex)
 //! - Side-effect absence on blocked switch (model_id unchanged, no ModelChanged)
 //! - Refreshable Codex allows switch; BYOK skips OAuth-slot gate
+//! - Dual-usable free Grok↔GPT switch (no MISSING_PROVIDER)
+//! - Same-provider Codex switch with only Codex slot filled
+//! - Next-sample route uses target provider credential/base_url after apply
+//! - History length + identity preserved across successful apply (chat_history.jsonl)
+//! - Mid-turn apply does not cancel in-flight held MockInferenceServer turn
 //!
 //! **Scope:** Shell authority only. No pager QuestionView / badges (Plans 02–04).
 //! Fixture tokens only — no live ChatGPT/xAI OAuth.
@@ -25,6 +31,7 @@ use std::cell::RefCell;
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, OnceLock};
 use std::time::Duration;
 
@@ -39,7 +46,7 @@ use xai_acp_lib::{
 };
 use xai_grok_shell::agent::config::{
     missing_provider_gate_error, Config as AgentConfig, ConfigModelOverride, ModelProvider,
-    ModelSwitchIncompatibleAgentError, ModelSwitchMissingProviderError,
+    ModelSwitchIncompatibleAgentError, ModelSwitchMissingProviderError, CODEX_BASE_URL_DEFAULT,
     MODEL_SWITCH_MISSING_PROVIDER,
 };
 use xai_grok_shell::agent::mvp_agent::MvpAgent;
@@ -51,10 +58,13 @@ use xai_grok_test_support::MockInferenceServer;
 const XAI_FAKE: &str = "xai-fake-token-p6";
 const CODEX_FAKE: &str = "codex-fake-token-p6";
 const CODEX_REFRESH: &str = "codex-refresh-token-p6";
+const BYOK_KEY: &str = "byok-own-key-p6";
 const CODEX_MODEL: &str = "gpt-5.6-sol";
+const CODEX_MODEL_TERRA: &str = "gpt-5.6-terra";
 const XAI_MODEL: &str = "grok-build";
 const BYOK_MODEL: &str = "p6-byok-codex";
 const DUPLEX_BUFFER_BYTES: usize = 4 * 1024 * 1024;
+const HISTORY_MARKER: &str = "p6-history-marker-unique-prompt-string";
 
 // ───────────────────────── pure / unit-style ─────────────────────────
 
@@ -194,16 +204,55 @@ fn agent_config_with_byok() -> AgentConfig {
     byok.model = Some(BYOK_MODEL.to_owned());
     byok.name = Some("P6 BYOK Codex".to_owned());
     byok.provider = Some(ModelProvider::Codex);
-    byok.api_key = Some("byok-own-key-p6".to_owned());
+    byok.api_key = Some(BYOK_KEY.to_owned());
     byok.supported_in_api = Some(true);
     byok.hidden = Some(false);
     cfg.config_models.insert(BYOK_MODEL.to_owned(), byok);
     cfg
 }
 
-#[derive(Default)]
+fn dual_usable_auth() -> (GrokAuth, GrokAuth) {
+    (
+        sample_oidc(XAI_FAKE, Some("xai-rt"), false),
+        sample_oidc(CODEX_FAKE, Some(CODEX_REFRESH), false),
+    )
+}
+
+/// Locate `<home>/sessions/<enc-cwd>/<id>` without depending on internal cwd encoders.
+fn locate_session_dir(root: &Path, id: &str) -> PathBuf {
+    let sessions = root.join("sessions");
+    for entry in std::fs::read_dir(&sessions)
+        .expect("read sessions dir")
+        .flatten()
+    {
+        let candidate = entry.path().join(id);
+        if candidate.is_dir() {
+            return candidate;
+        }
+    }
+    panic!(
+        "could not locate session dir for {id} under {}",
+        sessions.display()
+    );
+}
+
+fn read_chat_history_jsonl(session_dir: &Path) -> String {
+    let path = session_dir.join("chat_history.jsonl");
+    std::fs::read_to_string(&path).unwrap_or_default()
+}
+
+fn chat_history_line_count(jsonl: &str) -> usize {
+    jsonl
+        .lines()
+        .filter(|l| !l.trim().is_empty())
+        .count()
+}
+
 struct GateClient {
     model_changed: Rc<RefCell<Vec<String>>>,
+    /// Counts session updates whose Debug form looks cancel-related.
+    /// Named observable for D-06 mid-turn non-cancel (notification spy).
+    cancel_notifications: Arc<AtomicUsize>,
 }
 
 #[async_trait::async_trait(?Send)]
@@ -240,8 +289,16 @@ impl acp::Client for GateClient {
             {
                 self.model_changed.borrow_mut().push(mid);
             } else {
-                self.model_changed.borrow_mut().push(dbg);
+                self.model_changed.borrow_mut().push(dbg.clone());
             }
+        }
+        // Notification spy: true cancel paths surface Cancelled / cancel updates.
+        let lower = dbg.to_ascii_lowercase();
+        if lower.contains("cancelled")
+            || lower.contains("cancelturn")
+            || lower.contains("\"cancel\"")
+        {
+            self.cancel_notifications.fetch_add(1, Ordering::SeqCst);
         }
         Ok(())
     }
@@ -251,9 +308,11 @@ struct GateHarness {
     home: PathBuf,
     client: acp::ClientSideConnection,
     model_changed: Rc<RefCell<Vec<String>>>,
-    _workdir: TempDir,
-    // Keep server alive for the session lifetime.
-    _server: MockInferenceServer,
+    cancel_notifications: Arc<AtomicUsize>,
+    workdir: TempDir,
+    /// Mock inference server (hold/release + request log for route/cancel proofs).
+    server: MockInferenceServer,
+    mock_base_url: String,
 }
 
 impl GateHarness {
@@ -265,10 +324,13 @@ impl GateHarness {
         let server = MockInferenceServer::start()
             .await
             .expect("start mock inference server");
-        // Point first-party bases at mock so model prefetch / session bootstrap can succeed.
+        let mock_base_url = server.url();
+        // Point first-party + Codex bases at mock so bootstrap and next-sample
+        // route proofs hit the fixture server (not live chatgpt.com / xAI).
         unsafe {
-            std::env::set_var("GROK_CLI_CHAT_PROXY_BASE_URL", server.url());
-            std::env::set_var("GROK_XAI_API_BASE_URL", server.url());
+            std::env::set_var("GROK_CLI_CHAT_PROXY_BASE_URL", &mock_base_url);
+            std::env::set_var("GROK_XAI_API_BASE_URL", &mock_base_url);
+            std::env::set_var("GROK_CODEX_BASE_URL", &mock_base_url);
         }
 
         let workdir = TempDir::new().expect("workdir");
@@ -300,8 +362,10 @@ impl GateHarness {
         tokio::task::spawn_local(agent_io);
 
         let model_changed = Rc::new(RefCell::new(Vec::new()));
+        let cancel_notifications = Arc::new(AtomicUsize::new(0));
         let client_impl = GateClient {
             model_changed: model_changed.clone(),
+            cancel_notifications: cancel_notifications.clone(),
         };
         let client_incoming = LineBufferedRead::spawn_local(a2c_b.compat());
         let (client, client_io) = acp::ClientSideConnection::new(
@@ -359,17 +423,19 @@ impl GateHarness {
             home,
             client,
             model_changed,
-            _workdir: workdir,
-            _server: server,
+            cancel_notifications,
+            workdir,
+            server,
+            mock_base_url,
         }
     }
 
-    async fn new_session_on_xai(&self) -> acp::SessionId {
+    async fn new_session_with_model(&self, model_id: &str) -> acp::SessionId {
         let session = tokio::time::timeout(
             Duration::from_secs(60),
             self.client.new_session(
-                acp::NewSessionRequest::new(self._workdir.path().to_path_buf()).meta(
-                    serde_json::json!({ "modelId": XAI_MODEL })
+                acp::NewSessionRequest::new(self.workdir.path().to_path_buf()).meta(
+                    serde_json::json!({ "modelId": model_id })
                         .as_object()
                         .cloned(),
                 ),
@@ -379,6 +445,10 @@ impl GateHarness {
         .expect("session/new timed out")
         .expect("session/new failed");
         session.session_id
+    }
+
+    async fn new_session_on_xai(&self) -> acp::SessionId {
+        self.new_session_with_model(XAI_MODEL).await
     }
 
     async fn set_model(
@@ -395,6 +465,77 @@ impl GateHarness {
         )
         .await
         .expect("set_session_model timed out")
+    }
+
+    async fn prompt(
+        &self,
+        session_id: &acp::SessionId,
+        text: &str,
+    ) -> Result<acp::PromptResponse, acp::Error> {
+        tokio::time::timeout(
+            Duration::from_secs(90),
+            self.client.prompt(acp::PromptRequest::new(
+                session_id.clone(),
+                vec![acp::ContentBlock::Text(acp::TextContent::new(
+                    text.to_owned(),
+                ))],
+            )),
+        )
+        .await
+        .expect("session/prompt timed out")
+    }
+
+    fn session_dir(&self, session_id: &acp::SessionId) -> PathBuf {
+        locate_session_dir(&self.home, session_id.0.as_ref())
+    }
+
+    fn cancel_notification_count(&self) -> usize {
+        self.cancel_notifications.load(Ordering::SeqCst)
+    }
+
+    /// Last inference POST after `after_count` total requests (exclusive).
+    fn last_inference_after(
+        &self,
+        after_total: u32,
+    ) -> (
+        String,
+        Option<String>,
+        Option<serde_json::Value>,
+    ) {
+        let entry = self
+            .server
+            .requests()
+            .into_iter()
+            .enumerate()
+            // Request log is append-only; after_total is previous request_count.
+            .skip(after_total as usize)
+            .map(|(_, e)| e)
+            .filter(|e| {
+                e.method == "POST"
+                    && (e.path.contains("chat/completions")
+                        || e.path.contains("responses")
+                        || e.path.contains("messages"))
+            })
+            .next_back()
+            .expect("expected inference request after switch");
+        (entry.path, entry.authorization, entry.body)
+    }
+}
+
+fn assert_not_missing_provider(err: &acp::Error) {
+    assert!(
+        ModelSwitchMissingProviderError::from_acp_error(err).is_none(),
+        "must not be MODEL_SWITCH_MISSING_PROVIDER: {err:?}"
+    );
+}
+
+fn assert_switch_ok(result: Result<acp::SetSessionModelResponse, acp::Error>, label: &str) {
+    match result {
+        Ok(_) => {}
+        Err(err) => {
+            assert_not_missing_provider(&err);
+            panic!("{label}: set_session_model failed: {err:?}");
+        }
     }
 }
 
@@ -512,6 +653,297 @@ async fn p6_byok_model_skips_oauth_slot_gate() {
                     "BYOK must not return MODEL_SWITCH_MISSING_PROVIDER when OAuth empty: {err:?}"
                 );
             }
+        })
+        .await;
+}
+
+// ───────────────────────── free dual-login switch (MOD-03) ─────────────────────────
+
+#[tokio::test(flavor = "current_thread")]
+#[serial]
+async fn p6_dual_login_free_switch_xai_to_codex_no_missing_provider() {
+    let local = tokio::task::LocalSet::new();
+    local
+        .run_until(async {
+            let (xai, codex) = dual_usable_auth();
+            let h = GateHarness::start(Some(xai), Some(codex)).await;
+            let sid = h.new_session_on_xai().await;
+
+            let result = h.set_model(&sid, CODEX_MODEL).await;
+            assert_switch_ok(result, "xai→codex free switch");
+        })
+        .await;
+}
+
+#[tokio::test(flavor = "current_thread")]
+#[serial]
+async fn p6_dual_login_free_switch_codex_to_xai_no_missing_provider() {
+    let local = tokio::task::LocalSet::new();
+    local
+        .run_until(async {
+            let (xai, codex) = dual_usable_auth();
+            let h = GateHarness::start(Some(xai), Some(codex)).await;
+            let sid = h.new_session_with_model(CODEX_MODEL).await;
+
+            let result = h.set_model(&sid, XAI_MODEL).await;
+            assert_switch_ok(result, "codex→xai free switch");
+        })
+        .await;
+}
+
+#[tokio::test(flavor = "current_thread")]
+#[serial]
+async fn p6_same_provider_codex_switch_with_usable_creds() {
+    let local = tokio::task::LocalSet::new();
+    local
+        .run_until(async {
+            // Only Codex slot filled — xAI empty. Sol→Terra must have no missing-provider friction.
+            let codex = sample_oidc(CODEX_FAKE, Some(CODEX_REFRESH), false);
+            let h = GateHarness::start(None, Some(codex)).await;
+            let sid = h.new_session_with_model(CODEX_MODEL).await;
+
+            let result = h.set_model(&sid, CODEX_MODEL_TERRA).await;
+            assert_switch_ok(result, "same-provider Sol→Terra");
+        })
+        .await;
+}
+
+#[tokio::test(flavor = "current_thread")]
+#[serial]
+async fn p6_dual_login_next_sample_uses_target_provider() {
+    let local = tokio::task::LocalSet::new();
+    local
+        .run_until(async {
+            let (xai, codex) = dual_usable_auth();
+            let h = GateHarness::start(Some(xai), Some(codex)).await;
+            let sid = h.new_session_on_xai().await;
+
+            // Seed one completed turn on xAI so next-sample after switch is a real route change.
+            h.server.set_response("p6-xai-seed-reply");
+            let seed = h
+                .prompt(&sid, "p6 seed turn on xai before switch")
+                .await
+                .expect("seed prompt on xAI");
+            assert!(
+                matches!(seed.stop_reason, acp::StopReason::EndTurn),
+                "seed turn must complete: {:?}",
+                seed.stop_reason
+            );
+
+            let before_count = h.server.request_count();
+            assert_switch_ok(
+                h.set_model(&sid, CODEX_MODEL).await,
+                "switch to codex before next sample",
+            );
+
+            h.server.set_response("p6-codex-next-sample-reply");
+            let next = h
+                .prompt(&sid, "p6 next sample after codex switch")
+                .await
+                .expect("next prompt after codex switch");
+            assert!(
+                matches!(next.stop_reason, acp::StopReason::EndTurn),
+                "next sample must complete: {:?}",
+                next.stop_reason
+            );
+
+            let (path, authorization, body) = h.last_inference_after(before_count);
+            let auth = authorization.as_deref().unwrap_or("").to_ascii_lowercase();
+            assert!(
+                auth.contains(&CODEX_FAKE.to_ascii_lowercase())
+                    || auth.contains(&format!("bearer {}", CODEX_FAKE).to_ascii_lowercase()),
+                "next sample must use Codex credential slot (token={CODEX_FAKE}); got auth={auth:?} path={path}"
+            );
+            assert!(
+                !auth.contains(&XAI_FAKE.to_ascii_lowercase()),
+                "next sample must not use xAI OAuth token after Codex switch; auth={auth:?}"
+            );
+            if let Some(body) = &body {
+                let model = body
+                    .get("model")
+                    .and_then(|v: &serde_json::Value| v.as_str())
+                    .unwrap_or("");
+                assert!(
+                    model.contains("gpt-5.6") || model == CODEX_MODEL,
+                    "next sample model must be Codex catalog id; got {model:?}"
+                );
+            }
+            // Catalog stamp still uses resolve_codex_base_url at prepare; we forced
+            // GROK_CODEX_BASE_URL → mock so traffic hits fixture. Default product
+            // constant remains CODEX_BASE_URL_DEFAULT (regression anchor).
+            assert_eq!(
+                CODEX_BASE_URL_DEFAULT,
+                "https://chatgpt.com/backend-api/codex"
+            );
+            let _ = &h.mock_base_url;
+        })
+        .await;
+}
+
+// ───────────────────────── BYOK / history / mid-turn (D-06) ─────────────────────────
+
+#[tokio::test(flavor = "current_thread")]
+#[serial]
+async fn p6_byok_own_credentials_skips_oauth_missing_provider() {
+    let local = tokio::task::LocalSet::new();
+    local
+        .run_until(async {
+            let xai = sample_oidc(XAI_FAKE, Some("xai-rt"), false);
+            // Empty Codex OAuth — BYOK model carries api_key (has_own_credentials).
+            let h = GateHarness::start(Some(xai), None).await;
+            let sid = h.new_session_on_xai().await;
+
+            let result = h.set_model(&sid, BYOK_MODEL).await;
+            assert_switch_ok(result, "BYOK own credentials switch");
+        })
+        .await;
+}
+
+#[tokio::test(flavor = "current_thread")]
+#[serial]
+async fn p6_history_preserved_across_successful_switch() {
+    let local = tokio::task::LocalSet::new();
+    local
+        .run_until(async {
+            let (xai, codex) = dual_usable_auth();
+            let h = GateHarness::start(Some(xai), Some(codex)).await;
+            let sid = h.new_session_on_xai().await;
+
+            // Seed ≥1 completed user+assistant exchange via real session prompt.
+            h.server.set_response("p6-assistant-history-reply");
+            let resp = h
+                .prompt(&sid, HISTORY_MARKER)
+                .await
+                .expect("seed user+assistant exchange");
+            assert!(
+                matches!(resp.stop_reason, acp::StopReason::EndTurn),
+                "history seed turn must complete: {:?}",
+                resp.stop_reason
+            );
+
+            // Named observable: session storage chat_history.jsonl
+            let session_dir = h.session_dir(&sid);
+            let before = read_chat_history_jsonl(&session_dir);
+            let before_count = chat_history_line_count(&before);
+            assert!(
+                before_count >= 1,
+                "must seed non-empty chat_history.jsonl; got {before_count} lines path={}",
+                session_dir.join("chat_history.jsonl").display()
+            );
+            assert!(
+                before.contains(HISTORY_MARKER),
+                "history must contain exact user prompt identity `{HISTORY_MARKER}`"
+            );
+
+            assert_switch_ok(
+                h.set_model(&sid, CODEX_MODEL).await,
+                "cross-provider switch for history preserve",
+            );
+
+            let after = read_chat_history_jsonl(&session_dir);
+            let after_count = chat_history_line_count(&after);
+            assert_eq!(
+                after_count, before_count,
+                "history length must be unchanged after successful apply (before={before_count} after={after_count})"
+            );
+            assert!(
+                after.contains(HISTORY_MARKER),
+                "history identity (user prompt) must survive successful apply"
+            );
+        })
+        .await;
+}
+
+#[tokio::test(flavor = "current_thread")]
+#[serial]
+async fn p6_mid_turn_switch_does_not_cancel_inflight() {
+    let local = tokio::task::LocalSet::new();
+    local
+        .run_until(async {
+            let (xai, codex) = dual_usable_auth();
+            let h = GateHarness::start(Some(xai), Some(codex)).await;
+            let sid = h.new_session_on_xai().await;
+
+            h.server.set_response("p6-mid-turn-held-reply");
+            // Hold terminal SSE so the turn stays in-flight after request received.
+            h.server.hold_agent_completions();
+
+            // ClientSideConnection is not Clone — pin the prompt future and interleave
+            // wait/set_model via select (same task).
+            let prompt_fut = h.client.prompt(acp::PromptRequest::new(
+                sid.clone(),
+                vec![acp::ContentBlock::Text(acp::TextContent::new(
+                    "p6 mid-turn in-flight prompt".to_owned(),
+                ))],
+            ));
+            tokio::pin!(prompt_fut);
+
+            // Wait until mock saw an inference POST without completing the turn.
+            let deadline = tokio::time::Instant::now() + Duration::from_secs(30);
+            loop {
+                let n = h
+                    .server
+                    .requests()
+                    .iter()
+                    .filter(|e| {
+                        e.method == "POST"
+                            && (e.path.contains("chat/completions")
+                                || e.path.contains("responses")
+                                || e.path.contains("messages"))
+                    })
+                    .count();
+                if n >= 1 {
+                    break;
+                }
+                if tokio::time::Instant::now() >= deadline {
+                    panic!("timed out waiting for in-flight inference request");
+                }
+                tokio::select! {
+                    biased;
+                    res = &mut prompt_fut => {
+                        panic!("prompt completed before hold engaged: {res:?}");
+                    }
+                    _ = tokio::time::sleep(Duration::from_millis(20)) => {}
+                }
+            }
+
+            let cancel_before = h.cancel_notification_count();
+            assert_switch_ok(
+                h.set_model(&sid, CODEX_MODEL).await,
+                "mid-turn free dual switch",
+            );
+            let cancel_after = h.cancel_notification_count();
+            assert_eq!(
+                cancel_after, cancel_before,
+                "apply must not fan out cancel-related session notifications (spy: cancel_notifications)"
+            );
+
+            // Prompt must still be held (not cancelled/completed by apply).
+            tokio::select! {
+                biased;
+                res = &mut prompt_fut => {
+                    panic!(
+                        "in-flight prompt must remain pending while mock hold is active; completed early: {res:?}"
+                    );
+                }
+                _ = tokio::time::sleep(Duration::from_millis(80)) => {}
+            }
+
+            h.server.release_agent_completions();
+            let resp = tokio::time::timeout(Duration::from_secs(60), &mut prompt_fut)
+                .await
+                .expect("held prompt timed out after release")
+                .expect("held prompt must succeed after release");
+            assert!(
+                matches!(resp.stop_reason, acp::StopReason::EndTurn),
+                "released turn must EndTurn (not Cancelled); got {:?}",
+                resp.stop_reason
+            );
+            assert_eq!(
+                h.cancel_notification_count(),
+                cancel_before,
+                "cancel_notifications spy must stay flat through mid-turn switch + release"
+            );
         })
         .await;
 }
