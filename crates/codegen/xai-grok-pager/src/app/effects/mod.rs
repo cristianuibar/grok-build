@@ -1598,6 +1598,44 @@ pub(crate) fn execute(
                     TaskResult::CancelComplete
                 });
         }
+        Effect::RefreshProviderAuthStatus => {
+            // Dual-slot usable booleans only — never log auth file contents.
+            // On IO/parse failure emit None flags so dispatch keeps last cache.
+            tasks.spawn(async move {
+                let result = tokio::task::spawn_blocking(|| {
+                    let path = xai_grok_shell::util::grok_home::grok_home().join("auth.json");
+                    match xai_grok_shell::auth::AuthStatusReport::from_auth_file(&path) {
+                        Ok(report) => {
+                            let slots =
+                                xai_grok_shell::auth::ProviderAuthMetaSlots::from_report(&report);
+                            (Some(slots.xai.usable), Some(slots.codex.usable))
+                        }
+                        Err(e) => {
+                            tracing::debug!(
+                                error = %e,
+                                "RefreshProviderAuthStatus: status unreadable; keeping last cache"
+                            );
+                            (None, None)
+                        }
+                    }
+                })
+                .await;
+                let (xai_usable, codex_usable) = match result {
+                    Ok(pair) => pair,
+                    Err(e) => {
+                        tracing::debug!(
+                            error = %e,
+                            "RefreshProviderAuthStatus: join error; keeping last cache"
+                        );
+                        (None, None)
+                    }
+                };
+                TaskResult::ProviderAuthStatusRefreshed {
+                    xai_usable,
+                    codex_usable,
+                }
+            });
+        }
         Effect::SwitchModel {
             agent_id,
             session_id,

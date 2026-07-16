@@ -40,7 +40,7 @@ pub use jwt::{is_jwt_expired_or_near, parse_jwt_expiration};
 mod meta;
 pub use error::{AuthError, RefreshTokenError, RefreshTokenFailedReason};
 pub use manager::{AuthManager, shared_api_key_provider};
-pub use meta::{AuthMeta, GateInfo};
+pub use meta::{AuthMeta, GateInfo, ProviderAuthMetaSlots, ProviderSlotUsableMeta};
 pub use model::{
     AuthMode, AuthProvider, AuthStore, GrokAuth, PROVIDER_CODEX, PROVIDER_XAI, lookup_auth,
     select_provider_access_token,

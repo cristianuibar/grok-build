@@ -1512,6 +1512,47 @@ fn p6_keep_current_after_settings_missing_provider_zero_persist() {
 }
 
 #[test]
+fn p6_refresh_provider_auth_status_updates_cache() {
+    // Simulated TaskResult (no FS): both usable → cache non-default.
+    let mut app = test_app();
+    assert_eq!(
+        app.provider_auth,
+        crate::app::app_view::ProviderAuthUsableSnapshot::UNKNOWN
+    );
+    dispatch(
+        Action::TaskComplete(TaskResult::ProviderAuthStatusRefreshed {
+            xai_usable: Some(true),
+            codex_usable: Some(true),
+        }),
+        &mut app,
+    );
+    assert!(app.provider_auth.xai);
+    assert!(app.provider_auth.codex);
+
+    // Partial update: only codex flips unusable; xai kept.
+    dispatch(
+        Action::TaskComplete(TaskResult::ProviderAuthStatusRefreshed {
+            xai_usable: None,
+            codex_usable: Some(false),
+        }),
+        &mut app,
+    );
+    assert!(app.provider_auth.xai);
+    assert!(!app.provider_auth.codex);
+
+    // Full failure (both None) keeps last known cache.
+    dispatch(
+        Action::TaskComplete(TaskResult::ProviderAuthStatusRefreshed {
+            xai_usable: None,
+            codex_usable: None,
+        }),
+        &mut app,
+    );
+    assert!(app.provider_auth.xai);
+    assert!(!app.provider_auth.codex);
+}
+
+#[test]
 fn bundle_status_ready_populates_state() {
     let mut app = test_app();
 

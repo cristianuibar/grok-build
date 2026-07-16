@@ -530,6 +530,35 @@ pub struct ScreenModeRelaunch {
     /// Active session to reopen via `--resume`.
     pub session_id: String,
 }
+/// Dual-slot provider OAuth usable snapshot for picker badge display.
+///
+/// **Display-only** — shell switch gate remains authoritative for apply.
+/// Defaults both `false` ([`Self::UNKNOWN`]) until auth-meta or
+/// `RefreshProviderAuthStatus` updates the cache. Never holds tokens.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct ProviderAuthUsableSnapshot {
+    pub xai: bool,
+    pub codex: bool,
+}
+
+impl ProviderAuthUsableSnapshot {
+    /// Safe default until a dual-slot refresh/auth-meta lands.
+    pub const UNKNOWN: Self = Self {
+        xai: false,
+        codex: false,
+    };
+
+    /// Whether the given provider wire id (`xai` | `codex`) is usable.
+    /// Unknown provider → `None` (callers should not badge).
+    pub fn usable_for_wire(&self, provider: &str) -> Option<bool> {
+        match provider {
+            "xai" => Some(self.xai),
+            "codex" => Some(self.codex),
+            _ => None,
+        }
+    }
+}
+
 /// Root view component — owns all application state.
 pub struct AppView {
     /// Which view is currently active.
@@ -1015,6 +1044,12 @@ pub struct AppView {
     pub startup_warnings: Vec<crate::startup::StartupWarning>,
     /// Whether the user authenticated with an API key (shown in the version badge).
     pub is_api_key_auth: bool,
+    /// Dual-slot provider OAuth usable cache for `/model` / settings badges.
+    ///
+    /// **Display-only advisory** — shell switch gate remains authoritative.
+    /// Defaults both false (UNKNOWN) until `apply_auth_meta` or
+    /// `RefreshProviderAuthStatus` updates it. Pure getters; no FS.
+    pub provider_auth: ProviderAuthUsableSnapshot,
     /// Latest version string from a background update check. Set when
     /// a newer version is detected; rendered as a notification on the
     /// welcome screen.
@@ -1146,6 +1181,22 @@ impl AppView {
         if let Some(show) = meta.show_resolved_model {
             self.show_resolved_model = show;
         }
+        // Dual-slot usable flags when present (older shells omit → keep cache).
+        if let Some(providers) = meta.providers {
+            self.set_provider_auth_usable(providers.xai.usable, providers.codex.usable);
+        }
+    }
+
+    /// Pure setter for dual-slot provider usable cache (tests + TaskResult path).
+    ///
+    /// Display-only; no FS. Shell gate remains authoritative for apply.
+    pub fn set_provider_auth_usable(&mut self, xai: bool, codex: bool) {
+        self.provider_auth = ProviderAuthUsableSnapshot { xai, codex };
+    }
+
+    /// Pure read of dual-slot usable flags (no FS).
+    pub fn provider_auth_usable(&self) -> ProviderAuthUsableSnapshot {
+        self.provider_auth
     }
     pub(crate) fn ensure_voice_for_api_key(&mut self) {
         if self.is_api_key_auth && !self.voice_mode_enabled {
@@ -1306,6 +1357,7 @@ impl AppView {
             reconnect_pending: false,
             startup_warnings: Vec::new(),
             is_api_key_auth: false,
+            provider_auth: ProviderAuthUsableSnapshot::UNKNOWN,
             pending_update_version: None,
             foreign_resume_launch_generation: 0,
             foreign_resume_launch: None,
@@ -5177,6 +5229,7 @@ pub(crate) mod tests {
             welcome_shimmer_frame: 0,
             startup_warnings: Vec::new(),
             is_api_key_auth: false,
+            provider_auth: ProviderAuthUsableSnapshot::UNKNOWN,
             pending_update_version: None,
             foreign_resume_launch_generation: 0,
             foreign_resume_launch: None,
@@ -6533,6 +6586,64 @@ pub(crate) mod tests {
         assert!(app.gate.is_some());
         assert!(app.is_access_blocked());
     }
+
+    #[test]
+    fn p6_provider_auth_usable_defaults_safe_until_refresh() {
+        let app = test_app();
+        let snap = app.provider_auth_usable();
+        assert_eq!(snap, ProviderAuthUsableSnapshot::UNKNOWN);
+        assert!(!snap.xai);
+        assert!(!snap.codex);
+    }
+
+    #[test]
+    fn p6_provider_auth_apply_auth_meta_updates_xai_and_codex_independently() {
+        let mut app = test_app();
+        let meta = xai_grok_shell::auth::AuthMeta {
+            providers: Some(xai_grok_shell::auth::ProviderAuthMetaSlots {
+                xai: xai_grok_shell::auth::ProviderSlotUsableMeta { usable: true },
+                codex: xai_grok_shell::auth::ProviderSlotUsableMeta { usable: false },
+            }),
+            ..Default::default()
+        };
+        app.apply_auth_meta(&meta);
+        assert!(app.provider_auth.xai);
+        assert!(!app.provider_auth.codex);
+
+        // Independent flip: only codex becomes usable.
+        let meta2 = xai_grok_shell::auth::AuthMeta {
+            providers: Some(xai_grok_shell::auth::ProviderAuthMetaSlots {
+                xai: xai_grok_shell::auth::ProviderSlotUsableMeta { usable: true },
+                codex: xai_grok_shell::auth::ProviderSlotUsableMeta { usable: true },
+            }),
+            ..Default::default()
+        };
+        app.apply_auth_meta(&meta2);
+        assert!(app.provider_auth.xai);
+        assert!(app.provider_auth.codex);
+
+        // Meta without providers leaves cache unchanged.
+        app.apply_auth_meta(&xai_grok_shell::auth::AuthMeta::default());
+        assert!(app.provider_auth.xai);
+        assert!(app.provider_auth.codex);
+    }
+
+    #[test]
+    fn p6_provider_auth_set_usable_is_pure() {
+        let mut app = test_app();
+        app.set_provider_auth_usable(true, false);
+        assert_eq!(
+            app.provider_auth_usable(),
+            ProviderAuthUsableSnapshot {
+                xai: true,
+                codex: false
+            }
+        );
+        app.set_provider_auth_usable(false, true);
+        assert!(!app.provider_auth.xai);
+        assert!(app.provider_auth.codex);
+    }
+
     #[test]
     fn welcome_ctrl_q_requires_confirmation() {
         let mut app = test_app();

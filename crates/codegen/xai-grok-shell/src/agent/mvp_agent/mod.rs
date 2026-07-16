@@ -1982,6 +1982,12 @@ impl MvpAgent {
                 } else {
                     gate
                 };
+                // Dual-slot usable flags for pager badge cache (booleans only).
+                // Fail-closed to both unusable on IO/parse errors; never log file.
+                let providers = {
+                    let path = crate::util::grok_home::grok_home().join("auth.json");
+                    Some(crate::auth::ProviderAuthMetaSlots::from_auth_file(&path))
+                };
                 let auth_meta = crate::auth::AuthMeta {
                     email: auth.email.clone(),
                     auth_mode: Some(format!("{:?}", auth.auth_mode)),
@@ -1993,6 +1999,7 @@ impl MvpAgent {
                     show_resolved_model,
                     gate,
                     subscription_tier,
+                    providers,
                 };
                 serde_json::to_value(auth_meta)
                     .ok()

@@ -1535,6 +1535,12 @@ pub enum Effect {
         /// session-only `Action::SwitchModel` (D-05 transactional path).
         persist_default: bool,
     },
+    /// Refresh dual-slot provider usable flags from product-home `auth.json`.
+    ///
+    /// Loads [`xai_grok_shell::auth::AuthStatusReport`] (booleans only) and
+    /// updates `AppView` badge cache. Used on startup, login, FocusGained,
+    /// and Plan 03 deferred polls — never logs auth file contents.
+    RefreshProviderAuthStatus,
     /// Fetch changelog from CDN (both markdown + structured JSON).
     /// Runs off the render path via `spawn_blocking`. Result is cached
     /// on `AppView` so `/release-notes` and the welcome screen share it.
@@ -2295,6 +2301,14 @@ pub enum TaskResult {
         /// Forwarded from `Effect::SwitchModel.persist_default` so Ok applies
         /// default persistence only when the settings path requested it.
         persist_default: bool,
+    },
+    /// Dual-slot provider usable flags refreshed from disk (or injected in tests).
+    ///
+    /// `None` = IO/parse failure — keep last known cache (stale-on-error).
+    /// `Some` applies pure booleans; never carries tokens.
+    ProviderAuthStatusRefreshed {
+        xai_usable: Option<bool>,
+        codex_usable: Option<bool>,
     },
     /// Changelog fetched from CDN (both formats).
     ChangelogFetched {

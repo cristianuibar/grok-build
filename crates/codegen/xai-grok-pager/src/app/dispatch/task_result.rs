@@ -468,6 +468,21 @@ pub(super) fn dispatch_task_result(result: TaskResult, app: &mut AppView) -> Vec
             prev_model_id,
             persist_default,
         ),
+        TaskResult::ProviderAuthStatusRefreshed {
+            xai_usable,
+            codex_usable,
+        } => {
+            // Stale-on-error: only update flags that arrived as Some.
+            // When both None, keep last known cache (badge freshness).
+            if xai_usable.is_some() || codex_usable.is_some() {
+                let cur = app.provider_auth_usable();
+                app.set_provider_auth_usable(
+                    xai_usable.unwrap_or(cur.xai),
+                    codex_usable.unwrap_or(cur.codex),
+                );
+            }
+            vec![]
+        },
         TaskResult::BgTaskKilled {
             session_id,
             task_id,
