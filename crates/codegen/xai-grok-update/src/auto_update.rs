@@ -1157,7 +1157,7 @@ pub async fn install_internal_from_base(
     activate_verified_download(&download).await
 }
 
-/// A downloaded and smoke-tested binary in `~/.grok/downloads/`, not yet
+/// A downloaded and smoke-tested binary in `~/.bum/downloads/`, not yet
 /// activated as the managed `grok`/`agent`.
 struct VerifiedDownload {
     version: String,
@@ -1290,13 +1290,13 @@ async fn regenerate_completions(binary: &std::path::Path, grok_home: &std::path:
 
 /// Compute a relative symlink target from `link` to `target`.
 ///
-/// When both paths share a grandparent (e.g. `~/.grok/bin/grok` and
-/// `~/.grok/downloads/grok-0.1.203-linux-x86_64`), returns a relative path
+/// When both paths share a grandparent (e.g. `~/.bum/bin/bum` and
+/// `~/.bum/downloads/grok-0.1.203-linux-x86_64`), returns a relative path
 /// like `../downloads/grok-0.1.203-linux-x86_64`.  When they share the same
 /// parent directory, returns just the filename.  Falls back to the absolute
 /// `target` path for any other layout.
 ///
-/// Relative symlinks survive Docker bind-mounts where `~/.grok/` is mapped
+/// Relative symlinks survive Docker bind-mounts where `~/.bum/` is mapped
 /// into a container with a different `$HOME` (and thus a different absolute
 /// prefix).
 #[cfg(unix)]
@@ -1943,7 +1943,7 @@ async fn install_gh_release(target: Option<&str>) -> Result<()> {
     swap_managed_bin_links(&binary_path, &bin_dir).await?;
 
     // Update grok-latest -> versioned binary so any existing symlinks that route
-    // through it (e.g. /usr/local/bin/grok -> ~/.grok/downloads/grok-latest)
+    // through it (e.g. /usr/local/bin/grok -> ~/.bum/downloads/grok-latest)
     // resolve to the newly installed version.
     #[cfg(unix)]
     {
@@ -1954,15 +1954,17 @@ async fn install_gh_release(target: Option<&str>) -> Result<()> {
         }
     }
 
-    // Also update /usr/local/bin/{grok,agent} if either points directly into
-    // ~/.grok/downloads/ (legacy layout — skips the grok-latest indirection).
-    // Permission errors ignored.
+    // Also update /usr/local/bin/{bum,grok,agent} if any point directly into
+    // product-home downloads (`~/.bum/downloads/`; also legacy `~/.grok/downloads/`)
+    // — skips the grok-latest indirection. Permission errors ignored.
     #[cfg(unix)]
-    for name in ["grok", "agent"] {
+    for name in ["bum", "grok", "agent"] {
         let system_link = std::path::PathBuf::from(format!("/usr/local/bin/{name}"));
         if let Ok(existing_target) = tokio::fs::read_link(&system_link).await {
             let target_str = existing_target.to_string_lossy();
-            if target_str.contains(".grok/downloads/") && !target_str.ends_with("grok-latest") {
+            let in_product_downloads = target_str.contains(".bum/downloads/")
+                || target_str.contains(".grok/downloads/");
+            if in_product_downloads && !target_str.ends_with("grok-latest") {
                 // Try to update; ignore permission errors
                 let _ = atomic_symlink_swap(&binary_path, &system_link).await;
             }
