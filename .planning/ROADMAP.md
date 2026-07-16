@@ -80,7 +80,13 @@ Plans:
   2. Model selector lists Grok/xAI models alongside GPT models in one mixed list (not a global provider mode that filters the session)
   3. Every catalog entry carries an explicit provider binding usable by later routing
 
-**Plans**: TBD
+**Plans:** 3 plans
+
+Plans:
+- [ ] 03-01-PLAN.md — Provider schema + embedded mixed catalog (JSON, ModelProvider, no-prefetch proofs)
+- [ ] 03-02-PLAN.md — Prefetch Codex union-append merge + dual-auth visibility
+- [ ] 03-03-PLAN.md — ACP meta.provider + bum models CLI id (name) surface
+
 **UI hint**: yes
 
 ### Phase 4: Provider-aware request routing
