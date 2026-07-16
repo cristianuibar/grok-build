@@ -112,7 +112,7 @@ Each task was committed atomically:
 2. **Task 2: Process-isolated binary tests** - `d66787e` (test)
 3. **Task 3: Display home path labels for bum** - `e9597fd` (feat)
 
-**Plan metadata:** (pending docs commit)
+**Plan metadata:** `693d06c` (docs: complete plan)
 
 ## Files Created/Modified
 
