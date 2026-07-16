@@ -5,15 +5,15 @@ milestone_name: milestone
 current_phase: 1
 current_phase_name: Product identity & isolated home
 status: executing
-stopped_at: Completed 01-02-PLAN.md
-last_updated: "2026-07-16T03:07:23.037Z"
+stopped_at: Completed 01-04-PLAN.md
+last_updated: "2026-07-16T03:24:58.308Z"
 last_activity: 2026-07-16
 last_activity_desc: Completed 01-02 twin/managed-bin/updater leaf
 progress:
   total_phases: 1
   completed_phases: 0
   total_plans: 5
-  completed_plans: 3
+  completed_plans: 4
 ---
 
 # Project State
@@ -28,11 +28,11 @@ See: .planning/PROJECT.md (updated 2026-07-16)
 ## Current Position
 
 Phase: 1 of 9 (Product identity & isolated home)
-Plan: 4 of 5 in current phase
+Plan: 5 of 5 in current phase
 Status: Ready to execute
 Last activity: 2026-07-16 — Completed 01-02 twin/managed-bin/updater leaf
 
-Progress: [██████░░░░] 60%
+Progress: [████████░░] 80%
 
 ## Performance Metrics
 
@@ -61,6 +61,7 @@ Progress: [██████░░░░] 60%
 | Phase 01 P03 | 21min | 3 tasks | 5 files |
 | Phase 01 P01 | 22min | 3 tasks | 5 files |
 | Phase 01 P02 | 19min | 3 tasks | 12 files |
+| Phase 01 P04 | 16min | 3 tasks | 61 files |
 
 ## Accumulated Context
 
@@ -83,6 +84,8 @@ Recent decisions affecting current work:
 - [Phase ?]: Twin uses home_dir for SoT parity; no config crate dep this phase
 - [Phase ?]: Managed product bin leaf under home is bum only (no grok alias)
 - [Phase ?]: Download stems may stay grok-*; installed managed command is bum
+- [Phase ?]: Product-home test sandboxes use BUM_HOME only (no dual-read of GROK_HOME)
+- [Phase ?]: PTY product_home() helper; project-local .grok layout left for workspace skills/config
 
 ### Pending Todos
 
@@ -105,7 +108,7 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-07-16T03:07:23.026Z
-Stopped at: Completed 01-02-PLAN.md
+Last session: 2026-07-16T03:24:58.300Z
+Stopped at: Completed 01-04-PLAN.md
 Resume file: None
 Next: continue Phase 1 remaining plans (01-04, 01-05)
