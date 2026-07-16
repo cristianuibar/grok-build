@@ -150,7 +150,7 @@ Plans:
   2. Selecting a model whose provider has no usable credentials blocks the switch and prompts that provider’s login (no silent mid-turn 401 as primary UX)
   3. With both providers logged in, user can move between Grok and GPT-5.6 models in one continuous session
 
-**Plans**: 2/6 plans executed
+**Plans**: 3/6 plans executed
 
 Plans:
 
@@ -158,7 +158,7 @@ Plans:
 - [x] 06-02-PLAN.md — QuestionView + transactional default switch (no optimistic current/persist); wave-2 Effect owner
 - [ ] 06-03-PLAN.md — Provider-aware deferred (persist_default) + AuthComplete + external CLI poll/FocusGained + generation cancel
 - [ ] 06-04-PLAN.md — AuthMeta dual-slot + lifecycle refresh triggers (H3) + slash/settings needs-login badge + BYOK
-- [ ] 06-05-PLAN.md — Dual-login free switch + named history/mid-turn session observables
+- [x] 06-05-PLAN.md — Dual-login free switch + named history/mid-turn session observables
 - [ ] 06-06-PLAN.md — Validation map + phase gate with per-subgroup p6_ discovery asserts
 
 **UI hint**: yes
@@ -222,7 +222,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 →
 | 3. Model catalog & GPT-5.6 entries | 3/3 | Complete    | 2026-07-16 |
 | 4. Provider-aware request routing | 5/5 | Complete    | 2026-07-16 |
 | 5. Codex OAuth & dual auth lifecycle | 6/6 | Complete    | 2026-07-16 |
-| 6. Mid-session switch & missing-provider gate | 2/6 | In Progress|  |
+| 6. Mid-session switch & missing-provider gate | 3/6 | In Progress|  |
 | 7. Cross-provider multi-agent orchestration | 0/TBD | Not started | - |
 | 8. Quiet fork & rebrand polish | 0/TBD | Not started | - |
 | 9. Daily-driver end-to-end validation | 0/TBD | Not started | - |
