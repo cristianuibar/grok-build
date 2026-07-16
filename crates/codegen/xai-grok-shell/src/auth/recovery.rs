@@ -210,7 +210,7 @@ enum RecoveryStep {
     ReloadFromDisk,
     /// Refresh via the authority (OIDC, external binary, etc.).
     RefreshFromAuthority,
-    /// On devboxes: purge auth.json and mint fresh OIDC credentials.
+    /// On devboxes: replace the xAI slot and mint fresh OIDC credentials.
     DevboxRecovery,
     /// All strategies exhausted.
     Done,

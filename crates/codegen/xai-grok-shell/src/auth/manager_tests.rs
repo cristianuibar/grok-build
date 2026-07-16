@@ -98,6 +98,128 @@ fn auth_scope_uses_oauth2_when_present() {
     );
 }
 
+fn codex_fixture(key: &str) -> AuthStore {
+    let mut codex = AuthStore::new();
+    codex.insert(
+        "codex::fixture".to_owned(),
+        GrokAuth {
+            key: key.to_owned(),
+            auth_mode: AuthMode::ApiKey,
+            ..GrokAuth::test_default()
+        },
+    );
+    codex
+}
+
+#[test]
+fn removing_last_xai_scope_preserves_codex_provider() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("auth.json");
+    let cfg = GrokComConfig::default();
+    let scope = cfg.auth_scope();
+    let mut xai = AuthStore::new();
+    xai.insert(
+        scope.clone(),
+        make_auth(Some(Utc::now() + Duration::hours(1)), Utc::now()),
+    );
+    crate::auth::storage::write_fixture_auth_document(
+        &path,
+        xai,
+        Some(codex_fixture("codex-survives-logout")),
+    )
+    .unwrap();
+    let manager = AuthManager::new(dir.path(), cfg);
+
+    manager.remove_scope(&scope).unwrap();
+
+    assert!(path.exists(), "codex scopes require auth.json to remain");
+    let doc = crate::auth::storage::read_auth_document(&path).unwrap();
+    assert!(
+        doc.providers
+            .get(crate::auth::model::PROVIDER_XAI)
+            .is_none(),
+        "empty xAI slot should be pruned"
+    );
+    assert_eq!(
+        doc.providers
+            .get(crate::auth::model::PROVIDER_CODEX)
+            .and_then(|slot| slot.get("codex::fixture"))
+            .map(|auth| auth.key.as_str()),
+        Some("codex-survives-logout")
+    );
+}
+
+#[test]
+fn removing_last_provider_scope_deletes_auth_file() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("auth.json");
+    let cfg = GrokComConfig::default();
+    let scope = cfg.auth_scope();
+    let mut xai = AuthStore::new();
+    xai.insert(
+        scope.clone(),
+        make_auth(Some(Utc::now() + Duration::hours(1)), Utc::now()),
+    );
+    write_auth_json(&path, &xai).unwrap();
+    let manager = AuthManager::new(dir.path(), cfg);
+
+    manager.remove_scope(&scope).unwrap();
+
+    assert!(
+        !path.exists(),
+        "last provider scope should remove auth.json"
+    );
+}
+
+#[test]
+fn devbox_recovery_replaces_only_xai_provider() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("auth.json");
+    let cfg = GrokComConfig::default();
+    let scope = cfg.auth_scope();
+    let mut xai = AuthStore::new();
+    xai.insert(
+        "xai::stale".to_owned(),
+        GrokAuth {
+            key: "stale-xai".to_owned(),
+            ..GrokAuth::test_default()
+        },
+    );
+    crate::auth::storage::write_fixture_auth_document(
+        &path,
+        xai,
+        Some(codex_fixture("codex-survives-devbox")),
+    )
+    .unwrap();
+    let manager = AuthManager::new(dir.path(), cfg);
+    let replacement = GrokAuth {
+        key: "fresh-devbox-xai".to_owned(),
+        auth_mode: AuthMode::Oidc,
+        expires_at: Some(Utc::now() + Duration::hours(1)),
+        ..GrokAuth::test_default()
+    };
+
+    manager.replace_xai_after_devbox_mint(replacement).unwrap();
+
+    let doc = crate::auth::storage::read_auth_document(&path).unwrap();
+    let xai = doc
+        .providers
+        .get(crate::auth::model::PROVIDER_XAI)
+        .expect("replacement xAI slot");
+    assert_eq!(xai.len(), 1, "stale xAI scopes must be cleared");
+    assert_eq!(
+        xai.get(&scope).map(|auth| auth.key.as_str()),
+        Some("fresh-devbox-xai")
+    );
+    assert_eq!(
+        doc.providers
+            .get(crate::auth::model::PROVIDER_CODEX)
+            .and_then(|slot| slot.get("codex::fixture"))
+            .map(|auth| auth.key.as_str()),
+        Some("codex-survives-devbox")
+    );
+}
+
 #[test]
 fn legacy_scope_fallback_reads_old_auth_json() {
     let dir = tempfile::tempdir().unwrap();

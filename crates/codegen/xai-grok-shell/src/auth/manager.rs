@@ -35,7 +35,8 @@ use super::model::{
 };
 use super::refresh::{RefreshOutcome, TokenRefresher, resolve_refresh_credential};
 use super::storage::{
-    AuthFileLock, read_auth_json, read_auth_json_or_empty_recovering_corrupt, write_auth_json,
+    AuthFileLock, XaiStoreMutation, mutate_xai_store_or_prune, mutate_xai_store_or_prune_with_lock,
+    read_auth_json, read_auth_json_or_empty_recovering_corrupt, write_auth_json,
     write_auth_json_with_lock,
 };
 
@@ -453,7 +454,7 @@ impl AuthManager {
     /// Remove a scope entry from auth.json. When `scope == self.scope`, also
     /// drops in-memory auth so a later `auth()` reports `NotLoggedIn`, not stale
     /// `invalid_grant` (the scoped verdict reads inert with no credential).
-    /// Empties auth.json by deleting the file.
+    /// Deletes auth.json only when every provider slot becomes empty.
     ///
     /// Best-effort: takes a non-blocking lock and skips the disk write if
     /// another process holds it (the stale entry is cleaned up on next launch).
@@ -462,12 +463,12 @@ impl AuthManager {
     }
 
     fn remove_scope_impl(&self, scope: &str) -> std::io::Result<()> {
-        let disk_mutation = if let Some(held_lock) = lock::try_lock_auth_file_nonblocking(&self.path)
-        {
-            self.write_scope_removal(scope, &held_lock)? // lock released on drop
-        } else {
-            ScopeRemoval::SkippedLockUnavailable
-        };
+        let disk_mutation =
+            if let Some(held_lock) = lock::try_lock_auth_file_nonblocking(&self.path) {
+                self.write_scope_removal(scope, &held_lock)? // lock released on drop
+            } else {
+                ScopeRemoval::SkippedLockUnavailable
+            };
         // Intentional removal must be attributable from unified.jsonl:
         // downstream, a deliberately deleted auth.json is indistinguishable
         // from accidental loss (corruption, external deletion).
@@ -487,8 +488,8 @@ impl AuthManager {
         Ok(())
     }
 
-    /// Drop `scope` from auth.json and persist, deleting the file when the last
-    /// scope is gone. Caller holds the `auth.json` lock (taken by
+    /// Drop `scope` from the xAI slot and persist, deleting the file only when
+    /// every provider slot is empty. Caller holds the `auth.json` lock (taken by
     /// [`Self::remove_scope_impl`]). Uses the guard-held write path so we never
     /// re-acquire `auth.json.lock` under a held guard.
     fn write_scope_removal(
@@ -500,14 +501,13 @@ impl AuthManager {
             return Ok(ScopeRemoval::SkippedUnreadable);
         };
         auth_store.remove(scope);
-        if auth_store.is_empty() {
-            // Plan 02: multi-provider empty-delete honesty. Until then,
-            // empty xAI slot still removes the whole file (legacy).
-            let _ = std::fs::remove_file(&self.path);
-            Ok(ScopeRemoval::FileDeleted)
-        } else {
-            write_auth_json_with_lock(&self.path, lock, &auth_store)?;
-            Ok(ScopeRemoval::EntryRemoved)
+        match mutate_xai_store_or_prune_with_lock(&self.path, lock, |xai| {
+            *xai = auth_store;
+        })? {
+            XaiStoreMutation::FileDeleted => Ok(ScopeRemoval::FileDeleted),
+            XaiStoreMutation::DocumentWritten | XaiStoreMutation::Unchanged => {
+                Ok(ScopeRemoval::EntryRemoved)
+            }
         }
     }
 
@@ -1426,7 +1426,7 @@ impl AuthManager {
         *self.devbox_override.lock() = Some(is_devbox);
     }
 
-    /// Last-resort devbox auth recovery: purge existing auth.json entirely
+    /// Last-resort devbox auth recovery: replace only the xAI provider slot
     /// and mint fresh OIDC credentials via the remote devbox login helper.
     /// Only callable on devboxes (where the local service-account token is
     /// available).
@@ -1453,7 +1453,7 @@ impl AuthManager {
             return Ok(auth);
         }
 
-        tracing::info!("auth: attempting devbox recovery (purge + re-mint)");
+        tracing::info!("auth: attempting devbox recovery (replace xAI + re-mint)");
         xai_grok_telemetry::unified_log::info("auth: devbox recovery starting", None, None);
 
         // Raw mint: the `/user` merge would block up to 10s under refresh_lock.
@@ -1464,12 +1464,7 @@ impl AuthManager {
                 AuthError::transient_source(e)
             })?;
 
-        // Purge auth.json so we start clean — removes any corrupted,
-        // revoked, or legacy entries that caused the failure.
-        let _ = tokio::fs::remove_file(&self.path).await;
-        self.clear_inner();
-
-        let auth = self.save_without_enrichment(new_auth).await.map_err(|e| {
+        let auth = self.replace_xai_after_devbox_mint(new_auth).map_err(|e| {
             tracing::warn!(error = %e, "auth: devbox recovery save failed");
             AuthError::transient_source(e)
         })?;
@@ -1487,6 +1482,17 @@ impl AuthManager {
             })),
         );
 
+        Ok(auth)
+    }
+
+    /// Replace every xAI scope after a successful devbox mint while preserving
+    /// Codex and future provider slots in the shared auth document.
+    fn replace_xai_after_devbox_mint(&self, auth: GrokAuth) -> std::io::Result<GrokAuth> {
+        mutate_xai_store_or_prune(&self.path, |xai| {
+            xai.clear();
+            xai.insert(self.scope.clone(), auth.clone());
+        })?;
+        self.with_inner_write(|inner| *inner = Some(auth.clone()));
         Ok(auth)
     }
 
@@ -1785,7 +1791,8 @@ impl AuthManager {
     ) -> Result<GrokAuth, AuthError> {
         let pre_key_prefix = attempted_key.as_deref().map(token_suffix);
         match outcome {
-            RefreshOutcome::Success(new_auth) => match self.update_with_lock(*new_auth, lock).await {
+            RefreshOutcome::Success(new_auth) => match self.update_with_lock(*new_auth, lock).await
+            {
                 Ok(auth) => {
                     let new_prefix = token_suffix(&auth.key);
                     xai_grok_telemetry::unified_log::info(

@@ -2,17 +2,28 @@ use std::fs::File;
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 
-use super::model::{
-    API_KEY_SCOPE, AUTH_DOCUMENT_VERSION, AuthDocument, AuthMode, AuthStore, GrokAuth, PROVIDER_XAI,
-    lookup_auth,
-};
 #[cfg(test)]
 use super::model::PROVIDER_CODEX;
+use super::model::{
+    API_KEY_SCOPE, AUTH_DOCUMENT_VERSION, AuthDocument, AuthMode, AuthStore, GrokAuth,
+    PROVIDER_XAI, lookup_auth,
+};
 
 /// RAII guard for an exclusive advisory lock on `auth.json.lock`.
 /// The lock is released when the inner `File` is dropped (closing the FD).
 pub(crate) struct AuthFileLock {
     pub(super) _file: File,
+}
+
+/// Result of a lock-scoped xAI slot mutation that may prune `auth.json`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum XaiStoreMutation {
+    /// The nested document was written because at least one provider has scopes.
+    DocumentWritten,
+    /// The file did not exist and the mutation left every provider empty.
+    Unchanged,
+    /// The file was successfully removed because every provider became empty.
+    FileDeleted,
 }
 
 impl AuthFileLock {
@@ -133,11 +144,7 @@ fn parse_auth_document_str(contents: &str) -> std::io::Result<AuthDocument> {
 /// callers remain storage-agnostic (D-12).
 pub fn read_auth_json(auth_file: &Path) -> std::io::Result<AuthStore> {
     let doc = read_auth_document(auth_file)?;
-    Ok(doc
-        .providers
-        .get(PROVIDER_XAI)
-        .cloned()
-        .unwrap_or_default())
+    Ok(doc.providers.get(PROVIDER_XAI).cloned().unwrap_or_default())
 }
 
 /// Read auth.json, returning an empty map if the file does not exist.
@@ -331,6 +338,72 @@ fn apply_xai_slot(doc: &mut AuthDocument, auth_store: &AuthStore) {
     // Do NOT insert empty PROVIDER_CODEX by default; preserve if present.
 }
 
+/// Mutate the xAI slot under an acquired lock, pruning `auth.json` only when
+/// every provider slot is empty.
+pub(crate) fn mutate_xai_store_or_prune<F>(
+    auth_file: &Path,
+    f: F,
+) -> std::io::Result<XaiStoreMutation>
+where
+    F: FnOnce(&mut AuthStore),
+{
+    let lock = crate::auth::manager::lock::lock_auth_file_blocking(auth_file)?;
+    mutate_xai_store_or_prune_with_lock(auth_file, &lock, f)
+}
+
+/// Guard-held form of [`mutate_xai_store_or_prune`].
+///
+/// This never re-acquires `auth.json.lock`; callers must pass the live guard
+/// they already hold.
+pub(crate) fn mutate_xai_store_or_prune_with_lock<F>(
+    auth_file: &Path,
+    lock: &AuthFileLock,
+    f: F,
+) -> std::io::Result<XaiStoreMutation>
+where
+    F: FnOnce(&mut AuthStore),
+{
+    if !lock.still_live(auth_file) {
+        return Err(lock_not_live_error());
+    }
+
+    let mut doc = read_auth_document_for_write(auth_file)?;
+    let file_exists = auth_file.try_exists()?;
+    let mut xai = doc.providers.remove(PROVIDER_XAI).unwrap_or_default();
+    f(&mut xai);
+    if !xai.is_empty() {
+        doc.providers.insert(PROVIDER_XAI.to_owned(), xai);
+    }
+    doc.version = Some(AUTH_DOCUMENT_VERSION);
+
+    if !lock.still_live(auth_file) {
+        return Err(lock_not_live_error());
+    }
+    persist_document_or_prune(auth_file, &doc, file_exists, remove_auth_file)
+}
+
+fn remove_auth_file(path: &Path) -> std::io::Result<()> {
+    std::fs::remove_file(path)
+}
+
+fn persist_document_or_prune(
+    auth_file: &Path,
+    doc: &AuthDocument,
+    file_exists: bool,
+    remove: fn(&Path) -> std::io::Result<()>,
+) -> std::io::Result<XaiStoreMutation> {
+    if doc.providers.values().all(AuthStore::is_empty) {
+        if !file_exists {
+            return Ok(XaiStoreMutation::Unchanged);
+        }
+        remove(auth_file)?;
+        return Ok(XaiStoreMutation::FileDeleted);
+    }
+
+    write_auth_document(auth_file, doc)?;
+    Ok(XaiStoreMutation::DocumentWritten)
+}
+
 // ── Low-level nested serialize (no lock) ──────────────────────────────
 
 /// Persist `auth.json` as nested [`AuthDocument`], preferring a crash-safe
@@ -518,31 +591,29 @@ pub fn read_api_key(grok_home: &Path) -> Option<String> {
 /// previous crash) can be healed when the user sets an API key.
 pub fn store_api_key(grok_home: &Path, api_key: &str) -> std::io::Result<()> {
     let path = grok_home.join("auth.json");
-    let mut map = read_auth_json_or_empty_recovering_corrupt(&path)?;
-    map.insert(
-        API_KEY_SCOPE.to_owned(),
-        GrokAuth {
-            key: api_key.to_owned(),
-            auth_mode: AuthMode::ApiKey,
-            ..Default::default()
-        },
-    );
-    write_auth_json(&path, &map)
+    mutate_auth_document(&path, |doc| {
+        doc.providers
+            .entry(PROVIDER_XAI.to_owned())
+            .or_default()
+            .insert(
+                API_KEY_SCOPE.to_owned(),
+                GrokAuth {
+                    key: api_key.to_owned(),
+                    auth_mode: AuthMode::ApiKey,
+                    ..Default::default()
+                },
+            );
+        doc.version = Some(AUTH_DOCUMENT_VERSION);
+        Ok(())
+    })
 }
 
 /// Remove the `xai::api_key` scope from auth.json.
 pub fn clear_api_key(grok_home: &Path) -> std::io::Result<()> {
     let path = grok_home.join("auth.json");
-    if let Ok(mut map) = read_auth_json(&path) {
-        map.remove(API_KEY_SCOPE);
-        if map.is_empty() {
-            // Plan 02: multi-provider empty-delete honesty. Until then,
-            // empty xAI slot still removes the whole file (legacy).
-            let _ = std::fs::remove_file(&path);
-        } else {
-            write_auth_json(&path, &map)?;
-        }
-    }
+    mutate_xai_store_or_prune(&path, |xai| {
+        xai.remove(API_KEY_SCOPE);
+    })?;
     Ok(())
 }
 
@@ -703,9 +774,8 @@ mod write_fallback_tests {
         replacement
             .providers
             .insert(PROVIDER_XAI.to_owned(), replacement_store);
-        let err =
-            write_auth_document_in_place_with(&path, &replacement, fake_truncate_then_fail)
-                .unwrap_err();
+        let err = write_auth_document_in_place_with(&path, &replacement, fake_truncate_then_fail)
+            .unwrap_err();
         assert_eq!(err.kind(), std::io::ErrorKind::StorageFull);
         assert_eq!(
             read_key(&path).as_deref(),
@@ -764,6 +834,130 @@ mod multi_slot_tests {
     fn raw_json(path: &Path) -> serde_json::Value {
         let s = std::fs::read_to_string(path).expect("read raw auth.json");
         serde_json::from_str(&s).expect("parse raw auth.json")
+    }
+
+    fn fake_remove_denied(_: &Path) -> std::io::Result<()> {
+        Err(std::io::Error::from(std::io::ErrorKind::PermissionDenied))
+    }
+
+    #[test]
+    fn store_api_key_only_touches_xai() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("auth.json");
+        write_fixture_auth_document(
+            &path,
+            AuthStore::new(),
+            Some(codex_store("codex-survives-store")),
+        )
+        .unwrap();
+
+        store_api_key(dir.path(), "new-api-key").unwrap();
+
+        assert_eq!(read_api_key(dir.path()).as_deref(), Some("new-api-key"));
+        let raw = raw_json(&path);
+        assert_eq!(raw.get("version").and_then(|v| v.as_u64()), Some(1));
+        assert_eq!(
+            raw.pointer("/providers/codex/codex::fixture/key")
+                .and_then(|v| v.as_str()),
+            Some("codex-survives-store")
+        );
+        assert_eq!(
+            raw.pointer(&format!("/providers/{PROVIDER_XAI}/{API_KEY_SCOPE}/key"))
+                .and_then(|v| v.as_str()),
+            Some("new-api-key")
+        );
+    }
+
+    #[test]
+    fn clear_api_key_preserves_nonempty_codex_slot() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("auth.json");
+        write_fixture_auth_document(
+            &path,
+            xai_store("remove-me"),
+            Some(codex_store("codex-survives-clear")),
+        )
+        .unwrap();
+
+        clear_api_key(dir.path()).unwrap();
+
+        assert!(path.exists(), "codex scopes require auth.json to remain");
+        assert_eq!(read_api_key(dir.path()), None);
+        let raw = raw_json(&path);
+        assert!(
+            raw.pointer(&format!("/providers/{PROVIDER_XAI}/{API_KEY_SCOPE}"))
+                .is_none()
+        );
+        assert_eq!(
+            raw.pointer("/providers/codex/codex::fixture/key")
+                .and_then(|v| v.as_str()),
+            Some("codex-survives-clear")
+        );
+    }
+
+    #[test]
+    fn clear_api_key_deletes_file_when_all_providers_are_empty() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("auth.json");
+        write_fixture_auth_document(&path, xai_store("remove-me"), None).unwrap();
+
+        clear_api_key(dir.path()).unwrap();
+
+        assert!(!path.exists(), "last provider scope should prune auth.json");
+    }
+
+    #[test]
+    fn clear_api_key_is_idempotent_when_file_is_missing() {
+        let dir = tempfile::tempdir().unwrap();
+        clear_api_key(dir.path()).unwrap();
+        assert!(!dir.path().join("auth.json").exists());
+    }
+
+    #[test]
+    fn file_deleted_requires_successful_remove() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("auth.json");
+        std::fs::write(&path, b"seed").unwrap();
+        let doc = AuthDocument {
+            version: Some(AUTH_DOCUMENT_VERSION),
+            providers: Default::default(),
+        };
+
+        let err = persist_document_or_prune(&path, &doc, true, fake_remove_denied).unwrap_err();
+
+        assert_eq!(err.kind(), std::io::ErrorKind::PermissionDenied);
+        assert!(
+            path.exists(),
+            "a failed remove must not report or simulate FileDeleted"
+        );
+    }
+
+    #[test]
+    fn held_lock_prune_preserves_codex_without_reacquiring() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("auth.json");
+        write_fixture_auth_document(
+            &path,
+            xai_store("remove-me"),
+            Some(codex_store("held-codex")),
+        )
+        .unwrap();
+        let lock = try_lock_auth_file_nonblocking(&path).expect("held lock");
+        let started = std::time::Instant::now();
+
+        let outcome = mutate_xai_store_or_prune_with_lock(&path, &lock, AuthStore::clear).unwrap();
+
+        assert_eq!(outcome, XaiStoreMutation::DocumentWritten);
+        assert!(
+            started.elapsed() < Duration::from_secs(2),
+            "guard-held prune must not self-deadlock"
+        );
+        assert_eq!(
+            raw_json(&path)
+                .pointer("/providers/codex/codex::fixture/key")
+                .and_then(|v| v.as_str()),
+            Some("held-codex")
+        );
     }
 
     #[test]
@@ -833,9 +1027,7 @@ mod multi_slot_tests {
             .get(PROVIDER_CODEX)
             .expect("codex slot present");
         assert_eq!(
-            codex_on_disk
-                .get("codex::fixture")
-                .map(|a| a.key.as_str()),
+            codex_on_disk.get("codex::fixture").map(|a| a.key.as_str()),
             Some("codex-seed")
         );
         let _ = &codex; // seeded payload used above
@@ -893,12 +1085,8 @@ mod multi_slot_tests {
     fn already_locked_mutate_does_not_self_deadlock() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("auth.json");
-        write_fixture_auth_document(
-            &path,
-            xai_store("pre-xai"),
-            Some(codex_store("held-codex")),
-        )
-        .unwrap();
+        write_fixture_auth_document(&path, xai_store("pre-xai"), Some(codex_store("held-codex")))
+            .unwrap();
 
         let lock = try_lock_auth_file_nonblocking(&path).expect("acquire lock");
         let path_owned = path.clone();
