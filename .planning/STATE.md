@@ -4,16 +4,17 @@ milestone: v1.0
 milestone_name: milestone
 current_phase: 4
 current_phase_name: Provider-aware request routing
+current_plan: 3
 status: executing
-stopped_at: Completed 04-01-PLAN.md
-last_updated: "2026-07-16T13:23:06.396Z"
+stopped_at: Completed 04-02-PLAN.md
+last_updated: "2026-07-16T13:32:54.549Z"
 last_activity: 2026-07-16
-last_activity_desc: Phase 3 complete, transitioned to Phase 4
+last_activity_desc: Completed 04-01-PLAN.md (Wave 0 provider_routing harness)
 progress:
   total_phases: 4
   completed_phases: 3
   total_plans: 17
-  completed_plans: 13
+  completed_plans: 14
 ---
 
 # Project State
@@ -28,13 +29,13 @@ See: .planning/PROJECT.md (updated 2026-07-16)
 ## Current Position
 
 Phase: 4 of 9 (Provider-aware request routing)
-Plan: 2 of 5
-Status: Executing
+Plan: 3 of 5
+Status: Ready to execute
 Last activity: 2026-07-16 — Completed 04-01-PLAN.md (Wave 0 provider_routing harness)
-Current Plan: 2
+Current Plan: 3
 Total Plans in Phase: 5
 
-Progress: [████████░░] 76%
+Progress: [████████░░] 82%
 
 ## Performance Metrics
 
@@ -71,6 +72,7 @@ Progress: [████████░░] 76%
 | Phase 03 P02 | 3min | 3 tasks | 2 files |
 | Phase 03 P03 | 36min | 4 tasks | 6 files |
 | Phase 04 P01 | 12min | 2 tasks | 1 files |
+| Phase 04 P02 | 8min | 2 tasks | 3 files |
 
 ## Accumulated Context
 
@@ -111,6 +113,10 @@ Recent decisions affecting current work:
 - [Phase ?]: switch_changes_next_sample_route is intentional Plan 04 scaffold RED (not pure dual sampling_config_for_model SC-3)
 - [Phase ?]: never_cross_slot dual-token both-present RED until Plan 03 resolve_credentials_for_provider
 - [Phase ?]: Wave 0 provider_routing uses deterministic EndpointsConfig + fake tokens only; no shell --lib
+- [Phase ?]: CODEX_BASE_URL_DEFAULT is ChatGPT backend not Platform OpenAI
+- [Phase ?]: resolve_provider_route is production authority for base_url + credential_slot + session_oauth_allowed
+- [Phase ?]: session_oauth_allowed false for non-first-party final URL including Xai custom models_base_url
+- [Phase ?]: MOD-04/MOD-05 remain Pending until Plans 03-05 wire stamp dual-key prepare
 
 ### Pending Todos
 
@@ -133,7 +139,7 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-07-16T13:23:06.388Z
-Stopped at: Completed 04-01-PLAN.md
+Last session: 2026-07-16T13:32:54.541Z
+Stopped at: Completed 04-02-PLAN.md
 Resume file: None
 Next: continue Phase 1 remaining plans (01-04, 01-05)
