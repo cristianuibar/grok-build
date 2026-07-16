@@ -343,6 +343,38 @@ fn resolve_provider_route_blank_override_ignored() {
     assert!(codex.session_oauth_allowed);
 }
 
+/// Blank/whitespace catalog base_url must re-resolve to the provider default
+/// request URL (not stamp blank base while session_oauth_allowed is true).
+#[test]
+fn blank_catalog_base_url_uses_route_base_for_credentials() {
+    let endpoints = deterministic_endpoints();
+    for blank in ["", "   ", "\t"] {
+        let mut entry = catalog_entry("gpt-5.6-sol");
+        entry.info.provider = ModelProvider::Codex;
+        entry.info.base_url = blank.to_owned();
+        entry.api_base_url = None;
+        entry.api_key = None;
+        entry.env_key = None;
+
+        let creds = resolve_credentials_for_provider(
+            &entry,
+            &endpoints,
+            Some(XAI_FAKE),
+            Some(CODEX_FAKE),
+        );
+        assert_eq!(
+            creds.base_url,
+            endpoints.resolve_codex_base_url(),
+            "blank catalog base {blank:?} must stamp route base_url"
+        );
+        assert_eq!(
+            creds.api_key.as_deref(),
+            Some(CODEX_FAKE),
+            "blank catalog base still allows first-party Codex OAuth against default route"
+        );
+    }
+}
+
 fn catalog_entry(id: &str) -> ModelEntry {
     let list = resolve_model_list(&Config::default(), None);
     list.get(id)

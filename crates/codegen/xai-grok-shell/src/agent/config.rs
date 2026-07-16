@@ -4772,12 +4772,16 @@ pub fn resolve_credentials_for_provider(
     let info = model.info();
     let provider = info.provider;
     // Classify OAuth eligibility against the actual request URL + caller's endpoints.
+    // Blank/whitespace catalog `base_url` falls through to the provider default
+    // inside resolve_provider_route — use `route.base_url` as the request base so
+    // OAuth host policy and the stamped URL stay aligned (never blank + allowed).
     let route = resolve_provider_route(provider, endpoints, Some(info.base_url.as_str()));
+    let request_base = route.base_url.clone();
 
     let (api_key, base_url, auth_type) = if let Some(key) = model.own_credential() {
         (
             Some(key),
-            info.base_url.clone(),
+            request_base,
             xai_chat_state::AuthType::ApiKey,
         )
     } else if route.session_oauth_allowed {
@@ -4788,7 +4792,7 @@ pub fn resolve_credentials_for_provider(
         if let Some(key) = slot_key {
             (
                 Some(key.to_owned()),
-                info.base_url.clone(),
+                request_base,
                 xai_chat_state::AuthType::SessionToken,
             )
         } else if provider == ModelProvider::Xai {
@@ -4796,13 +4800,13 @@ pub fn resolve_credentials_for_provider(
                 let url = model
                     .api_base_url
                     .clone()
-                    .unwrap_or_else(|| info.base_url.clone());
+                    .unwrap_or_else(|| request_base.clone());
                 (Some(key), url, xai_chat_state::AuthType::ApiKey)
             } else {
                 warn_missing_env_key(model);
                 (
                     None,
-                    info.base_url.clone(),
+                    request_base,
                     xai_chat_state::AuthType::ApiKey,
                 )
             }
@@ -4811,7 +4815,7 @@ pub fn resolve_credentials_for_provider(
             warn_missing_env_key(model);
             (
                 None,
-                info.base_url.clone(),
+                request_base,
                 xai_chat_state::AuthType::ApiKey,
             )
         }
@@ -4821,13 +4825,13 @@ pub fn resolve_credentials_for_provider(
             let url = model
                 .api_base_url
                 .clone()
-                .unwrap_or_else(|| info.base_url.clone());
+                .unwrap_or_else(|| request_base.clone());
             (Some(key), url, xai_chat_state::AuthType::ApiKey)
         } else {
             warn_missing_env_key(model);
             (
                 None,
-                info.base_url.clone(),
+                request_base,
                 xai_chat_state::AuthType::ApiKey,
             )
         }
@@ -4836,7 +4840,7 @@ pub fn resolve_credentials_for_provider(
         warn_missing_env_key(model);
         (
             None,
-            info.base_url.clone(),
+            request_base,
             xai_chat_state::AuthType::ApiKey,
         )
     };
