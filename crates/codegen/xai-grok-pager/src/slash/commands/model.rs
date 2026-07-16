@@ -61,7 +61,7 @@ impl SlashCommand for ModelCommand {
         if let Some(model_id) = detect_effort_phase(ctx.models, args_query) {
             return Some(build_effort_items(ctx.models, &model_id));
         }
-        Some(build_model_items(ctx.models))
+        Some(build_model_items(ctx.models, ctx.provider_auth))
     }
 
     fn run(&self, ctx: &mut CommandExecCtx, args: &str) -> CommandResult {
@@ -148,20 +148,95 @@ fn detect_effort_phase(models: &ModelState, args_query: &str) -> Option<acp::Mod
     None
 }
 
+/// Exact badge copy (UI-SPEC D-08). Secondary/dim rendering is a view concern;
+/// display text carries the literal ` · needs login` suffix.
+pub const NEEDS_LOGIN_BADGE: &str = "needs login";
+
+/// Whether a model row should show the needs-login badge.
+///
+/// Badge only when provider is `xai`|`codex`, slot is unusable, and the model
+/// does **not** have own credentials (BYOK suppress). Unknown provider → no badge.
+pub fn should_show_needs_login_badge(
+    provider: Option<&str>,
+    has_own_credentials: bool,
+    provider_auth: crate::app::app_view::ProviderAuthUsableSnapshot,
+) -> bool {
+    if has_own_credentials {
+        return false;
+    }
+    let Some(provider) = provider else {
+        return false;
+    };
+    match provider_auth.usable_for_wire(provider) {
+        Some(false) => true,
+        Some(true) | None => false,
+    }
+}
+
+/// Format model display with optional `(current)` and ` · needs login` suffixes.
+///
+/// Shared by slash `/model` and settings DynamicEnum (D-04 / D-08).
+pub fn format_model_display_with_auth_badge(
+    name: &str,
+    is_current: bool,
+    provider: Option<&str>,
+    has_own_credentials: bool,
+    provider_auth: crate::app::app_view::ProviderAuthUsableSnapshot,
+) -> String {
+    let mut display = if is_current {
+        format!("{name} (current)")
+    } else {
+        name.to_owned()
+    };
+    if should_show_needs_login_badge(provider, has_own_credentials, provider_auth) {
+        display.push_str(" · ");
+        display.push_str(NEEDS_LOGIN_BADGE);
+    }
+    display
+}
+
+/// Read trusted catalog `provider` wire id from ACP model meta (`xai`|`codex`).
+pub fn model_meta_provider(meta: Option<&serde_json::Map<String, serde_json::Value>>) -> Option<&str> {
+    let p = meta?.get("provider")?.as_str()?;
+    match p {
+        "xai" | "codex" => Some(p),
+        _ => None,
+    }
+}
+
+/// Read trusted catalog `hasOwnCredentials` from ACP model meta.
+pub fn model_meta_has_own_credentials(
+    meta: Option<&serde_json::Map<String, serde_json::Value>>,
+) -> bool {
+    meta.and_then(|m| m.get("hasOwnCredentials"))
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false)
+}
+
 /// One row per logical model. Reasoning models get a trailing space in
 /// `insert_text` so the prompt widget chains into the effort sub-menu.
-fn build_model_items(models: &ModelState) -> Vec<ArgItem> {
+///
+/// Does **not** filter by auth (D-04 full mixed catalog). Badge is display-only.
+pub fn build_model_items(
+    models: &ModelState,
+    provider_auth: crate::app::app_view::ProviderAuthUsableSnapshot,
+) -> Vec<ArgItem> {
     let current_id = models.current.as_ref();
     let mut items: Vec<ArgItem> = Vec::with_capacity(models.available.len());
     for (id, info) in &models.available {
         let is_current = current_id == Some(id);
         let supports = supports_reasoning_effort(info);
+        let meta = info.meta.as_ref();
+        let provider = model_meta_provider(meta);
+        let has_own = model_meta_has_own_credentials(meta);
 
-        let display = if is_current {
-            format!("{} (current)", info.name)
-        } else {
-            info.name.clone()
-        };
+        let display = format_model_display_with_auth_badge(
+            &info.name,
+            is_current,
+            provider,
+            has_own,
+            provider_auth,
+        );
 
         // Trailing space on reasoning models: signals "more input
         // expected" to the prompt widget so Enter advances to effort
@@ -263,6 +338,23 @@ mod tests {
         assert!(split_trailing_token("reasoning-x-pro").is_none());
     }
 
+    fn model_with_provider(
+        id: &str,
+        name: &str,
+        provider: &str,
+        has_own: bool,
+    ) -> (acp::ModelId, acp::ModelInfo) {
+        let id = acp::ModelId::new(Arc::from(id));
+        let mut meta = serde_json::Map::new();
+        meta.insert("provider".into(), serde_json::Value::String(provider.into()));
+        if has_own {
+            meta.insert("hasOwnCredentials".into(), serde_json::Value::Bool(true));
+        }
+        let info = acp::ModelInfo::new(id.clone(), name.to_string())
+            .meta(Some(meta));
+        (id, info)
+    }
+
     #[test]
     fn empty_query_returns_one_row_per_logical_model() {
         let mut state = ModelState::default();
@@ -277,6 +369,7 @@ mod tests {
             cwd: std::path::Path::new("."),
             has_session_announcements: false,
             screen_mode: crate::app::ScreenMode::Fullscreen,
+            provider_auth: crate::app::app_view::ProviderAuthUsableSnapshot::UNKNOWN,
         };
         let items = cmd.suggest_args(&ctx, "").unwrap();
         assert_eq!(items.len(), 2, "model phase: one row per logical model");
@@ -307,6 +400,7 @@ mod tests {
             cwd: std::path::Path::new("."),
             has_session_announcements: false,
             screen_mode: crate::app::ScreenMode::Fullscreen,
+            provider_auth: crate::app::app_view::ProviderAuthUsableSnapshot::UNKNOWN,
         };
         // Args query has a trailing space -> effort phase. Items come out
         // ordered xhigh -> low (strongest first) per EFFORT_LEVELS.
@@ -336,6 +430,7 @@ mod tests {
             cwd: std::path::Path::new("."),
             has_session_announcements: false,
             screen_mode: crate::app::ScreenMode::Fullscreen,
+            provider_auth: crate::app::app_view::ProviderAuthUsableSnapshot::UNKNOWN,
         };
         // Still in effort phase; matcher upstream narrows to high / xhigh.
         let items = cmd.suggest_args(&ctx, "Reasoning X h").unwrap();
@@ -354,6 +449,7 @@ mod tests {
             cwd: std::path::Path::new("."),
             has_session_announcements: false,
             screen_mode: crate::app::ScreenMode::Fullscreen,
+            provider_auth: crate::app::app_view::ProviderAuthUsableSnapshot::UNKNOWN,
         };
         // No trailing space, user is still typing the model name.
         let items = cmd.suggest_args(&ctx, "Reason").unwrap();
@@ -375,6 +471,135 @@ mod tests {
             }
             other => panic!("expected SwitchModel with effort, got {other:?}"),
         }
+    }
+
+    #[test]
+    fn p6_needs_login_badges_unusable_provider() {
+        let mut state = ModelState::default();
+        let (gid, ginfo) = model_with_provider("grok-4", "Grok 4", "xai", false);
+        let (pid, pinfo) = model_with_provider("gpt-5.6", "GPT-5.6", "codex", false);
+        state.available.insert(gid, ginfo);
+        state.available.insert(pid, pinfo);
+        let auth = crate::app::app_view::ProviderAuthUsableSnapshot {
+            xai: true,
+            codex: false,
+        };
+        let items = build_model_items(&state, auth);
+        let gpt = items.iter().find(|i| i.match_text == "GPT-5.6").unwrap();
+        assert!(
+            gpt.display.contains(NEEDS_LOGIN_BADGE),
+            "unusable codex row must badge: {}",
+            gpt.display
+        );
+        let grok = items.iter().find(|i| i.match_text == "Grok 4").unwrap();
+        assert!(
+            !grok.display.contains(NEEDS_LOGIN_BADGE),
+            "usable xai row must not badge: {}",
+            grok.display
+        );
+    }
+
+    #[test]
+    fn p6_needs_login_never_filters_by_auth() {
+        let mut state = ModelState::default();
+        let (gid, ginfo) = model_with_provider("grok-4", "Grok 4", "xai", false);
+        let (pid, pinfo) = model_with_provider("gpt-5.6", "GPT-5.6", "codex", false);
+        state.available.insert(gid, ginfo);
+        state.available.insert(pid, pinfo);
+        let auth = crate::app::app_view::ProviderAuthUsableSnapshot {
+            xai: true,
+            codex: false,
+        };
+        let items = build_model_items(&state, auth);
+        assert_eq!(items.len(), state.available.len());
+    }
+
+    #[test]
+    fn p6_needs_login_current_and_badge_suffix() {
+        let mut state = ModelState::default();
+        let (pid, pinfo) = model_with_provider("gpt-5.6", "GPT-5.6", "codex", false);
+        state.available.insert(pid.clone(), pinfo);
+        state.set_current(pid, None);
+        let auth = crate::app::app_view::ProviderAuthUsableSnapshot {
+            xai: true,
+            codex: false,
+        };
+        let items = build_model_items(&state, auth);
+        assert_eq!(items.len(), 1);
+        assert_eq!(items[0].display, "GPT-5.6 (current) · needs login");
+    }
+
+    #[test]
+    fn p6_needs_login_usable_provider_no_badge() {
+        let mut state = ModelState::default();
+        let (pid, pinfo) = model_with_provider("gpt-5.6", "GPT-5.6", "codex", false);
+        state.available.insert(pid, pinfo);
+        let auth = crate::app::app_view::ProviderAuthUsableSnapshot {
+            xai: true,
+            codex: true,
+        };
+        let items = build_model_items(&state, auth);
+        assert!(!items[0].display.contains(NEEDS_LOGIN_BADGE));
+    }
+
+    #[test]
+    fn p6_needs_login_byok_suppresses_badge() {
+        let mut state = ModelState::default();
+        let (pid, pinfo) = model_with_provider("local-gpt", "Local GPT", "codex", true);
+        state.available.insert(pid, pinfo);
+        let auth = crate::app::app_view::ProviderAuthUsableSnapshot {
+            xai: false,
+            codex: false,
+        };
+        let items = build_model_items(&state, auth);
+        assert!(
+            !items[0].display.contains(NEEDS_LOGIN_BADGE),
+            "BYOK must suppress badge: {}",
+            items[0].display
+        );
+    }
+
+    #[test]
+    fn p6_needs_login_settings_dynamic_enum() {
+        use crate::settings::{DynamicEnumSource, ModelAuthHint, PagerLocalSnapshot, dynamic_enum_choices};
+        let snapshot = PagerLocalSnapshot {
+            available_models: vec![
+                (
+                    "Grok 4".into(),
+                    acp::ModelId::new(Arc::from("grok-4")),
+                ),
+                (
+                    "GPT-5.6".into(),
+                    acp::ModelId::new(Arc::from("gpt-5.6")),
+                ),
+            ],
+            provider_auth: crate::app::app_view::ProviderAuthUsableSnapshot {
+                xai: true,
+                codex: false,
+            },
+            model_auth_hints: vec![
+                ModelAuthHint {
+                    provider: Some("xai".into()),
+                    has_own_credentials: false,
+                },
+                ModelAuthHint {
+                    provider: Some("codex".into()),
+                    has_own_credentials: false,
+                },
+            ],
+            ..PagerLocalSnapshot::default()
+        };
+        let choices = dynamic_enum_choices(DynamicEnumSource::ActiveModelCatalog, &snapshot);
+        // +1 for "(no override)"
+        assert_eq!(choices.len(), 3);
+        let gpt = choices.iter().find(|c| c.canonical == "GPT-5.6").unwrap();
+        assert!(
+            gpt.display.contains(NEEDS_LOGIN_BADGE),
+            "settings DynamicEnum must badge unusable non-BYOK: {}",
+            gpt.display
+        );
+        let grok = choices.iter().find(|c| c.canonical == "Grok 4").unwrap();
+        assert!(!grok.display.contains(NEEDS_LOGIN_BADGE));
     }
 
     #[test]

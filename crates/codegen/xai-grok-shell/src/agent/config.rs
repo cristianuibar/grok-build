@@ -5448,6 +5448,14 @@ pub fn to_acp_model_info(
                         reasoning_efforts_meta_value(&info.reasoning_efforts),
                     );
                 }
+                // BYOK / own-credentials models suppress "needs login" badge
+                // (trusted catalog-derived only; never client input).
+                if model.has_own_credentials() {
+                    map.insert(
+                        "hasOwnCredentials".to_string(),
+                        serde_json::Value::Bool(true),
+                    );
+                }
                 if map.is_empty() { None } else { Some(map) }
             };
             (
@@ -7451,6 +7459,33 @@ reasoning_effort = "low"
             .unwrap();
         assert_eq!(meta["supportsReasoningEffort"], true);
         assert_eq!(meta["reasoningEffort"], "high");
+    }
+
+    #[test]
+    fn p6_acp_model_meta_emits_has_own_credentials_for_byok() {
+        let mut models = IndexMap::new();
+        let byok = test_model_entry("byok", "https://example.com/v1", Some("sk-test"), None, None);
+        assert!(byok.has_own_credentials());
+        models.insert("byok".to_string(), byok);
+        let session = test_model_entry("sess", "https://test.api/v1", None, None, None);
+        assert!(!session.has_own_credentials());
+        models.insert("sess".to_string(), session);
+        let acp = to_acp_model_info(&models);
+        let byok_meta = acp
+            .values()
+            .find(|m| m.name == "byok" || m.model_id.0.as_ref() == "byok")
+            .and_then(|m| m.meta.clone())
+            .expect("byok meta");
+        assert_eq!(byok_meta.get("hasOwnCredentials"), Some(&serde_json::Value::Bool(true)));
+        let sess_meta = acp
+            .values()
+            .find(|m| m.model_id.0.as_ref() == "sess")
+            .and_then(|m| m.meta.clone())
+            .expect("sess meta");
+        assert!(
+            sess_meta.get("hasOwnCredentials").is_none(),
+            "non-BYOK must omit hasOwnCredentials"
+        );
     }
     #[test]
     fn acp_model_meta_supports_without_default_effort() {

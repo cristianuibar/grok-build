@@ -322,6 +322,7 @@ mod tests {
             cwd: std::path::Path::new("."),
             has_session_announcements: false,
             screen_mode: crate::app::ScreenMode::Fullscreen,
+            provider_auth: crate::app::app_view::ProviderAuthUsableSnapshot::UNKNOWN,
         };
         assert!(cmd.suggest_args(&ctx, "").is_none());
 
@@ -334,6 +335,7 @@ mod tests {
             cwd: std::path::Path::new("."),
             has_session_announcements: false,
             screen_mode: crate::app::ScreenMode::Fullscreen,
+            provider_auth: crate::app::app_view::ProviderAuthUsableSnapshot::UNKNOWN,
         };
         assert!(cmd.suggest_args(&ctx, "").is_none());
     }
@@ -352,6 +354,7 @@ mod tests {
             cwd: std::path::Path::new("."),
             has_session_announcements: false,
             screen_mode: crate::app::ScreenMode::Fullscreen,
+            provider_auth: crate::app::app_view::ProviderAuthUsableSnapshot::UNKNOWN,
         };
         let items = cmd.suggest_args(&ctx, "").unwrap();
         assert_eq!(items.len(), EFFORT_LEVELS.len());

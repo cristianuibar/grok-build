@@ -5256,7 +5256,9 @@ fn pr10_plan_mode_picker_esc_does_not_dispatch_action() {
 }
 
 /// Snapshot-driven seeding: `PagerLocalSnapshot { plan_mode_active:
-/// true }` makes Enter on the row open the picker seeded at the
+/// true             provider_auth: crate::app::app_view::ProviderAuthUsableSnapshot::UNKNOWN,
+            model_auth_hints: Vec::new(),
+        }` makes Enter on the row open the picker seeded at the
 /// "on" choice.
 #[test]
 fn pr10_picker_seeds_choices_idx_from_pager_snapshot_plan_mode_active() {

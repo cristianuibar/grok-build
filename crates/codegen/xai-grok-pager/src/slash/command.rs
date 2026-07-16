@@ -104,7 +104,12 @@ pub struct AppCtx<'a> {
     /// [`CommandExecCtx::screen_mode`], carried by the owning
     /// [`SlashController`](crate::slash::SlashController).
     pub(crate) screen_mode: crate::app::ScreenMode,
+    /// Dual-slot provider usable cache for `/model` needs-login badges.
+    /// Defaults [`ProviderAuthUsableSnapshot::UNKNOWN`] until refresh.
+    pub provider_auth: crate::app::app_view::ProviderAuthUsableSnapshot,
 }
+
+
 
 /// Mutable execution context for `SlashCommand::run()`.
 ///

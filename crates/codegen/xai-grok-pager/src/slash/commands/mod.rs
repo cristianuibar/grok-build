@@ -392,6 +392,7 @@ mod tests {
             cwd: std::path::Path::new("."),
             has_session_announcements: false,
             screen_mode: crate::app::ScreenMode::Fullscreen,
+            provider_auth: crate::app::app_view::ProviderAuthUsableSnapshot::UNKNOWN,
         };
         let cmd = model::ModelCommand;
         let items = cmd.suggest_args(&ctx, "").expect("should have suggestions");
@@ -415,6 +416,7 @@ mod tests {
             cwd: std::path::Path::new("."),
             has_session_announcements: false,
             screen_mode: crate::app::ScreenMode::Fullscreen,
+            provider_auth: crate::app::app_view::ProviderAuthUsableSnapshot::UNKNOWN,
         };
         let cmd = model::ModelCommand;
         assert!(cmd.suggest_args(&ctx, "").is_none());
@@ -522,6 +524,7 @@ mod tests {
             cwd: std::path::Path::new("."),
             has_session_announcements: false,
             screen_mode: crate::app::ScreenMode::Fullscreen,
+            provider_auth: crate::app::app_view::ProviderAuthUsableSnapshot::UNKNOWN,
         };
         let items = usage::UsageCommand
             .suggest_args(&ctx, "")
@@ -597,6 +600,7 @@ mod tests {
             cwd: std::path::Path::new("."),
             has_session_announcements: false,
             screen_mode: crate::app::ScreenMode::Fullscreen,
+            provider_auth: crate::app::app_view::ProviderAuthUsableSnapshot::UNKNOWN,
         };
         assert!(
             !gboom::GboomCommand.visible(&ctx),

@@ -1190,8 +1190,30 @@ impl AppView {
     /// Pure setter for dual-slot provider usable cache (tests + TaskResult path).
     ///
     /// Display-only; no FS. Shell gate remains authoritative for apply.
+    /// Fans out to slash controllers so `/model` suggest_args sees live flags.
     pub fn set_provider_auth_usable(&mut self, xai: bool, codex: bool) {
         self.provider_auth = ProviderAuthUsableSnapshot { xai, codex };
+        self.sync_provider_auth_to_slash_controllers();
+    }
+
+    /// Fan dual-slot usable cache into all slash controllers (agents, welcome, dashboard).
+    pub fn sync_provider_auth_to_slash_controllers(&mut self) {
+        let snap = self.provider_auth;
+        self.welcome_prompt
+            .slash_controller
+            .set_provider_auth(snap);
+        for agent in self.agents.values_mut() {
+            agent.prompt.slash_controller.set_provider_auth(snap);
+            for child in agent.subagent_views.values_mut() {
+                child.prompt.slash_controller.set_provider_auth(snap);
+            }
+        }
+        if let Some(dashboard) = self.dashboard.as_mut() {
+            dashboard
+                .dispatch
+                .slash_controller
+                .set_provider_auth(snap);
+        }
     }
 
     /// Pure read of dual-slot usable flags (no FS).

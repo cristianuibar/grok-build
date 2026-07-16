@@ -110,6 +110,7 @@ mod tests {
             cwd: std::path::Path::new("."),
             has_session_announcements: false,
             screen_mode,
+                    provider_auth: crate::app::app_view::ProviderAuthUsableSnapshot::UNKNOWN,
         };
         assert!(cmd.visible(&ctx(crate::app::ScreenMode::Fullscreen)));
         assert!(cmd.visible(&ctx(crate::app::ScreenMode::Inline)));

@@ -264,6 +264,9 @@ pub struct SlashController {
     /// screen-mode-switcher commands' visibility through [`AppCtx`]. Defaults
     /// to `Fullscreen` (the process default) for tests and unwired surfaces.
     screen_mode: crate::app::ScreenMode,
+    /// Dual-slot provider usable cache for `/model` needs-login badges.
+    /// Synced from `AppView::provider_auth` via [`Self::set_provider_auth`].
+    provider_auth: crate::app::app_view::ProviderAuthUsableSnapshot,
     /// MRU/recency store. Owned by `AppView` in production and injected via
     /// [`Self::set_mru`] so agent prompts and the dashboard share one store;
     /// defaults to an isolated in-memory store (no disk I/O) for tests and any
@@ -294,6 +297,7 @@ impl SlashController {
             hide_session_scoped: false,
             has_session_announcements: false,
             screen_mode: crate::app::ScreenMode::Fullscreen,
+            provider_auth: crate::app::app_view::ProviderAuthUsableSnapshot::UNKNOWN,
             mru,
         }
     }
@@ -322,12 +326,21 @@ impl SlashController {
         self.screen_mode
     }
 
+    /// Sync dual-slot usable flags for `/model` badge display (from AppView cache).
+    pub(crate) fn set_provider_auth(
+        &mut self,
+        provider_auth: crate::app::app_view::ProviderAuthUsableSnapshot,
+    ) {
+        self.provider_auth = provider_auth;
+    }
+
     pub(crate) fn app_ctx<'a>(&'a self, models: &'a ModelState) -> AppCtx<'a> {
         AppCtx {
             models,
             cwd: &self.cwd,
             has_session_announcements: self.has_session_announcements,
             screen_mode: self.screen_mode,
+            provider_auth: self.provider_auth,
         }
     }
 

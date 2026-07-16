@@ -212,6 +212,7 @@ mod tests {
             cwd,
             has_session_announcements: false,
             screen_mode: crate::app::ScreenMode::Fullscreen,
+            provider_auth: crate::app::app_view::ProviderAuthUsableSnapshot::UNKNOWN,
         };
         let items = DocsCommand.suggest_args(&ctx, "").expect("suggestions");
         assert!(items.iter().any(|i| i.insert_text == "web"));

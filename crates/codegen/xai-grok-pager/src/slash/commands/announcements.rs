@@ -121,6 +121,7 @@ mod tests {
             cwd: std::path::Path::new("."),
             has_session_announcements: true,
             screen_mode: crate::app::ScreenMode::Fullscreen,
+            provider_auth: crate::app::app_view::ProviderAuthUsableSnapshot::UNKNOWN,
         };
         let items = AnnouncementsCommand
             .suggest_args(&ctx, "")
@@ -140,12 +141,14 @@ mod tests {
             cwd: std::path::Path::new("."),
             has_session_announcements: false,
             screen_mode: crate::app::ScreenMode::Fullscreen,
+            provider_auth: crate::app::app_view::ProviderAuthUsableSnapshot::UNKNOWN,
         }));
         assert!(cmd.visible(&AppCtx {
             models: &models,
             cwd: std::path::Path::new("."),
             has_session_announcements: true,
             screen_mode: crate::app::ScreenMode::Fullscreen,
+            provider_auth: crate::app::app_view::ProviderAuthUsableSnapshot::UNKNOWN,
         }));
     }
 

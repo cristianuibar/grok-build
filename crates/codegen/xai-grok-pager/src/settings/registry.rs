@@ -118,10 +118,22 @@ pub fn dynamic_enum_choices(
                 display: "(no override)".to_string(),
                 description: "Inherit the default model (no per-user override).".to_string(),
             });
-            for (name, _id) in &snapshot.available_models {
+            let current = snapshot.current_model_name.as_deref();
+            for (idx, (name, _id)) in snapshot.available_models.iter().enumerate() {
+                let hint = snapshot.model_auth_hints.get(idx);
+                let provider = hint.and_then(|h| h.provider.as_deref());
+                let has_own = hint.map(|h| h.has_own_credentials).unwrap_or(false);
+                let is_current = current == Some(name.as_str());
+                let display = crate::slash::commands::model::format_model_display_with_auth_badge(
+                    name,
+                    is_current,
+                    provider,
+                    has_own,
+                    snapshot.provider_auth,
+                );
                 out.push(OwnedEnumChoice {
                     canonical: name.clone(),
-                    display: name.clone(),
+                    display,
                     description: String::new(),
                 });
             }
@@ -279,6 +291,20 @@ pub struct PagerLocalSnapshot {
     /// language actually in effect when `[ui].voice_stt_language` is unset but
     /// an explicit `[voice].language` applies.
     pub voice_stt_language: String,
+    /// Dual-slot provider usable cache for ActiveModelCatalog needs-login badges.
+    pub provider_auth: crate::app::app_view::ProviderAuthUsableSnapshot,
+    /// Per available model (same order as [`Self::available_models`]): provider
+    /// wire id + hasOwnCredentials for badge policy (parallel to names/ids).
+    pub model_auth_hints: Vec<ModelAuthHint>,
+}
+
+/// Badge inputs for one catalog model row (settings DynamicEnum / slash shared policy).
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct ModelAuthHint {
+    /// ACP meta `provider` (`xai`|`codex`); `None` → no badge.
+    pub provider: Option<String>,
+    /// ACP meta `hasOwnCredentials` (BYOK suppress).
+    pub has_own_credentials: bool,
 }
 
 impl Default for PagerLocalSnapshot {
@@ -302,6 +328,8 @@ impl Default for PagerLocalSnapshot {
             auto_mode_gate: false,
             ask_user_question_timeout_enabled: None,
             voice_stt_language: xai_grok_voice::STT_LANGUAGE_DEFAULT.to_string(),
+            provider_auth: crate::app::app_view::ProviderAuthUsableSnapshot::UNKNOWN,
+            model_auth_hints: Vec::new(),
         }
     }
 }
@@ -1177,6 +1205,8 @@ mod tests {
     fn voice_stt_language_current_value_falls_back_to_live_config() {
         let pager = PagerLocalSnapshot {
             voice_stt_language: "es".into(),
+            provider_auth: crate::app::app_view::ProviderAuthUsableSnapshot::UNKNOWN,
+            model_auth_hints: Vec::new(),
             ..Default::default()
         };
         let ui = UiConfig::default();

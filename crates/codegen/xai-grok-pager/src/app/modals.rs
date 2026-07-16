@@ -37,7 +37,6 @@ impl AgentView {
             &mut self.active_modal,
             &self.prompt.slash_controller,
             &self.session.models,
-            &self.session.cwd,
         )
     }
 
@@ -45,7 +44,6 @@ impl AgentView {
         active_modal: &mut Option<ActiveModal>,
         slash_controller: &crate::slash::SlashController,
         models: &crate::acp::model_state::ModelState,
-        cwd: &std::path::Path,
     ) -> bool {
         let Some(ActiveModal::ArgPicker {
             command,
@@ -62,12 +60,7 @@ impl AgentView {
         let Some(cmd) = slash_controller.registry().get(&command) else {
             return false;
         };
-        let ctx = crate::slash::command::AppCtx {
-            models,
-            cwd,
-            has_session_announcements: slash_controller.has_session_announcements(),
-            screen_mode: slash_controller.screen_mode(),
-        };
+        let ctx = slash_controller.app_ctx(models);
         let Some(model_items) = cmd.suggest_args(&ctx, "") else {
             return false;
         };

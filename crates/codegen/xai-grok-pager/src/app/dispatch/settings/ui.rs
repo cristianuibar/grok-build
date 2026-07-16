@@ -52,6 +52,7 @@ pub(crate) fn refresh_open_settings_modals(app: &mut AppView) {
     let auto_mode_gate_from_app = app.auto_mode_gate;
     let ask_user_question_timeout_enabled_from_app = app.ask_user_question_timeout_enabled;
     let voice_stt_language_from_app = app.voice_config.language.clone();
+    let provider_auth_from_app = app.provider_auth;
     for agent in app.agents.values_mut() {
         // Walk both `Settings` and `ResetSettingsConfirm` — the
         // confirm dialog embeds settings state that must stay fresh
@@ -65,6 +66,7 @@ pub(crate) fn refresh_open_settings_modals(app: &mut AppView) {
         };
         if let Some(state) = state_opt {
             state.ui_snapshot = ui_snapshot.clone();
+            let model_auth_hints = model_auth_hints_from_models(&agent.session.models);
             state.pager_snapshot = crate::settings::PagerLocalSnapshot {
                 multiline_mode: agent.multiline_mode,
                 yolo_mode: agent.session.is_yolo(),
@@ -88,6 +90,8 @@ pub(crate) fn refresh_open_settings_modals(app: &mut AppView) {
                 auto_mode_gate: auto_mode_gate_from_app,
                 ask_user_question_timeout_enabled: ask_user_question_timeout_enabled_from_app,
                 voice_stt_language: voice_stt_language_from_app.clone(),
+                provider_auth: provider_auth_from_app,
+                model_auth_hints,
             };
         }
     }
@@ -158,6 +162,7 @@ pub(in crate::app::dispatch) fn dispatch_open_settings(app: &mut AppView) -> Vec
     let auto_mode_gate_from_app = app.auto_mode_gate;
     let ask_user_question_timeout_enabled_from_app = app.ask_user_question_timeout_enabled;
     let voice_stt_language_from_app = app.voice_config.language.clone();
+    let provider_auth_from_app = app.provider_auth;
 
     let Some(agent) = app.agents.get_mut(&id) else {
         return vec![];
@@ -178,6 +183,7 @@ pub(in crate::app::dispatch) fn dispatch_open_settings(app: &mut AppView) -> Vec
 
     tracing::info!(target: "settings", "opened modal");
 
+    let model_auth_hints = model_auth_hints_from_models(&agent.session.models);
     let pager_snapshot = crate::settings::PagerLocalSnapshot {
         multiline_mode: agent.multiline_mode,
         yolo_mode: agent.session.is_yolo(),
@@ -201,6 +207,8 @@ pub(in crate::app::dispatch) fn dispatch_open_settings(app: &mut AppView) -> Vec
         auto_mode_gate: auto_mode_gate_from_app,
         ask_user_question_timeout_enabled: ask_user_question_timeout_enabled_from_app,
         voice_stt_language: voice_stt_language_from_app,
+        provider_auth: provider_auth_from_app,
+        model_auth_hints,
     };
     let state = Box::new(SettingsModalState::new(
         registry,
@@ -653,6 +661,33 @@ fn agent_available_models(app: &AppView) -> Vec<(String, acp::ModelId)> {
     Vec::new()
 }
 
+/// Badge inputs parallel to [`agent_available_models`] (same order).
+fn agent_model_auth_hints(app: &AppView) -> Vec<crate::settings::ModelAuthHint> {
+    if let ActiveView::Agent(id) = app.active_view
+        && let Some(agent) = app.agents.get(&id)
+    {
+        return model_auth_hints_from_models(&agent.session.models);
+    }
+    Vec::new()
+}
+
+fn model_auth_hints_from_models(
+    models: &crate::acp::model_state::ModelState,
+) -> Vec<crate::settings::ModelAuthHint> {
+    use crate::slash::commands::model::{model_meta_has_own_credentials, model_meta_provider};
+    models
+        .available
+        .iter()
+        .map(|(_id, info)| {
+            let meta = info.meta.as_ref();
+            crate::settings::ModelAuthHint {
+                provider: model_meta_provider(meta).map(str::to_owned),
+                has_own_credentials: model_meta_has_own_credentials(meta),
+            }
+        })
+        .collect()
+}
+
 /// Build a `PagerLocalSnapshot` from the current `AppView`.
 pub(crate) fn build_pager_snapshot(app: &AppView) -> crate::settings::PagerLocalSnapshot {
     crate::settings::PagerLocalSnapshot {
@@ -671,6 +706,8 @@ pub(crate) fn build_pager_snapshot(app: &AppView) -> crate::settings::PagerLocal
         auto_mode_gate: app.auto_mode_gate,
         ask_user_question_timeout_enabled: app.ask_user_question_timeout_enabled,
         voice_stt_language: app.voice_config.language.clone(),
+        provider_auth: app.provider_auth,
+        model_auth_hints: agent_model_auth_hints(app),
     }
 }
 
