@@ -541,6 +541,25 @@ pub struct ProviderAuthUsableSnapshot {
     pub codex: bool,
 }
 
+/// Bounded external CLI login poll after missing-provider Login now (Plan 03).
+///
+/// Generation is bumped on arm / clear so in-flight refresh TaskResults with a
+/// stale stamp never apply a deferred model switch.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ProviderLoginPoll {
+    pub agent_id: crate::app::agent::AgentId,
+    /// Wire id (`xai` | `codex`) the poll is waiting on.
+    pub provider: String,
+    pub generation: u64,
+    /// Remaining refresh attempts after the current one completes.
+    pub remaining: u32,
+}
+
+/// Max poll attempts after Login now (~2 minutes at 4s interval).
+pub const PROVIDER_LOGIN_POLL_MAX_ATTEMPTS: u32 = 30;
+/// Interval between deferred provider-login status refreshes.
+pub const PROVIDER_LOGIN_POLL_INTERVAL_SECS: u64 = 4;
+
 impl ProviderAuthUsableSnapshot {
     /// Safe default until a dual-slot refresh/auth-meta lands.
     pub const UNKNOWN: Self = Self {
@@ -1050,6 +1069,11 @@ pub struct AppView {
     /// Defaults both false (UNKNOWN) until `apply_auth_meta` or
     /// `RefreshProviderAuthStatus` updates it. Pure getters; no FS.
     pub provider_auth: ProviderAuthUsableSnapshot,
+    /// Active Login-now external CLI poll (if any). Cleared on apply / Keep
+    /// current / abandon. Generation must match TaskResult to apply deferred.
+    pub provider_login_poll: Option<ProviderLoginPoll>,
+    /// Monotonic generation for provider-login polls (bumped on arm/clear).
+    pub provider_login_poll_generation: u64,
     /// Latest version string from a background update check. Set when
     /// a newer version is detected; rendered as a notification on the
     /// welcome screen.
@@ -1225,9 +1249,69 @@ impl AppView {
     ///
     /// **Not gated** on `deferred_model_switch` — badge cache refresh is
     /// independent of Plan 03 deferred apply polls (H3 residual ownership).
+    /// When a deferred Login-now poll is armed, tags the refresh with the
+    /// active generation so TaskResult can drive deferred apply safely.
     pub fn provider_auth_refresh_on_focus_gained(&self) -> Vec<crate::app::actions::Effect> {
-        let _ = self; // pure; no state read required today
-        vec![crate::app::actions::Effect::RefreshProviderAuthStatus]
+        let generation = self
+            .provider_login_poll
+            .as_ref()
+            .map(|p| p.generation);
+        vec![crate::app::actions::Effect::RefreshProviderAuthStatus { generation }]
+    }
+
+    /// Whether dual-slot cache reports the provider wire id as usable.
+    pub fn provider_slot_usable(&self, provider: &str) -> bool {
+        match provider {
+            "xai" => self.provider_auth.xai,
+            "codex" => self.provider_auth.codex,
+            _ => false,
+        }
+    }
+
+    /// Arm bounded external CLI login poll for `agent_id` / `provider`.
+    ///
+    /// Returns the new generation (for tagging the first refresh Effect).
+    pub fn arm_provider_login_poll(
+        &mut self,
+        agent_id: crate::app::agent::AgentId,
+        provider: String,
+    ) -> u64 {
+        let generation = self.provider_login_poll_generation.wrapping_add(1);
+        self.provider_login_poll_generation = generation;
+        self.provider_login_poll = Some(ProviderLoginPoll {
+            agent_id,
+            provider,
+            generation,
+            remaining: PROVIDER_LOGIN_POLL_MAX_ATTEMPTS,
+        });
+        generation
+    }
+
+    /// Clear poll + bump generation so in-flight TaskResults are stale.
+    pub fn clear_provider_login_poll(&mut self) {
+        if self.provider_login_poll.is_some() {
+            self.provider_login_poll = None;
+            self.provider_login_poll_generation =
+                self.provider_login_poll_generation.wrapping_add(1);
+        } else {
+            // Still bump so explicitly-tagged stale generations cannot match
+            // a future arm that reuses the same counter by accident... no,
+            // arming always bumps. Bump anyway for Keep-current cancel tests.
+            self.provider_login_poll_generation =
+                self.provider_login_poll_generation.wrapping_add(1);
+        }
+    }
+
+    /// True when `generation` matches the active poll (or generation is None =
+    /// untagged badge/auth refresh — always allowed to try apply).
+    pub fn provider_login_poll_generation_current(&self, generation: Option<u64>) -> bool {
+        match generation {
+            None => true,
+            Some(g) => self
+                .provider_login_poll
+                .as_ref()
+                .is_some_and(|p| p.generation == g),
+        }
     }
     pub(crate) fn ensure_voice_for_api_key(&mut self) {
         if self.is_api_key_auth && !self.voice_mode_enabled {
@@ -1389,6 +1473,8 @@ impl AppView {
             startup_warnings: Vec::new(),
             is_api_key_auth: false,
             provider_auth: ProviderAuthUsableSnapshot::UNKNOWN,
+            provider_login_poll: None,
+            provider_login_poll_generation: 0,
             pending_update_version: None,
             foreign_resume_launch_generation: 0,
             foreign_resume_launch: None,
@@ -5261,6 +5347,8 @@ pub(crate) mod tests {
             startup_warnings: Vec::new(),
             is_api_key_auth: false,
             provider_auth: ProviderAuthUsableSnapshot::UNKNOWN,
+            provider_login_poll: None,
+            provider_login_poll_generation: 0,
             pending_update_version: None,
             foreign_resume_launch_generation: 0,
             foreign_resume_launch: None,

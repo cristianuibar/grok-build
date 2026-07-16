@@ -471,6 +471,7 @@ pub(super) fn dispatch_task_result(result: TaskResult, app: &mut AppView) -> Vec
         TaskResult::ProviderAuthStatusRefreshed {
             xai_usable,
             codex_usable,
+            generation,
         } => {
             // Stale-on-error: only update flags that arrived as Some.
             // When both None, keep last known cache (badge freshness).
@@ -481,8 +482,55 @@ pub(super) fn dispatch_task_result(result: TaskResult, app: &mut AppView) -> Vec
                     codex_usable.unwrap_or(cur.codex),
                 );
             }
-            vec![]
-        },
+            // Stale poll generation → update cache only; no SwitchModel.
+            if !app.provider_login_poll_generation_current(generation) {
+                return vec![];
+            }
+            let mut effects =
+                crate::app::dispatch::session::lifecycle::try_apply_deferred_model_switch_if_ready(
+                    app,
+                );
+            // If deferred still pending and this was a tagged poll, schedule
+            // the next bounded refresh (CLI external login observation).
+            if let Some(poll) = app.provider_login_poll.as_mut()
+                && generation == Some(poll.generation)
+            {
+                let still_waiting = app.agents.get(&poll.agent_id).is_some_and(|a| {
+                    a.session.deferred_model_switch.as_ref().is_some_and(|d| {
+                        d.required_provider
+                            .as_ref()
+                            .is_none_or(|p| p == &poll.provider)
+                    })
+                });
+                if still_waiting && poll.remaining > 0 {
+                    poll.remaining = poll.remaining.saturating_sub(1);
+                    let poll_generation = poll.generation;
+                    effects.push(Effect::ScheduleProviderLoginPoll {
+                        generation: poll_generation,
+                    });
+                } else if !still_waiting {
+                    // Applied or abandoned — clear poll if still ours.
+                    app.clear_provider_login_poll();
+                } else {
+                    // Exhausted attempts; leave deferred for FocusGained.
+                    app.provider_login_poll = None;
+                }
+            }
+            effects
+        }
+        TaskResult::ProviderLoginPollTick { generation } => {
+            if !app.provider_login_poll_generation_current(Some(generation)) {
+                return vec![];
+            }
+            // Still awaiting? Emit tagged refresh.
+            if app.provider_login_poll.is_some() {
+                vec![Effect::RefreshProviderAuthStatus {
+                    generation: Some(generation),
+                }]
+            } else {
+                vec![]
+            }
+        }
         TaskResult::BgTaskKilled {
             session_id,
             task_id,
@@ -583,6 +631,30 @@ pub(super) fn dispatch_task_result(result: TaskResult, app: &mut AppView) -> Vec
             {
                 app.auth_state = AuthState::Pending { error: Some(error) };
                 app.auth_code_input.clear();
+                // Login fail: never apply deferred target (D-08). Optional toast
+                // when a missing-provider recovery is in flight.
+                let has_deferred = app.agents.values().any(|a| {
+                    a.session
+                        .deferred_model_switch
+                        .as_ref()
+                        .is_some_and(|d| d.required_provider.is_some())
+                });
+                if has_deferred {
+                    let current_name = match app.active_view {
+                        ActiveView::Agent(id) => app.agents.get(&id).and_then(|a| {
+                            a.session
+                                .models
+                                .current
+                                .as_ref()
+                                .map(|m| a.session.models.display_name_for(m))
+                        }),
+                        _ => None,
+                    }
+                    .unwrap_or_else(|| "current model".to_string());
+                    app.show_toast(&format!(
+                        "Login failed — still on {current_name}."
+                    ));
+                }
             }
             vec![]
         }

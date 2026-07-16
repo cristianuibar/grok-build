@@ -1598,7 +1598,7 @@ pub(crate) fn execute(
                     TaskResult::CancelComplete
                 });
         }
-        Effect::RefreshProviderAuthStatus => {
+        Effect::RefreshProviderAuthStatus { generation } => {
             // Dual-slot usable booleans only — never log auth file contents.
             // On IO/parse failure emit None flags so dispatch keeps last cache.
             tasks.spawn(async move {
@@ -1633,7 +1633,17 @@ pub(crate) fn execute(
                 TaskResult::ProviderAuthStatusRefreshed {
                     xai_usable,
                     codex_usable,
+                    generation,
                 }
+            });
+        }
+        Effect::ScheduleProviderLoginPoll { generation } => {
+            tasks.spawn(async move {
+                tokio::time::sleep(std::time::Duration::from_secs(
+                    crate::app::app_view::PROVIDER_LOGIN_POLL_INTERVAL_SECS,
+                ))
+                .await;
+                TaskResult::ProviderLoginPollTick { generation }
             });
         }
         Effect::SwitchModel {

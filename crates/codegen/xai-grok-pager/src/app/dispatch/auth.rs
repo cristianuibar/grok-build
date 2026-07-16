@@ -187,7 +187,7 @@ pub(super) fn strip_trailing_auth_error_blocks(agent: &mut AgentView) {
 /// switch to `Welcome` so the flow is actually visible; the prior view is
 /// restored once auth completes or is cancelled. Without this, `/login`
 /// with an external auth provider configured appeared to do nothing.
-pub(super) fn dispatch_login(app: &mut AppView) -> Vec<Effect> {
+pub(in crate::app::dispatch) fn dispatch_login(app: &mut AppView) -> Vec<Effect> {
     ensure_login_method(app);
     let Some(method_id) = app.login_method_id.clone() else {
         app.auth_state = AuthState::Pending {
@@ -329,7 +329,13 @@ pub(super) fn handle_auth_complete(
                 effects.push(Effect::FetchAppBilling);
             }
             // Badge cache: AuthMeta may omit dual-slot usable; re-read disk.
-            effects.push(Effect::RefreshProviderAuthStatus);
+            effects.push(Effect::RefreshProviderAuthStatus { generation: None });
+            // Plan 03: apply deferred model switch when required slot usable.
+            effects.extend(
+                crate::app::dispatch::session::lifecycle::try_apply_deferred_model_switch_if_ready(
+                    app,
+                ),
+            );
             effects.extend(retry_effects);
             return effects;
         }
@@ -337,7 +343,10 @@ pub(super) fn handle_auth_complete(
         // status only; shell auto-syncs post-auth
         let mut effects = dispatch(Action::RequestBundleStatus, app);
         // Dual-slot badge cache refresh after successful login (H3 residual).
-        effects.push(Effect::RefreshProviderAuthStatus);
+        effects.push(Effect::RefreshProviderAuthStatus { generation: None });
+        effects.extend(
+            crate::app::dispatch::session::lifecycle::try_apply_deferred_model_switch_if_ready(app),
+        );
 
         // Start auto-checking subscription if gated.
         // Check immediately (don't wait 5s) then schedule the timer.

@@ -213,6 +213,8 @@ fn test_app() -> AppView {
         startup_warnings: Vec::new(),
         is_api_key_auth: false,
         provider_auth: crate::app::app_view::ProviderAuthUsableSnapshot::UNKNOWN,
+        provider_login_poll: None,
+        provider_login_poll_generation: 0,
         pending_update_version: None,
         foreign_resume_launch_generation: 0,
         foreign_resume_launch: None,

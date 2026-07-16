@@ -1540,7 +1540,16 @@ pub enum Effect {
     /// Loads [`xai_grok_shell::auth::AuthStatusReport`] (booleans only) and
     /// updates `AppView` badge cache. Used on startup, login, FocusGained,
     /// and Plan 03 deferred polls — never logs auth file contents.
-    RefreshProviderAuthStatus,
+    ///
+    /// `generation` tags deferred Login-now polls so stale TaskResults are
+    /// ignored after Keep current / abandon / re-arm.
+    RefreshProviderAuthStatus {
+        generation: Option<u64>,
+    },
+    /// Schedule the next bounded provider-login poll tick (Plan 03 CLI path).
+    ScheduleProviderLoginPoll {
+        generation: u64,
+    },
     /// Fetch changelog from CDN (both markdown + structured JSON).
     /// Runs off the render path via `spawn_blocking`. Result is cached
     /// on `AppView` so `/release-notes` and the welcome screen share it.
@@ -2304,11 +2313,19 @@ pub enum TaskResult {
     },
     /// Dual-slot provider usable flags refreshed from disk (or injected in tests).
     ///
-    /// `None` = IO/parse failure — keep last known cache (stale-on-error).
+    /// `None` usable = IO/parse failure — keep last known cache (stale-on-error).
     /// `Some` applies pure booleans; never carries tokens.
+    ///
+    /// `generation` is threaded from [`Effect::RefreshProviderAuthStatus`] for
+    /// deferred Login-now poll cancel; `None` means untagged (badge/auth paths).
     ProviderAuthStatusRefreshed {
         xai_usable: Option<bool>,
         codex_usable: Option<bool>,
+        generation: Option<u64>,
+    },
+    /// Bounded poll timer fired for external CLI login observation (Plan 03).
+    ProviderLoginPollTick {
+        generation: u64,
     },
     /// Changelog fetched from CDN (both formats).
     ChangelogFetched {

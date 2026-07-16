@@ -732,7 +732,9 @@ pub(crate) async fn run(
     // Badge-freshness startup refresh (H3 residual): AuthMeta may omit dual-slot
     // providers on older shells / no-auth paths. One-shot re-read of product-home
     // auth.json booleans after first paint (coalesced with other post-render work).
-    post_render_effects.push(crate::app::actions::Effect::RefreshProviderAuthStatus);
+    post_render_effects.push(crate::app::actions::Effect::RefreshProviderAuthStatus {
+        generation: None,
+    });
 
     // Fallback: prefetch may have gate info the shell's AuthMeta missed.
     // Errs on the side of blocking if stale.

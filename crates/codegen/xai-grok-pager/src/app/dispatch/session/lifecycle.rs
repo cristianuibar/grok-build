@@ -933,7 +933,7 @@ pub(in crate::app::dispatch) fn handle_session_created(
         });
         // Session-ready badge cache refresh (H3 residual): dual-slot usable
         // flags from disk so badges are non-default after dual fixtures.
-        effects.push(Effect::RefreshProviderAuthStatus);
+        effects.push(Effect::RefreshProviderAuthStatus { generation: None });
         if let Some(deferred) = deferred {
             effects.push(Effect::SwitchModel {
                 agent_id,
@@ -1027,7 +1027,7 @@ pub(in crate::app::dispatch) fn handle_worktree_session_created(
         });
         // Session-ready badge cache refresh (H3 residual): dual-slot usable
         // flags from disk so badges are non-default after dual fixtures.
-        effects.push(Effect::RefreshProviderAuthStatus);
+        effects.push(Effect::RefreshProviderAuthStatus { generation: None });
         if let Some(deferred) = deferred {
             effects.push(Effect::SwitchModel {
                 agent_id,
@@ -1298,15 +1298,17 @@ pub(in crate::app::dispatch) fn dispatch_agent_type_mismatch_answered(
 
 /// Handle MissingProviderLogin QuestionView answer.
 ///
-/// `login: false` (Keep current): clear question + deferred stash, zero persist.
-/// `login: true` (Login now): leave deferred stash intact for Plan 03 recovery;
-/// do **not** apply the unusable target model.
+/// `login: false` (Keep current): clear question + deferred stash, zero persist,
+/// bump poll generation.
+/// `login: true` (Login now): consume gate-open DeferredModelSwitch (preserve
+/// `persist_default`), start provider-scoped recovery — do **not** apply the
+/// unusable target model (D-03).
 pub(in crate::app::dispatch) fn dispatch_missing_provider_login_answered(
     app: &mut AppView,
     login: bool,
-    _model_id: acp::ModelId,
-    _effort: Option<ReasoningEffort>,
-    _provider: String,
+    model_id: acp::ModelId,
+    effort: Option<ReasoningEffort>,
+    provider: String,
 ) -> Vec<Effect> {
     let ActiveView::Agent(id) = app.active_view else {
         return vec![];
@@ -1317,13 +1319,109 @@ pub(in crate::app::dispatch) fn dispatch_missing_provider_login_answered(
     if let Some(qv) = agent.question_view.take() {
         agent.prompt.restore(qv.stashed_prompt);
     }
-    if login {
-        // Plan 03: consume gate-open deferred (preserve persist_default) and
-        // start provider-scoped recovery. This plan must not apply the model.
-        // Leave deferred stash intact for Plan 03.
-    } else {
+    if !login {
         // Keep current model: clear gate-open deferred, zero persist/toast.
         agent.session.deferred_model_switch = None;
+        app.clear_provider_login_poll();
+        return vec![];
     }
-    vec![]
+
+    // Login now: reuse Plan 02 gate-open stash (including persist_default).
+    // Do not force persist_default false when a matching stash already exists.
+    let deferred = match agent.session.deferred_model_switch.take() {
+        Some(existing) => {
+            // Prefer gate-open stash; fill required_provider if missing.
+            DeferredModelSwitch {
+                model_id: existing.model_id,
+                effort: existing.effort.or(effort),
+                required_provider: existing
+                    .required_provider
+                    .or_else(|| Some(provider.clone())),
+                persist_default: existing.persist_default,
+            }
+        }
+        None => DeferredModelSwitch {
+            model_id: model_id.clone(),
+            effort,
+            required_provider: Some(provider.clone()),
+            persist_default: false,
+        },
+    };
+    agent.session.deferred_model_switch = Some(deferred);
+
+    // Provider-scoped recovery (RESEARCH A1): Codex is CLI-primary — never
+    // start xAI OAuth for a codex-missing gate. xAI reuses mid-session login.
+    let is_codex = provider == "codex";
+    if is_codex {
+        agent.scrollback.push_block(RenderBlock::system(
+            "Complete Codex login in another terminal:\n  bum login --provider codex"
+                .to_string(),
+        ));
+    }
+
+    // Drop agent borrow before dispatch_login / poll arm (needs &mut AppView).
+    let generation = app.arm_provider_login_poll(id, provider.clone());
+    let mut effects = Vec::new();
+    if !is_codex {
+        // xAI: existing mid-session Authenticate path.
+        effects.extend(crate::app::dispatch::auth::dispatch_login(app));
+    }
+    // Always emit a first refresh (Codex CLI path primary; xAI also benefits
+    // if credentials land via external CLI while OAuth is open).
+    effects.push(Effect::RefreshProviderAuthStatus {
+        generation: Some(generation),
+    });
+    effects
+}
+
+/// Apply stashed `deferred_model_switch` when the required provider slot is
+/// usable (or `required_provider` is None for CLI `-m` deferrals).
+///
+/// Used by AuthComplete and ProviderAuthStatusRefreshed. Emits
+/// `Effect::SwitchModel` with the deferred `persist_default` and sets
+/// `model_switch_pending`. Never applies when the required slot is unusable.
+pub(crate) fn try_apply_deferred_model_switch_if_ready(app: &mut AppView) -> Vec<Effect> {
+    let agent_ids: Vec<AgentId> = app.agents.keys().copied().collect();
+    let mut effects = Vec::new();
+    for id in agent_ids {
+        let Some(agent) = app.agents.get(&id) else {
+            continue;
+        };
+        let Some(deferred) = agent.session.deferred_model_switch.clone() else {
+            continue;
+        };
+        if let Some(ref p) = deferred.required_provider
+            && !app.provider_slot_usable(p)
+        {
+            continue;
+        }
+        let Some(session_id) = agent.session.session_id.clone() else {
+            // Pre-session stash: SessionCreated path applies later.
+            continue;
+        };
+        let prev_model_id = agent.session.models.current.clone();
+
+        let Some(agent) = app.agents.get_mut(&id) else {
+            continue;
+        };
+        agent.session.deferred_model_switch = None;
+        agent.session.model_switch_pending = true;
+        // Cancel poll for this agent so stale refreshes no-op.
+        if app
+            .provider_login_poll
+            .as_ref()
+            .is_some_and(|p| p.agent_id == id)
+        {
+            app.clear_provider_login_poll();
+        }
+        effects.push(Effect::SwitchModel {
+            agent_id: id,
+            session_id,
+            model_id: deferred.model_id,
+            effort: deferred.effort,
+            prev_model_id,
+            persist_default: deferred.persist_default,
+        });
+    }
+    effects
 }

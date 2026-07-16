@@ -1523,6 +1523,7 @@ fn p6_refresh_provider_auth_status_updates_cache() {
         Action::TaskComplete(TaskResult::ProviderAuthStatusRefreshed {
             xai_usable: Some(true),
             codex_usable: Some(true),
+            generation: None,
         }),
         &mut app,
     );
@@ -1534,6 +1535,7 @@ fn p6_refresh_provider_auth_status_updates_cache() {
         Action::TaskComplete(TaskResult::ProviderAuthStatusRefreshed {
             xai_usable: None,
             codex_usable: Some(false),
+            generation: None,
         }),
         &mut app,
     );
@@ -1545,6 +1547,7 @@ fn p6_refresh_provider_auth_status_updates_cache() {
         Action::TaskComplete(TaskResult::ProviderAuthStatusRefreshed {
             xai_usable: None,
             codex_usable: None,
+            generation: None,
         }),
         &mut app,
     );
@@ -1583,7 +1586,7 @@ fn p6_provider_auth_refresh_on_auth_complete() {
     assert!(
         effects
             .iter()
-            .any(|e| matches!(e, Effect::RefreshProviderAuthStatus)),
+            .any(|e| matches!(e, Effect::RefreshProviderAuthStatus { .. })),
         "AuthComplete must emit RefreshProviderAuthStatus"
     );
 }
@@ -1602,7 +1605,7 @@ fn p6_provider_auth_refresh_on_focus_gained() {
     assert!(
         matches!(
             effects.as_slice(),
-            [Effect::RefreshProviderAuthStatus]
+            [Effect::RefreshProviderAuthStatus { generation: None }]
         ),
         "FocusGained helper must emit RefreshProviderAuthStatus unconditionally"
     );
@@ -1625,7 +1628,7 @@ fn p6_provider_auth_startup_or_session_ready_non_default() {
     assert!(
         effects
             .iter()
-            .any(|e| matches!(e, Effect::RefreshProviderAuthStatus)),
+            .any(|e| matches!(e, Effect::RefreshProviderAuthStatus { .. })),
         "SessionCreated must emit RefreshProviderAuthStatus"
     );
     // Simulate the effect completing with dual fixtures both usable.
@@ -1633,6 +1636,7 @@ fn p6_provider_auth_startup_or_session_ready_non_default() {
         Action::TaskComplete(TaskResult::ProviderAuthStatusRefreshed {
             xai_usable: Some(true),
             codex_usable: Some(true),
+            generation: None,
         }),
         &mut app,
     );
@@ -1665,6 +1669,785 @@ fn p6_provider_auth_logout_or_clear_marks_unusable() {
     });
     assert!(!app.provider_auth.xai);
     assert!(!app.provider_auth.codex);
+}
+
+// ── Phase 6 Plan 03: Login now recovery + deferred apply ───────────────────
+
+fn p6_seed_missing_provider_gate(
+    app: &mut AppView,
+    prev: &acp::ModelId,
+    target: &acp::ModelId,
+    provider: &str,
+    persist_default: bool,
+) {
+    let id = AgentId(0);
+    let agent = app.agents.get_mut(&id).unwrap();
+    agent.session.models.available.insert(
+        prev.clone(),
+        acp::ModelInfo::new(prev.clone(), "Grok Build (xAI)".to_string()),
+    );
+    agent.session.models.available.insert(
+        target.clone(),
+        acp::ModelInfo::new(target.clone(), "GPT-5.6 Sol (Codex)".to_string()),
+    );
+    agent.session.models.set_current(prev.clone(), None);
+    agent.session.model_switch_pending = true;
+    dispatch(
+        Action::TaskComplete(TaskResult::SwitchModelComplete {
+            agent_id: id,
+            model_id: target.clone(),
+            effort: None,
+            result: Err(SwitchModelError::MissingProvider {
+                error: p6_missing_provider_error(provider, &target.0),
+                prev_model_id: Some(prev.clone()),
+            }),
+            prev_model_id: Some(prev.clone()),
+            persist_default,
+        }),
+        app,
+    );
+}
+
+#[test]
+fn p6_login_now_sets_deferred_model_switch_with_provider() {
+    let mut app = test_app_with_agent();
+    let prev = acp::ModelId::new(std::sync::Arc::from("grok-build"));
+    let target = acp::ModelId::new(std::sync::Arc::from("gpt-5.6-sol"));
+    p6_seed_missing_provider_gate(&mut app, &prev, &target, "codex", false);
+
+    let effects = dispatch(
+        Action::MissingProviderLoginAnswered {
+            login: true,
+            model_id: target.clone(),
+            effort: None,
+            provider: "codex".into(),
+        },
+        &mut app,
+    );
+
+    let deferred = app.agents[&AgentId(0)]
+        .session
+        .deferred_model_switch
+        .as_ref()
+        .expect("Login now must leave/ensure deferred");
+    assert_eq!(deferred.model_id, target);
+    assert_eq!(deferred.required_provider.as_deref(), Some("codex"));
+    assert!(app.provider_login_poll.is_some());
+    assert!(
+        effects
+            .iter()
+            .any(|e| matches!(e, Effect::RefreshProviderAuthStatus { .. })),
+        "Login now must schedule provider status refresh: {effects:?}"
+    );
+}
+
+#[test]
+fn p6_login_now_does_not_apply_model_immediately() {
+    let mut app = test_app_with_agent();
+    let prev = acp::ModelId::new(std::sync::Arc::from("grok-build"));
+    let target = acp::ModelId::new(std::sync::Arc::from("gpt-5.6-sol"));
+    p6_seed_missing_provider_gate(&mut app, &prev, &target, "codex", false);
+
+    let effects = dispatch(
+        Action::MissingProviderLoginAnswered {
+            login: true,
+            model_id: target.clone(),
+            effort: None,
+            provider: "codex".into(),
+        },
+        &mut app,
+    );
+
+    assert_eq!(
+        app.agents[&AgentId(0)].session.models.current,
+        Some(prev),
+        "current must stay on previous model until auth succeeds"
+    );
+    assert!(
+        !effects
+            .iter()
+            .any(|e| matches!(e, Effect::SwitchModel { .. })),
+        "Login now must not SwitchModel immediately: {effects:?}"
+    );
+}
+
+#[test]
+fn p6_login_now_codex_does_not_start_xai_oauth() {
+    let mut app = test_app_with_agent();
+    let prev = acp::ModelId::new(std::sync::Arc::from("grok-build"));
+    let target = acp::ModelId::new(std::sync::Arc::from("gpt-5.6-sol"));
+    p6_seed_missing_provider_gate(&mut app, &prev, &target, "codex", false);
+
+    let effects = dispatch(
+        Action::MissingProviderLoginAnswered {
+            login: true,
+            model_id: target,
+            effort: None,
+            provider: "codex".into(),
+        },
+        &mut app,
+    );
+
+    assert!(
+        !effects
+            .iter()
+            .any(|e| matches!(e, Effect::Authenticate { .. })),
+        "Codex Login now must not start xAI Authenticate: {effects:?}"
+    );
+    assert!(
+        !matches!(app.active_view, ActiveView::Welcome),
+        "Codex Login now must not detour to Welcome OAuth UI"
+    );
+}
+
+#[test]
+fn p6_login_now_codex_emits_refresh_provider_auth_status() {
+    let mut app = test_app_with_agent();
+    let prev = acp::ModelId::new(std::sync::Arc::from("grok-build"));
+    let target = acp::ModelId::new(std::sync::Arc::from("gpt-5.6-sol"));
+    p6_seed_missing_provider_gate(&mut app, &prev, &target, "codex", false);
+
+    let effects = dispatch(
+        Action::MissingProviderLoginAnswered {
+            login: true,
+            model_id: target,
+            effort: None,
+            provider: "codex".into(),
+        },
+        &mut app,
+    );
+
+    let poll_generation = app
+        .provider_login_poll
+        .as_ref()
+        .expect("poll armed")
+        .generation;
+    assert!(
+        effects.iter().any(|e| matches!(
+            e,
+            Effect::RefreshProviderAuthStatus {
+                generation: Some(g)
+            } if *g == poll_generation
+        )),
+        "CLI-primary Login now must emit tagged RefreshProviderAuthStatus: {effects:?}"
+    );
+}
+
+#[test]
+fn p6_deferred_carries_persist_default_from_settings_stash() {
+    let mut app = test_app_with_agent();
+    let id = AgentId(0);
+    // No session id → set_default_model stashes with persist_default true.
+    app.agents.get_mut(&id).unwrap().session.session_id = None;
+    let target = acp::ModelId::new(std::sync::Arc::from("gpt-5.6-sol"));
+    app.agents.get_mut(&id).unwrap().session.models.available.insert(
+        target.clone(),
+        acp::ModelInfo::new(target.clone(), "GPT-5.6 Sol (Codex)".to_string()),
+    );
+    let effects = dispatch(Action::SetDefaultModel(target.clone()), &mut app);
+    assert!(effects.is_empty(), "no session → pure stash");
+    let deferred = app.agents[&id]
+        .session
+        .deferred_model_switch
+        .as_ref()
+        .expect("settings no-session stash");
+    assert!(deferred.persist_default);
+    assert_eq!(deferred.model_id, target);
+}
+
+#[test]
+fn p6_login_now_preserves_gate_open_persist_default_true() {
+    let mut app = test_app_with_agent();
+    let prev = acp::ModelId::new(std::sync::Arc::from("grok-build"));
+    let target = acp::ModelId::new(std::sync::Arc::from("gpt-5.6-sol"));
+    // Live-session settings path → MissingProvider with persist_default true.
+    let agent = app.agents.get_mut(&AgentId(0)).unwrap();
+    agent.session.models.available.insert(
+        prev.clone(),
+        acp::ModelInfo::new(prev.clone(), "Grok Build (xAI)".to_string()),
+    );
+    agent.session.models.available.insert(
+        target.clone(),
+        acp::ModelInfo::new(target.clone(), "GPT-5.6 Sol (Codex)".to_string()),
+    );
+    agent.session.models.set_current(prev.clone(), None);
+    dispatch(Action::SetDefaultModel(target.clone()), &mut app);
+    dispatch(
+        Action::TaskComplete(TaskResult::SwitchModelComplete {
+            agent_id: AgentId(0),
+            model_id: target.clone(),
+            effort: None,
+            result: Err(SwitchModelError::MissingProvider {
+                error: p6_missing_provider_error("codex", "gpt-5.6-sol"),
+                prev_model_id: Some(prev.clone()),
+            }),
+            prev_model_id: Some(prev.clone()),
+            persist_default: true,
+        }),
+        &mut app,
+    );
+    assert!(
+        app.agents[&AgentId(0)]
+            .session
+            .deferred_model_switch
+            .as_ref()
+            .is_some_and(|d| d.persist_default)
+    );
+
+    dispatch(
+        Action::MissingProviderLoginAnswered {
+            login: true,
+            model_id: target,
+            effort: None,
+            provider: "codex".into(),
+        },
+        &mut app,
+    );
+
+    let deferred = app.agents[&AgentId(0)]
+        .session
+        .deferred_model_switch
+        .as_ref()
+        .expect("deferred after Login now");
+    assert!(
+        deferred.persist_default,
+        "Login now must not force persist_default false on settings gate-open stash"
+    );
+}
+
+#[test]
+fn p6_login_now_session_only_persist_default_false() {
+    let mut app = test_app_with_agent();
+    let prev = acp::ModelId::new(std::sync::Arc::from("grok-build"));
+    let target = acp::ModelId::new(std::sync::Arc::from("gpt-5.6-sol"));
+    p6_seed_missing_provider_gate(&mut app, &prev, &target, "codex", false);
+
+    dispatch(
+        Action::MissingProviderLoginAnswered {
+            login: true,
+            model_id: target,
+            effort: None,
+            provider: "codex".into(),
+        },
+        &mut app,
+    );
+
+    assert!(
+        !app.agents[&AgentId(0)]
+            .session
+            .deferred_model_switch
+            .as_ref()
+            .unwrap()
+            .persist_default
+    );
+}
+
+#[test]
+fn p6_auth_complete_applies_deferred_when_required_provider_usable() {
+    let mut app = test_app_with_agent();
+    let prev = acp::ModelId::new(std::sync::Arc::from("grok-build"));
+    let target = acp::ModelId::new(std::sync::Arc::from("gpt-5.6-sol"));
+    p6_seed_missing_provider_gate(&mut app, &prev, &target, "codex", true);
+    dispatch(
+        Action::MissingProviderLoginAnswered {
+            login: true,
+            model_id: target.clone(),
+            effort: None,
+            provider: "codex".into(),
+        },
+        &mut app,
+    );
+
+    // Mid-session AuthComplete with dual-slot meta making codex usable.
+    app.auth_return_view = Some(ActiveView::Agent(AgentId(0)));
+    app.auth_state = crate::app::app_view::AuthState::Authenticating {
+        request_seq: 7,
+        handle: None,
+        auth_url: None,
+        mode: crate::app::app_view::AuthMode::Pending,
+    };
+    let meta = serde_json::to_value(xai_grok_shell::auth::AuthMeta {
+        providers: Some(xai_grok_shell::auth::ProviderAuthMetaSlots {
+            xai: xai_grok_shell::auth::ProviderSlotUsableMeta { usable: true },
+            codex: xai_grok_shell::auth::ProviderSlotUsableMeta { usable: true },
+        }),
+        ..Default::default()
+    })
+    .unwrap();
+    let effects = dispatch(
+        Action::TaskComplete(TaskResult::AuthComplete {
+            request_seq: 7,
+            meta: Some(meta),
+        }),
+        &mut app,
+    );
+
+    assert!(
+        effects.iter().any(|e| matches!(
+            e,
+            Effect::SwitchModel {
+                model_id: mid,
+                persist_default: true,
+                ..
+            } if mid == &target
+        )),
+        "AuthComplete must re-issue SwitchModel with deferred persist_default: {effects:?}"
+    );
+    assert!(app.agents[&AgentId(0)].session.model_switch_pending);
+    assert!(
+        app.agents[&AgentId(0)]
+            .session
+            .deferred_model_switch
+            .is_none(),
+        "deferred taken on apply"
+    );
+}
+
+#[test]
+fn p6_auth_complete_does_not_apply_deferred_for_wrong_provider() {
+    let mut app = test_app_with_agent();
+    let prev = acp::ModelId::new(std::sync::Arc::from("grok-build"));
+    let target = acp::ModelId::new(std::sync::Arc::from("gpt-5.6-sol"));
+    p6_seed_missing_provider_gate(&mut app, &prev, &target, "codex", false);
+    dispatch(
+        Action::MissingProviderLoginAnswered {
+            login: true,
+            model_id: target.clone(),
+            effort: None,
+            provider: "codex".into(),
+        },
+        &mut app,
+    );
+
+    // Only xAI becomes usable — codex still false.
+    app.set_provider_auth_usable(true, false);
+    app.auth_return_view = Some(ActiveView::Agent(AgentId(0)));
+    app.auth_state = crate::app::app_view::AuthState::Authenticating {
+        request_seq: 8,
+        handle: None,
+        auth_url: None,
+        mode: crate::app::app_view::AuthMode::Pending,
+    };
+    let meta = serde_json::to_value(xai_grok_shell::auth::AuthMeta {
+        providers: Some(xai_grok_shell::auth::ProviderAuthMetaSlots {
+            xai: xai_grok_shell::auth::ProviderSlotUsableMeta { usable: true },
+            codex: xai_grok_shell::auth::ProviderSlotUsableMeta { usable: false },
+        }),
+        ..Default::default()
+    })
+    .unwrap();
+    let effects = dispatch(
+        Action::TaskComplete(TaskResult::AuthComplete {
+            request_seq: 8,
+            meta: Some(meta),
+        }),
+        &mut app,
+    );
+
+    assert!(
+        !effects
+            .iter()
+            .any(|e| matches!(e, Effect::SwitchModel { .. })),
+        "wrong-provider usable must not apply codex deferred: {effects:?}"
+    );
+    assert!(
+        app.agents[&AgentId(0)]
+            .session
+            .deferred_model_switch
+            .is_some()
+    );
+}
+
+#[test]
+fn p6_external_cli_status_refresh_applies_deferred() {
+    let mut app = test_app_with_agent();
+    let prev = acp::ModelId::new(std::sync::Arc::from("grok-build"));
+    let target = acp::ModelId::new(std::sync::Arc::from("gpt-5.6-sol"));
+    p6_seed_missing_provider_gate(&mut app, &prev, &target, "codex", true);
+    dispatch(
+        Action::MissingProviderLoginAnswered {
+            login: true,
+            model_id: target.clone(),
+            effort: None,
+            provider: "codex".into(),
+        },
+        &mut app,
+    );
+    let poll_generation = app.provider_login_poll.as_ref().unwrap().generation;
+
+    let effects = dispatch(
+        Action::TaskComplete(TaskResult::ProviderAuthStatusRefreshed {
+            xai_usable: Some(true),
+            codex_usable: Some(true),
+            generation: Some(poll_generation),
+        }),
+        &mut app,
+    );
+
+    assert!(
+        effects.iter().any(|e| matches!(
+            e,
+            Effect::SwitchModel {
+                model_id: mid,
+                persist_default: true,
+                ..
+            } if mid == &target
+        )),
+        "external CLI refresh must SwitchModel with persist_default: {effects:?}"
+    );
+}
+
+#[test]
+fn p6_focus_gained_while_awaiting_emits_refresh() {
+    let mut app = test_app_with_agent();
+    let prev = acp::ModelId::new(std::sync::Arc::from("grok-build"));
+    let target = acp::ModelId::new(std::sync::Arc::from("gpt-5.6-sol"));
+    p6_seed_missing_provider_gate(&mut app, &prev, &target, "codex", false);
+    dispatch(
+        Action::MissingProviderLoginAnswered {
+            login: true,
+            model_id: target,
+            effort: None,
+            provider: "codex".into(),
+        },
+        &mut app,
+    );
+    let poll_generation = app.provider_login_poll.as_ref().unwrap().generation;
+    let effects = app.provider_auth_refresh_on_focus_gained();
+    assert!(
+        matches!(
+            effects.as_slice(),
+            [Effect::RefreshProviderAuthStatus {
+                generation: Some(g)
+            }] if *g == poll_generation
+        ),
+        "FocusGained while awaiting must emit tagged refresh: {effects:?}"
+    );
+}
+
+#[test]
+fn p6_refresh_generation_stale_ignored() {
+    let mut app = test_app_with_agent();
+    let prev = acp::ModelId::new(std::sync::Arc::from("grok-build"));
+    let target = acp::ModelId::new(std::sync::Arc::from("gpt-5.6-sol"));
+    p6_seed_missing_provider_gate(&mut app, &prev, &target, "codex", false);
+    dispatch(
+        Action::MissingProviderLoginAnswered {
+            login: true,
+            model_id: target.clone(),
+            effort: None,
+            provider: "codex".into(),
+        },
+        &mut app,
+    );
+    let old_gen = app.provider_login_poll.as_ref().unwrap().generation;
+
+    // Keep current clears deferred + bumps generation.
+    dispatch(
+        Action::MissingProviderLoginAnswered {
+            login: false,
+            model_id: target,
+            effort: None,
+            provider: "codex".into(),
+        },
+        &mut app,
+    );
+    // Re-arm a fresh deferred without reopening QV to simulate race, then
+    // ensure OLD generation still does not apply even if cache flips usable.
+    app.agents
+        .get_mut(&AgentId(0))
+        .unwrap()
+        .session
+        .deferred_model_switch = Some(crate::app::agent::DeferredModelSwitch {
+        model_id: acp::ModelId::new(std::sync::Arc::from("gpt-5.6-sol")),
+        effort: None,
+        required_provider: Some("codex".into()),
+        persist_default: false,
+    });
+    // Poll was cleared; old gen must not match.
+    assert!(
+        !app.provider_login_poll_generation_current(Some(old_gen)),
+        "old generation must be stale after clear"
+    );
+
+    let effects = dispatch(
+        Action::TaskComplete(TaskResult::ProviderAuthStatusRefreshed {
+            xai_usable: Some(true),
+            codex_usable: Some(true),
+            generation: Some(old_gen),
+        }),
+        &mut app,
+    );
+    assert!(
+        !effects
+            .iter()
+            .any(|e| matches!(e, Effect::SwitchModel { .. })),
+        "stale generation must not SwitchModel: {effects:?}"
+    );
+    // Cache still updates (stale-on-error path only skips apply).
+    assert!(app.provider_auth.codex);
+}
+
+#[test]
+fn p6_auth_complete_without_deferred_no_spurious_switch() {
+    let mut app = test_app_with_agent();
+    app.auth_return_view = Some(ActiveView::Agent(AgentId(0)));
+    app.auth_state = crate::app::app_view::AuthState::Authenticating {
+        request_seq: 3,
+        handle: None,
+        auth_url: None,
+        mode: crate::app::app_view::AuthMode::Pending,
+    };
+    let effects = dispatch(
+        Action::TaskComplete(TaskResult::AuthComplete {
+            request_seq: 3,
+            meta: None,
+        }),
+        &mut app,
+    );
+    assert!(
+        !effects
+            .iter()
+            .any(|e| matches!(e, Effect::SwitchModel { .. })),
+        "no deferred → no SwitchModel from AuthComplete"
+    );
+}
+
+#[test]
+fn p6_login_failed_keeps_previous_model() {
+    let mut app = test_app_with_agent();
+    let prev = acp::ModelId::new(std::sync::Arc::from("grok-build"));
+    let target = acp::ModelId::new(std::sync::Arc::from("gpt-5.6-sol"));
+    p6_seed_missing_provider_gate(&mut app, &prev, &target, "xai", false);
+    // Seed deferred for xAI missing (after Keep would clear — use Login now).
+    // Re-open path: Login now for xai starts OAuth; then fail.
+    // Force deferred present and fail auth.
+    app.agents
+        .get_mut(&AgentId(0))
+        .unwrap()
+        .session
+        .deferred_model_switch = Some(crate::app::agent::DeferredModelSwitch {
+        model_id: target.clone(),
+        effort: None,
+        required_provider: Some("xai".into()),
+        persist_default: false,
+    });
+    app.auth_state = crate::app::app_view::AuthState::Authenticating {
+        request_seq: 9,
+        handle: None,
+        auth_url: None,
+        mode: crate::app::app_view::AuthMode::Pending,
+    };
+    dispatch(
+        Action::TaskComplete(TaskResult::AuthFailed {
+            request_seq: 9,
+            error: "oauth cancelled".into(),
+        }),
+        &mut app,
+    );
+    assert_eq!(
+        app.agents[&AgentId(0)].session.models.current,
+        Some(prev),
+        "failed login must not apply deferred target"
+    );
+    assert_ne!(
+        app.agents[&AgentId(0)].session.models.current.as_ref(),
+        Some(&target)
+    );
+}
+
+#[test]
+fn p6_session_created_applies_deferred_with_persist_default() {
+    let mut app = test_app_with_agent();
+    let id = AgentId(0);
+    let target = acp::ModelId::new(std::sync::Arc::from("gpt-5.6-sol"));
+    app.agents.get_mut(&id).unwrap().session.models.available.insert(
+        target.clone(),
+        acp::ModelInfo::new(target.clone(), "GPT-5.6 Sol (Codex)".to_string()),
+    );
+    app.agents.get_mut(&id).unwrap().session.deferred_model_switch =
+        Some(crate::app::agent::DeferredModelSwitch {
+            model_id: target.clone(),
+            effort: None,
+            required_provider: None,
+            persist_default: true,
+        });
+
+    let effects = dispatch(
+        Action::TaskComplete(TaskResult::SessionCreated {
+            agent_id: id,
+            session_id: "sess-p6-deferred".into(),
+            models: None,
+        }),
+        &mut app,
+    );
+
+    assert!(
+        effects.iter().any(|e| matches!(
+            e,
+            Effect::SwitchModel {
+                model_id: mid,
+                persist_default: true,
+                ..
+            } if mid == &target
+        )),
+        "session create must forward persist_default true: {effects:?}"
+    );
+}
+
+#[test]
+fn p6_live_session_settings_login_now_retry_persists_default() {
+    let mut app = test_app_with_agent();
+    let id = AgentId(0);
+    let prev = acp::ModelId::new(std::sync::Arc::from("grok-build"));
+    let target = acp::ModelId::new(std::sync::Arc::from("gpt-5.6-sol"));
+    let agent = app.agents.get_mut(&id).unwrap();
+    agent.session.models.available.insert(
+        prev.clone(),
+        acp::ModelInfo::new(prev.clone(), "Grok Build (xAI)".to_string()),
+    );
+    agent.session.models.available.insert(
+        target.clone(),
+        acp::ModelInfo::new(target.clone(), "GPT-5.6 Sol (Codex)".to_string()),
+    );
+    agent.session.models.set_current(prev.clone(), None);
+    app.models.available.insert(
+        prev.clone(),
+        acp::ModelInfo::new(prev.clone(), "Grok Build (xAI)".to_string()),
+    );
+    app.models.available.insert(
+        target.clone(),
+        acp::ModelInfo::new(target.clone(), "GPT-5.6 Sol (Codex)".to_string()),
+    );
+    app.models.set_current(prev.clone(), None);
+
+    // settings → MissingProvider → Login now → usable → SwitchModel(persist true)
+    dispatch(Action::SetDefaultModel(target.clone()), &mut app);
+    dispatch(
+        Action::TaskComplete(TaskResult::SwitchModelComplete {
+            agent_id: id,
+            model_id: target.clone(),
+            effort: None,
+            result: Err(SwitchModelError::MissingProvider {
+                error: p6_missing_provider_error("codex", "gpt-5.6-sol"),
+                prev_model_id: Some(prev.clone()),
+            }),
+            prev_model_id: Some(prev.clone()),
+            persist_default: true,
+        }),
+        &mut app,
+    );
+    dispatch(
+        Action::MissingProviderLoginAnswered {
+            login: true,
+            model_id: target.clone(),
+            effort: None,
+            provider: "codex".into(),
+        },
+        &mut app,
+    );
+    let poll_generation = app.provider_login_poll.as_ref().unwrap().generation;
+    let retry_effects = dispatch(
+        Action::TaskComplete(TaskResult::ProviderAuthStatusRefreshed {
+            xai_usable: Some(true),
+            codex_usable: Some(true),
+            generation: Some(poll_generation),
+        }),
+        &mut app,
+    );
+    assert!(
+        retry_effects.iter().any(|e| matches!(
+            e,
+            Effect::SwitchModel {
+                persist_default: true,
+                model_id: mid,
+                ..
+            } if mid == &target
+        )),
+        "retry must carry persist_default true: {retry_effects:?}"
+    );
+
+    // Complete Ok → one default PersistSetting + toast + set_current.
+    let ok_effects = dispatch(
+        Action::TaskComplete(TaskResult::SwitchModelComplete {
+            agent_id: id,
+            model_id: target.clone(),
+            effort: None,
+            result: Ok(()),
+            prev_model_id: Some(prev.clone()),
+            persist_default: true,
+        }),
+        &mut app,
+    );
+    let persist_count = ok_effects
+        .iter()
+        .filter(|e| matches!(e, Effect::PersistSetting { key: "default_model", .. }))
+        .count();
+    assert_eq!(
+        persist_count, 1,
+        "exactly one default_model PersistSetting on Ok: {ok_effects:?}"
+    );
+    assert_eq!(
+        app.agents[&id].session.models.current.as_ref(),
+        Some(&target)
+    );
+    assert_eq!(app.models.current.as_ref(), Some(&target));
+}
+
+#[test]
+fn p6_live_session_settings_keep_current_zero_persist() {
+    let mut app = test_app_with_agent();
+    let id = AgentId(0);
+    let prev = acp::ModelId::new(std::sync::Arc::from("grok-build"));
+    let target = acp::ModelId::new(std::sync::Arc::from("gpt-5.6-sol"));
+    let agent = app.agents.get_mut(&id).unwrap();
+    agent.session.models.available.insert(
+        prev.clone(),
+        acp::ModelInfo::new(prev.clone(), "Grok Build (xAI)".to_string()),
+    );
+    agent.session.models.available.insert(
+        target.clone(),
+        acp::ModelInfo::new(target.clone(), "GPT-5.6 Sol (Codex)".to_string()),
+    );
+    agent.session.models.set_current(prev.clone(), None);
+
+    dispatch(Action::SetDefaultModel(target.clone()), &mut app);
+    dispatch(
+        Action::TaskComplete(TaskResult::SwitchModelComplete {
+            agent_id: id,
+            model_id: target.clone(),
+            effort: None,
+            result: Err(SwitchModelError::MissingProvider {
+                error: p6_missing_provider_error("codex", "gpt-5.6-sol"),
+                prev_model_id: Some(prev.clone()),
+            }),
+            prev_model_id: Some(prev.clone()),
+            persist_default: true,
+        }),
+        &mut app,
+    );
+    let effects = dispatch(
+        Action::MissingProviderLoginAnswered {
+            login: false,
+            model_id: target.clone(),
+            effort: None,
+            provider: "codex".into(),
+        },
+        &mut app,
+    );
+    assert!(
+        !effects
+            .iter()
+            .any(|e| matches!(e, Effect::PersistSetting { .. } | Effect::SwitchModel { .. }))
+    );
+    assert!(app.agents[&id].session.deferred_model_switch.is_none());
+    assert_eq!(app.agents[&id].session.models.current, Some(prev));
+    assert_ne!(
+        app.agents[&id].session.models.current.as_ref(),
+        Some(&target)
+    );
+    // Generation bumped so in-flight polls are stale.
+    assert!(app.provider_login_poll.is_none());
 }
 
 #[test]
