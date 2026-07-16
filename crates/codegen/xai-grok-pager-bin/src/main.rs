@@ -1741,6 +1741,8 @@ async fn async_main() -> Result<()> {
                 oauth,
                 device_auth,
                 devbox,
+                // Dual-provider login body lands in Plan 03; clap accepts --provider now.
+                provider: _,
             } => {
                 init_tracing_simple("cli");
                 let _otel_guard = xai_grok_telemetry::otel_layer::otel_guard();
@@ -1748,18 +1750,33 @@ async fn async_main() -> Result<()> {
                     .map_err(|e| anyhow::anyhow!("Failed to load config: {e}"))?;
                 let config = AgentConfig::new_from_toml_cfg(&config)
                     .map_err(|e| anyhow::anyhow!("Failed to create agent config: {e}"))?;
+                // Wave 0: still xAI-only handler (provider ignored until Plan 03).
                 xai_grok_shell::auth::run_cli_login(&config, oauth, device_auth, devbox).await?;
                 println!();
                 xai_grok_shell::instrumentation::finalize_and_exit(0);
             }
-            Command::Logout => {
+            Command::Logout {
+                // Selective / --all dual logout lands in Plan 04; clap shape locked in 05-01.
+                provider: _,
+                all: _,
+            } => {
                 init_tracing_simple("cli");
                 let config = xai_grok_shell::config::load_effective_config_disk_only()
                     .map_err(|e| anyhow::anyhow!("Failed to load config: {e}"))?;
                 let config = AgentConfig::new_from_toml_cfg(&config)
                     .map_err(|e| anyhow::anyhow!("Failed to create agent config: {e}"))?;
+                // Wave 0: still xAI-only clear path (Plan 04 owns fail-closed dual logout).
                 xai_grok_shell::auth::run_cli_logout(&config)?;
                 xai_grok_shell::instrumentation::finalize_and_exit(0);
+            }
+            Command::Auth {
+                command: xai_grok_pager::app::cli::AuthCommand::Status,
+            } => {
+                init_tracing_simple("cli");
+                // Plan 02/04: dual-provider paste-safe status (AUTH-04). Compile surface only.
+                anyhow::bail!(
+                    "auth status is not implemented yet (Phase 5 Plan 02/04 — AUTH-04)"
+                );
             }
             Command::Wrap(ref wrap_args) => {
                 return xai_grok_pager::wrap_cmd::run(wrap_args);

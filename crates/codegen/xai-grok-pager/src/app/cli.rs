@@ -1,9 +1,28 @@
 //! CLI argument parsing for the pager.
 pub use crate::headless::OutputFormat;
-use clap::{ArgAction, Parser, Subcommand, ValueHint};
+use clap::{ArgAction, Parser, Subcommand, ValueEnum, ValueHint};
 use clap_complete::Shell;
 use std::net::SocketAddr;
 use std::path::PathBuf;
+
+/// Dual-auth provider wire ids for `login` / `logout --provider` (D-01 / D-05).
+///
+/// Stable short ids match multi-slot store keys (`providers.xai` / `providers.codex`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+pub enum AuthProviderArg {
+    /// xAI / Grok OAuth (default for bare `bum login`)
+    Xai,
+    /// ChatGPT / Codex OAuth
+    Codex,
+}
+
+/// Subcommands under `bum auth` (D-06).
+#[derive(Debug, Clone, Subcommand)]
+pub enum AuthCommand {
+    /// Show login/usable status for both providers (never prints secrets).
+    Status,
+}
+
 /// Top-level commands for the pager binary.
 #[derive(Debug, Clone, Subcommand)]
 pub enum Command {
@@ -16,8 +35,15 @@ pub enum Command {
         json: bool,
     },
     /// Sign out and clear cached credentials
-    Logout,
-    /// Sign in to Grok
+    Logout {
+        /// Clear only this provider slot (`xai` or `codex`).
+        #[arg(long = "provider", value_enum, conflicts_with = "all")]
+        provider: Option<AuthProviderArg>,
+        /// Clear both provider slots (explicit dual logout).
+        #[arg(long = "all", conflicts_with = "provider")]
+        all: bool,
+    },
+    /// Sign in to Grok / Codex
     Login {
         /// Ignored (kept for backwards compatibility). OAuth2 is now the only auth method.
         #[arg(long, hide = true)]
@@ -39,6 +65,14 @@ pub enum Command {
         /// `devbox-login` is enabled (`arg(skip)` otherwise → always false).
         #[arg(skip)]
         devbox: bool,
+        /// Target provider slot. Bare `bum login` (no flag) remains xAI-only (D-01).
+        #[arg(long = "provider", value_enum)]
+        provider: Option<AuthProviderArg>,
+    },
+    /// Inspect authentication status (dual-provider)
+    Auth {
+        #[command(subcommand)]
+        command: AuthCommand,
     },
     /// Manage MCP server configurations
     Mcp(crate::mcp_cmd::McpArgs),
@@ -885,13 +919,18 @@ mod tests {
     fn bum_login_defaults_to_xai_without_provider_argument() {
         let args = PagerArgs::try_parse_from(["bum", "login"]).expect("bare bum login parses");
         let Some(Command::Login {
-            oauth, device_auth, ..
+            oauth,
+            device_auth,
+            provider,
+            ..
         }) = args.command
         else {
             panic!("expected login command");
         };
         assert!(!oauth);
         assert!(!device_auth);
+        // D-01: bare login is xAI default — provider flag omitted (None), not forced Codex.
+        assert_eq!(provider, None, "bare bum login must leave provider=None (xAI default)");
 
         let oauth = PagerArgs::try_parse_from(["bum", "login", "--oauth"])
             .expect("--oauth remains available");
@@ -900,6 +939,7 @@ mod tests {
             Some(Command::Login {
                 oauth: true,
                 device_auth: false,
+                provider: None,
                 ..
             })
         ));
@@ -911,6 +951,7 @@ mod tests {
             Some(Command::Login {
                 oauth: false,
                 device_auth: true,
+                provider: None,
                 ..
             })
         ));
@@ -922,6 +963,116 @@ mod tests {
             clap::error::ErrorKind::ArgumentConflict,
             "login transport flags must remain mutually exclusive"
         );
+    }
+
+    /// D-01: `bum login --provider codex` parses.
+    #[test]
+    fn bum_login_provider_codex_parses() {
+        let args = PagerArgs::try_parse_from(["bum", "login", "--provider", "codex"])
+            .expect("login --provider codex parses");
+        let Some(Command::Login {
+            provider,
+            oauth,
+            device_auth,
+            ..
+        }) = args.command
+        else {
+            panic!("expected login command");
+        };
+        assert_eq!(provider, Some(AuthProviderArg::Codex));
+        assert!(!oauth);
+        assert!(!device_auth);
+
+        let with_device =
+            PagerArgs::try_parse_from(["bum", "login", "--provider", "codex", "--device-auth"])
+                .expect("codex + device-auth parses");
+        assert!(matches!(
+            with_device.command,
+            Some(Command::Login {
+                provider: Some(AuthProviderArg::Codex),
+                device_auth: true,
+                oauth: false,
+                ..
+            })
+        ));
+    }
+
+    /// D-01: `bum login --provider xai` parses (explicit xAI).
+    #[test]
+    fn bum_login_provider_xai_parses() {
+        let args = PagerArgs::try_parse_from(["bum", "login", "--provider", "xai"])
+            .expect("login --provider xai parses");
+        let Some(Command::Login { provider, .. }) = args.command else {
+            panic!("expected login command");
+        };
+        assert_eq!(provider, Some(AuthProviderArg::Xai));
+    }
+
+    /// D-05: bare logout parse shape (handler fail-closed is Plan 04; clap allows parse).
+    #[test]
+    fn bum_logout_requires_provider_or_all() {
+        let bare = PagerArgs::try_parse_from(["bum", "logout"]).expect("bare logout parses");
+        let Some(Command::Logout { provider, all }) = bare.command else {
+            panic!("expected logout command");
+        };
+        // Parse shape for fail-closed handler: neither flag set.
+        assert_eq!(provider, None);
+        assert!(!all);
+
+        let selective =
+            PagerArgs::try_parse_from(["bum", "logout", "--provider", "codex"]).expect("selective");
+        assert!(matches!(
+            selective.command,
+            Some(Command::Logout {
+                provider: Some(AuthProviderArg::Codex),
+                all: false,
+            })
+        ));
+
+        let xai =
+            PagerArgs::try_parse_from(["bum", "logout", "--provider", "xai"]).expect("logout xai");
+        assert!(matches!(
+            xai.command,
+            Some(Command::Logout {
+                provider: Some(AuthProviderArg::Xai),
+                all: false,
+            })
+        ));
+
+        let conflict =
+            PagerArgs::try_parse_from(["bum", "logout", "--provider", "codex", "--all"]).unwrap_err();
+        assert_eq!(
+            conflict.kind(),
+            clap::error::ErrorKind::ArgumentConflict,
+            "--provider and --all must conflict"
+        );
+    }
+
+    /// D-05: `bum logout --all` parses.
+    #[test]
+    fn bum_logout_all_parses() {
+        let args =
+            PagerArgs::try_parse_from(["bum", "logout", "--all"]).expect("logout --all parses");
+        assert!(matches!(
+            args.command,
+            Some(Command::Logout {
+                provider: None,
+                all: true,
+            })
+        ));
+    }
+
+    /// D-06: `bum auth status` parses.
+    #[test]
+    fn bum_auth_status_parses() {
+        let args =
+            PagerArgs::try_parse_from(["bum", "auth", "status"]).expect("auth status parses");
+        assert!(matches!(
+            args.command,
+            Some(Command::Auth {
+                command: AuthCommand::Status,
+            })
+        ));
     }
 
     #[test]
@@ -1151,7 +1302,13 @@ mod tests {
     #[test]
     fn subcommand_takes_precedence_over_positional_prompt() {
         let args = PagerArgs::try_parse_from(["grok", "logout"]).expect("subcommand parses");
-        assert!(matches!(args.command, Some(Command::Logout)));
+        assert!(matches!(
+            args.command,
+            Some(Command::Logout {
+                provider: None,
+                all: false,
+            })
+        ));
         assert!(args.prompt.is_none());
     }
     #[test]
