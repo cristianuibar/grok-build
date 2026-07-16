@@ -125,7 +125,16 @@ Plans:
   3. User can inspect per-provider auth status (which providers are logged in / usable)
   4. Access tokens for each provider refresh independently without wiping or invalidating the other provider’s session
 
-**Plans**: TBD
+**Plans:** 6 plans
+
+Plans:
+- [ ] 05-01-PLAN.md — Wave 0 RED harness (`auth_codex_lifecycle` + clap scaffolds)
+- [ ] 05-02-PLAN.md — Provider-slot RMW + paste-safe status pure format
+- [ ] 05-03-PLAN.md — Codex OAuth (PKCE + device) + CLI `login --provider`
+- [ ] 05-04-PLAN.md — Dual logout + `auth status` CLI + TUI dual-safe `/logout`
+- [ ] 05-05-PLAN.md — Independent Codex refresh + cache invalidate + ChatGPT-Account-ID
+- [ ] 05-06-PLAN.md — Phase gate (full suite + multi_slot + provider_routing regressions)
+
 **UI hint**: yes
 
 ### Phase 6: Mid-session switch & missing-provider gate
@@ -201,7 +210,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 →
 | 2. Multi-slot credentials & xAI OAuth | 4/4 | Complete    | 2026-07-16 |
 | 3. Model catalog & GPT-5.6 entries | 3/3 | Complete    | 2026-07-16 |
 | 4. Provider-aware request routing | 5/5 | Complete    | 2026-07-16 |
-| 5. Codex OAuth & dual auth lifecycle | 0/TBD | Not started | - |
+| 5. Codex OAuth & dual auth lifecycle | 0/6 | Not started | - |
 | 6. Mid-session switch & missing-provider gate | 0/TBD | Not started | - |
 | 7. Cross-provider multi-agent orchestration | 0/TBD | Not started | - |
 | 8. Quiet fork & rebrand polish | 0/TBD | Not started | - |
