@@ -323,13 +323,12 @@ pub(super) async fn run_session(
             .clone(); cfg.extra_headers.extend(extra_headers); if let Some(cw) =
             context_window && session.compaction.context_window_override.is_none() { cfg
             .context_window = cw; } session.chat_state_handle
-            .update_sampling_config(cfg); let existing = session.chat_state_handle
-            .get_credentials(). await; if let Some(r) = crate
-            ::agent::config::try_resolve_model_credentials(model_name.as_str(), existing
-            .api_key.as_deref()) { session.chat_state_handle
-            .update_credentials(xai_chat_state::Credentials { api_key : r.api_key,
-            auth_type : r.auth_type, alpha_test_key : existing.alpha_test_key,
-            client_version : existing.client_version, }); } session.model_auth_facts
+            .update_sampling_config(cfg);
+            // Name/header-only override: keep existing credentials + base_url.
+            // Do not re-resolve via single-key try_resolve_model_credentials —
+            // that maps the previous provider's token into the target model's
+            // slot and can leave base_url stale under dual-provider catalogs.
+            session.model_auth_facts
             .replace(None); } } SessionCommand::GetCurrentModel { responds_to } => { let
             model = session.chat_state_handle.get_sampling_config(). await .map(| c | c
             .model).unwrap_or_default(); let _ = responds_to.send(model); }
