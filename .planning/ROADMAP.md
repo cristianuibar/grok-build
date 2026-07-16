@@ -37,11 +37,11 @@ Decimal phases appear between their surrounding integers in numeric order.
   2. Fresh run creates/uses config, auth, and session paths under `~/.bum` (or `BUM_HOME`), not `~/.grok` or stock Codex paths
   3. Running with a temporary home shows no writes under `~/.grok` / `~/.codex` for product state
 
-**Plans**: 1/5 plans executed
+**Plans**: 2/5 plans executed
 
 Plans:
 
-- [ ] 01-01-PLAN.md — SoT home cutover (`~/.bum` / `BUM_HOME`) + pure resolver + process-isolated env tests + path display labels
+- [x] 01-01-PLAN.md — SoT home cutover (`~/.bum` / `BUM_HOME`) + pure resolver + process-isolated env tests + path display labels
 - [ ] 01-02-PLAN.md — Twin resolver, leader managed bin, updater `bin/bum`, workspace fallback lockstep
 - [x] 01-03-PLAN.md — Ship `[[bin]]` as `bum` + harness binary resolution
 - [ ] 01-04-PLAN.md — Full test sandbox cutover (PTY flows/leader/scripted, shell inventory, lock/log)
@@ -175,7 +175,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 →
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Product identity & isolated home | 1/5 | In Progress|  |
+| 1. Product identity & isolated home | 2/5 | In Progress|  |
 | 2. Multi-slot credentials & xAI OAuth | 0/TBD | Not started | - |
 | 3. Model catalog & GPT-5.6 entries | 0/TBD | Not started | - |
 | 4. Provider-aware request routing | 0/TBD | Not started | - |

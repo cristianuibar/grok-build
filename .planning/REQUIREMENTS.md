@@ -11,7 +11,7 @@ Requirements for initial release. Each maps to roadmap phases.
 
 - [x] **ID-01**: User can launch the product as the `bum` CLI binary (not `grok` / `xai-grok-pager` as the primary command name)
 - [ ] **ID-02**: Product UI chrome, help text, and user-facing strings present as **bum**, not stock Grok Build
-- [ ] **ID-03**: Config, auth, sessions, and related state live under an isolated `~/.bum` home (or `BUM_HOME`), not `~/.grok` or stock Codex paths
+- [x] **ID-03**: Config, auth, sessions, and related state live under an isolated `~/.bum` home (or `BUM_HOME`), not `~/.grok` or stock Codex paths
 
 ### Authentication
 
@@ -90,7 +90,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 |-------------|-------|--------|
 | ID-01 | Phase 1 | Complete |
 | ID-02 | Phase 8 | Pending |
-| ID-03 | Phase 1 | Pending |
+| ID-03 | Phase 1 | Complete |
 | AUTH-01 | Phase 2 | Pending |
 | AUTH-02 | Phase 5 | Pending |
 | AUTH-03 | Phase 5 | Pending |

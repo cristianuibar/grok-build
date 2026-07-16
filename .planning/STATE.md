@@ -5,15 +5,15 @@ milestone_name: milestone
 current_phase: 1
 current_phase_name: Product identity & isolated home
 status: planning
-stopped_at: Completed 01-03-PLAN.md
-last_updated: "2026-07-16T02:45:24.190Z"
+stopped_at: Completed 01-01-PLAN.md
+last_updated: "2026-07-16T02:45:32.195Z"
 last_activity: 2026-07-16
 last_activity_desc: Roadmap created (9 phases, 26/26 requirements mapped)
 progress:
   total_phases: 1
   completed_phases: 0
   total_plans: 5
-  completed_plans: 1
+  completed_plans: 2
 ---
 
 # Project State
@@ -32,7 +32,7 @@ Plan: — of — in current phase
 Status: Ready to plan
 Last activity: 2026-07-16 — Roadmap created (9 phases, 26/26 requirements mapped)
 
-Progress: [██░░░░░░░░] 20%
+Progress: [████░░░░░░] 40%
 
 ## Performance Metrics
 
@@ -59,6 +59,7 @@ Progress: [██░░░░░░░░] 20%
 | Plan | Duration | Tasks | Files |
 |------|----------|-------|-------|
 | Phase 01 P03 | 21min | 3 tasks | 5 files |
+| Phase 01 P01 | 22min | 3 tasks | 5 files |
 
 ## Accumulated Context
 
@@ -75,6 +76,9 @@ Recent decisions affecting current work:
 - [Phase ?]: D-BIN: sole [[bin]] is bum — no dual grok/xai-grok-pager alias in v1
 - [Phase ?]: Keep GROK_BINARY env override name this phase (D-SCOPE non-home knobs)
 - [Phase ?]: Function name grok_binary() retained; returns bum path
+- [Phase ?]: Product home override is BUM_HOME only; GROK_HOME is never read as product home
+- [Phase ?]: Pure resolve_product_home takes optional OsString + PathBuf — no process env in unit tests
+- [Phase ?]: Kept public symbol grok_home() and OnceLock static name GROK_HOME this phase
 
 ### Pending Todos
 
@@ -97,7 +101,7 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-07-16T02:45:24.182Z
-Stopped at: Completed 01-03-PLAN.md
+Last session: 2026-07-16T02:45:32.187Z
+Stopped at: Completed 01-01-PLAN.md
 Resume file: None
 Next: `/gsd:plan-phase 1`
