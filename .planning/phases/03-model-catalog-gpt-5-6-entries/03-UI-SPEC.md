@@ -185,7 +185,7 @@ Terminal monospaced — “size” is **role weight + Theme color**, not px. Exa
 | `/model` / `/m` | Arg dropdown lists all user-selectable models in catalog order; display = name (with provider suffix); description = catalog description when present; resolve by name **or** id |
 | Settings → Default model | DynamicEnum from active catalog; inherits **provider-labeled names only** (per-row descriptions may be empty / N/A — no extra description plumbing required this phase); no provider filter |
 | `bum models` | Prints default id + flat list with id and provider-bearing name; mark current with `*` |
-| ACP `ModelInfo` | `name` already includes provider suffix; optional meta key `provider` (`"xai"` \| `"codex"`) for machine consumers — discretion allowed if wire already crowded; UI must not depend on meta alone for the visible label |
+| ACP `ModelInfo` | `name` already includes provider suffix; **meta key `provider` always set** (`"xai"` \| `"codex"`) for machine consumers alongside existing `agentType`. UI must not depend on meta alone for the visible label — name carries the provider suffix |
 
 ### Selection chrome
 
@@ -212,7 +212,7 @@ Terminal monospaced — “size” is **role weight + Theme color**, not px. Exa
 |-----------|---------------------|----------------|
 | Catalog SoT | `xai-grok-models/default_models.json` | Add GPT rows + `provider` on all rows; update Grok name suffix |
 | Shell model types | `xai-grok-shell` `ModelInfo` / `ModelEntry` | Persist/parse `provider`; default missing → `xai` |
-| ACP projection | `to_acp_model_info` | Pass through name (with suffix); optional meta `provider` |
+| ACP projection | `to_acp_model_info` | Pass through name (with suffix); always insert meta `provider` (`xai`/`codex`) |
 | Slash model items | `slash/commands/model.rs` `build_model_items` | No structural change if `info.name` already labeled |
 | Settings DynamicEnum | settings registry `default_model` | Inherits provider-labeled catalog **names only** (descriptions empty OK) |
 | CLI list | `pager/src/models.rs` | Include display name with provider next to id |
@@ -269,7 +269,7 @@ Applicable state considerations resolved: **8 covered, 0 backstop, 0 unresolved*
 1. Provider presentation = **name suffix** (not a separate badge column) so all surfaces inherit via `name`
 2. Human labels `xAI` / `Codex` (not raw ids in UI)
 3. CLI lists both id and name for machine + human readers
-4. Optional ACP meta `provider` allowed; UI label does not depend on it alone
+4. ACP meta `provider` always present for machine consumers; UI label does not depend on it alone
 5. No per-provider colors this phase
 6. **Settings names-only** (review cycle 1): DynamicEnum does not require per-row description plumbing this phase
 7. **Empty catalog authority** (review cycle 1): no-dropdown `None` for slash; empty-state copy N/A on that path
