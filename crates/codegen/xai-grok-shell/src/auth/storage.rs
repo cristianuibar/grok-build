@@ -2,7 +2,12 @@ use std::fs::File;
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 
-use super::model::{API_KEY_SCOPE, AuthMode, AuthStore, GrokAuth, lookup_auth};
+use super::model::{
+    API_KEY_SCOPE, AUTH_DOCUMENT_VERSION, AuthDocument, AuthMode, AuthStore, GrokAuth, PROVIDER_XAI,
+    lookup_auth,
+};
+#[cfg(test)]
+use super::model::PROVIDER_CODEX;
 
 /// RAII guard for an exclusive advisory lock on `auth.json.lock`.
 /// The lock is released when the inner `File` is dropped (closing the FD).
@@ -47,20 +52,92 @@ impl AuthFileLock {
     }
 }
 
-pub fn read_auth_json(auth_file: &Path) -> std::io::Result<AuthStore> {
+// ── Errors ────────────────────────────────────────────────────────────
+
+fn unsupported_version_error(version: u32) -> std::io::Error {
+    std::io::Error::new(
+        std::io::ErrorKind::Unsupported,
+        format!(
+            "unsupported auth.json document version {version} \
+             (max supported is {AUTH_DOCUMENT_VERSION})"
+        ),
+    )
+}
+
+fn lock_not_live_error() -> std::io::Error {
+    std::io::Error::new(
+        std::io::ErrorKind::WouldBlock,
+        "auth.json.lock is no longer live; refusing write",
+    )
+}
+
+// ── Read path ─────────────────────────────────────────────────────────
+
+/// Parse on-disk bytes into an [`AuthDocument`].
+///
+/// - Empty / whitespace → empty document
+/// - Nested (`providers` object present) → `AuthDocument`; reject
+///   `version > AUTH_DOCUMENT_VERSION` with [`ErrorKind::Unsupported`]
+/// - Legacy flat scope map → wrapped as in-memory `providers.xai`
+///
+/// Does not open stock credential homes (D-13).
+pub(crate) fn read_auth_document(auth_file: &Path) -> std::io::Result<AuthDocument> {
     let mut file = File::open(auth_file)?;
     let mut contents = String::new();
     file.read_to_string(&mut contents)?;
+    parse_auth_document_str(&contents)
+}
 
-    // Empty files are valid (recover from prior crash/partial write).
+fn parse_auth_document_str(contents: &str) -> std::io::Result<AuthDocument> {
     let trimmed = contents.trim();
     if trimmed.is_empty() {
-        return Ok(AuthStore::new());
+        return Ok(AuthDocument::default());
     }
 
-    let map = serde_json::from_str(trimmed)
+    let value: serde_json::Value = serde_json::from_str(trimmed)
         .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
-    Ok(map)
+
+    let Some(obj) = value.as_object() else {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            "auth.json root must be a JSON object",
+        ));
+    };
+
+    // Nested multi-slot form: top-level `providers` object present.
+    if obj.get("providers").is_some_and(|p| p.is_object()) {
+        let doc: AuthDocument = serde_json::from_value(value)
+            .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
+        if let Some(v) = doc.version
+            && v > AUTH_DOCUMENT_VERSION
+        {
+            return Err(unsupported_version_error(v));
+        }
+        return Ok(doc);
+    }
+
+    // Legacy flat scope → GrokAuth map: treat as xAI slot only.
+    let store: AuthStore = serde_json::from_value(value)
+        .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
+    let mut doc = AuthDocument {
+        version: None,
+        providers: Default::default(),
+    };
+    doc.providers.insert(PROVIDER_XAI.to_owned(), store);
+    Ok(doc)
+}
+
+/// Read the xAI provider slot from `auth.json` (legacy flat or nested).
+///
+/// Public surface stays an [`AuthStore`] scope map so AuthManager and other
+/// callers remain storage-agnostic (D-12).
+pub fn read_auth_json(auth_file: &Path) -> std::io::Result<AuthStore> {
+    let doc = read_auth_document(auth_file)?;
+    Ok(doc
+        .providers
+        .get(PROVIDER_XAI)
+        .cloned()
+        .unwrap_or_default())
 }
 
 /// Read auth.json, returning an empty map if the file does not exist.
@@ -91,12 +168,17 @@ pub(crate) fn read_auth_json_or_empty(auth_file: &Path) -> std::io::Result<AuthS
 /// it is renamed to `auth.json.corrupt.<millis>` (sibling in the same
 /// directory) and the backup path is returned. Used before recovery
 /// writes so the original bytes are never silently lost.
+///
+/// Unsupported schema versions and other non-`InvalidData` errors are
+/// **not** backed up here — fail-closed surfaces must not wipe them.
 pub(crate) fn backup_corrupt_auth_file(path: &Path) -> Option<PathBuf> {
     if !path.exists() {
         return None;
     }
-    if read_auth_json(path).is_ok() {
-        return None;
+    match read_auth_json(path) {
+        Ok(_) => return None,
+        Err(e) if e.kind() == std::io::ErrorKind::InvalidData => {}
+        Err(_) => return None,
     }
 
     let ts = std::time::SystemTime::now()
@@ -150,9 +232,10 @@ pub(crate) fn backup_corrupt_auth_file(path: &Path) -> Option<PathBuf> {
 /// Read auth.json for an upcoming write, with recovery for corrupt files.
 ///
 /// - Missing/empty → empty map (safe to write fresh)
-/// - Valid JSON → parsed map
+/// - Valid JSON → parsed map (xAI slot)
 /// - Non-empty corrupt JSON → backs up to `auth.json.corrupt.<millis>`,
 ///   then returns empty map so the caller can write the new credential.
+/// - Unsupported schema version → error (**not** empty recovery)
 ///
 /// Other I/O errors (PermissionDenied, etc.) are still returned as errors.
 pub(crate) fn read_auth_json_or_empty_recovering_corrupt(
@@ -169,8 +252,90 @@ pub(crate) fn read_auth_json_or_empty_recovering_corrupt(
     }
 }
 
-/// Persist `auth.json`, preferring a crash-safe atomic write but falling
-/// back to a non-atomic in-place write when the disk is full.
+/// Document reader for merge-safe writes: recover true corrupt files to an
+/// empty document; fail closed on unsupported version / other I/O errors.
+fn read_auth_document_for_write(auth_file: &Path) -> std::io::Result<AuthDocument> {
+    match read_auth_document(auth_file) {
+        Ok(doc) => Ok(doc),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(AuthDocument::default()),
+        Err(e) if e.kind() == std::io::ErrorKind::InvalidData => {
+            let _ = backup_corrupt_auth_file(auth_file);
+            Ok(AuthDocument::default())
+        }
+        Err(e) => Err(e),
+    }
+}
+
+// ── Dual mutation APIs ────────────────────────────────────────────────
+
+/// Acquiring full-document RMW: exclusive `auth.json.lock`, then the same
+/// body as [`mutate_auth_document_with_lock`]. For unlocked callers
+/// (`write_auth_json`, enrichment-after-timeout, tests, Plan 02 API key).
+pub(crate) fn mutate_auth_document<F>(auth_file: &Path, f: F) -> std::io::Result<()>
+where
+    F: FnOnce(&mut AuthDocument) -> std::io::Result<()>,
+{
+    let lock = crate::auth::manager::lock::lock_auth_file_blocking(auth_file)?;
+    mutate_auth_document_with_lock(auth_file, &lock, f)
+    // lock dropped here
+}
+
+/// Guard-held full-document RMW: **never** opens/re-acquires `auth.json.lock`.
+/// Requires `lock.still_live` before read and again immediately before
+/// persist. For callers that already hold the advisory lock (manager
+/// cleanup, scope removal, refresh persist, enrichment-with-lock).
+pub(crate) fn mutate_auth_document_with_lock<F>(
+    auth_file: &Path,
+    lock: &AuthFileLock,
+    f: F,
+) -> std::io::Result<()>
+where
+    F: FnOnce(&mut AuthDocument) -> std::io::Result<()>,
+{
+    if !lock.still_live(auth_file) {
+        return Err(lock_not_live_error());
+    }
+    let mut doc = read_auth_document_for_write(auth_file)?;
+    f(&mut doc)?;
+    if !lock.still_live(auth_file) {
+        return Err(lock_not_live_error());
+    }
+    write_auth_document(auth_file, &doc)
+}
+
+/// Replace the xAI slot only (acquiring lock). Preserves sibling providers;
+/// sets `version` to [`AUTH_DOCUMENT_VERSION`]. Does not insert empty codex.
+pub(super) fn write_auth_json(auth_file: &Path, auth_store: &AuthStore) -> std::io::Result<()> {
+    mutate_auth_document(auth_file, |doc| {
+        apply_xai_slot(doc, auth_store);
+        Ok(())
+    })
+}
+
+/// Replace the xAI slot only under a held [`AuthFileLock`] (never re-acquires).
+pub(crate) fn write_auth_json_with_lock(
+    auth_file: &Path,
+    lock: &AuthFileLock,
+    auth_store: &AuthStore,
+) -> std::io::Result<()> {
+    mutate_auth_document_with_lock(auth_file, lock, |doc| {
+        apply_xai_slot(doc, auth_store);
+        Ok(())
+    })
+}
+
+fn apply_xai_slot(doc: &mut AuthDocument, auth_store: &AuthStore) {
+    doc.providers
+        .insert(PROVIDER_XAI.to_owned(), auth_store.clone());
+    doc.version = Some(AUTH_DOCUMENT_VERSION);
+    // Do NOT insert empty PROVIDER_CODEX by default; preserve if present.
+}
+
+// ── Low-level nested serialize (no lock) ──────────────────────────────
+
+/// Persist `auth.json` as nested [`AuthDocument`], preferring a crash-safe
+/// atomic write but falling back to a non-atomic in-place write when the
+/// disk is full.
 ///
 /// The atomic path (temp + rename) needs free space >= the file size,
 /// because the old file and a full temp copy coexist until the rename. On a
@@ -190,19 +355,19 @@ pub(crate) fn read_auth_json_or_empty_recovering_corrupt(
 ///   relogin). This window is inherent to any sub-1×-free single-file
 ///   replace and is preferable to persisting nothing at all, which would
 ///   leave every concurrent process with a stale, already-revoked token.
-pub(super) fn write_auth_json(auth_file: &Path, auth_store: &AuthStore) -> std::io::Result<()> {
-    write_auth_json_with(auth_file, auth_store, write_auth_json_atomic)
+fn write_auth_document(auth_file: &Path, doc: &AuthDocument) -> std::io::Result<()> {
+    write_auth_document_with(auth_file, doc, write_auth_document_atomic)
 }
 
 /// Dispatch helper: run `atomic`, and on `StorageFull` fall back to an
 /// in-place write. Split out (with `atomic` injectable) so the disk-full
 /// fallback is unit-testable without an actually-full filesystem.
-fn write_auth_json_with(
+fn write_auth_document_with(
     auth_file: &Path,
-    auth_store: &AuthStore,
-    atomic: fn(&Path, &AuthStore) -> std::io::Result<()>,
+    doc: &AuthDocument,
+    atomic: fn(&Path, &AuthDocument) -> std::io::Result<()>,
 ) -> std::io::Result<()> {
-    match atomic(auth_file, auth_store) {
+    match atomic(auth_file, doc) {
         Err(e) if e.kind() == std::io::ErrorKind::StorageFull => {
             tracing::warn!(
                 path = %auth_file.display(),
@@ -218,20 +383,22 @@ fn write_auth_json_with(
                     "path": auth_file.display().to_string(),
                 })),
             );
-            write_auth_json_in_place(auth_file, auth_store)
+            write_auth_document_in_place(auth_file, doc)
         }
         other => other,
     }
 }
 
-/// Serialize `auth_store` to `path` (truncate + rewrite), owner-only (0o600)
+/// Serialize `doc` to `path` (truncate + rewrite), owner-only (0o600)
 /// and `fsync`'d. Shared core of the atomic path (which targets the temp
 /// file) and the in-place fallback (which targets `auth.json` directly).
 ///
 /// Uses streaming `to_writer_pretty` through a `BufWriter` to avoid
 /// allocating the entire JSON string in memory — eliminates OOM risk under
 /// severe memory pressure.
-fn write_store_to(path: &Path, auth_store: &AuthStore) -> std::io::Result<()> {
+///
+/// **No lock acquisition** — only the dual mutators gate production RMW.
+fn write_document_to(path: &Path, doc: &AuthDocument) -> std::io::Result<()> {
     use crate::util::secure_file::open_secure_file;
 
     if let Some(parent) = path.parent() {
@@ -239,7 +406,7 @@ fn write_store_to(path: &Path, auth_store: &AuthStore) -> std::io::Result<()> {
     }
     let file = open_secure_file(path)?;
     let mut writer = std::io::BufWriter::new(file);
-    serde_json::to_writer_pretty(&mut writer, auth_store)
+    serde_json::to_writer_pretty(&mut writer, doc)
         .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
     writer.flush()?;
     writer
@@ -255,9 +422,9 @@ fn write_store_to(path: &Path, auth_store: &AuthStore) -> std::io::Result<()> {
 
 /// Atomic write: tmp + rename. Unix `rename(2)` replaces atomically;
 /// Windows `rename` requires removing the target first.
-fn write_auth_json_atomic(auth_file: &Path, auth_store: &AuthStore) -> std::io::Result<()> {
+fn write_auth_document_atomic(auth_file: &Path, doc: &AuthDocument) -> std::io::Result<()> {
     let tmp = auth_file.with_extension(format!("json.{}.tmp", std::process::id()));
-    write_store_to(&tmp, auth_store)?;
+    write_document_to(&tmp, doc)?;
     #[cfg(windows)]
     {
         let _ = std::fs::remove_file(auth_file);
@@ -268,7 +435,7 @@ fn write_auth_json_atomic(auth_file: &Path, auth_store: &AuthStore) -> std::io::
 
 /// Non-atomic fallback: truncate and rewrite `auth.json` in place.
 ///
-/// Used only when [`write_auth_json_atomic`] fails with `StorageFull`.
+/// Used only when [`write_auth_document_atomic`] fails with `StorageFull`.
 /// Opening with truncation first frees the old content's blocks before the
 /// new bytes are written, so this needs only the file size in free space
 /// rather than the temp-copy approach's file-size-of-headroom.
@@ -278,21 +445,21 @@ fn write_auth_json_atomic(auth_file: &Path, auth_store: &AuthStore) -> std::io::
 /// must not leave an empty/torn file where a parseable (if stale) credential
 /// used to be. A partial file that survives (because even the restore failed)
 /// is healed on the next read via [`read_auth_json_or_empty_recovering_corrupt`].
-fn write_auth_json_in_place(auth_file: &Path, auth_store: &AuthStore) -> std::io::Result<()> {
-    write_auth_json_in_place_with(auth_file, auth_store, write_store_to)
+fn write_auth_document_in_place(auth_file: &Path, doc: &AuthDocument) -> std::io::Result<()> {
+    write_auth_document_in_place_with(auth_file, doc, write_document_to)
 }
 
-/// Inner of [`write_auth_json_in_place`] with `write` injectable so the
+/// Inner of [`write_auth_document_in_place`] with `write` injectable so the
 /// rollback-on-failure path is unit-testable without an actually-full disk.
-fn write_auth_json_in_place_with(
+fn write_auth_document_in_place_with(
     auth_file: &Path,
-    auth_store: &AuthStore,
-    write: fn(&Path, &AuthStore) -> std::io::Result<()>,
+    doc: &AuthDocument,
+    write: fn(&Path, &AuthDocument) -> std::io::Result<()>,
 ) -> std::io::Result<()> {
     // Snapshot the prior bytes so a torn/empty write can be rolled back to
     // the previous on-disk credential. `None` when the file is absent.
     let prior = std::fs::read(auth_file).ok();
-    match write(auth_file, auth_store) {
+    match write(auth_file, doc) {
         Ok(()) => Ok(()),
         Err(e) => {
             if let Some(prior) = prior
@@ -323,6 +490,8 @@ fn restore_prior_bytes(auth_file: &Path, bytes: &[u8]) -> std::io::Result<()> {
     }
     Ok(())
 }
+
+// ── Token / API-key helpers (xAI-slot adapters) ───────────────────────
 
 /// Read a single auth token from `auth.json` by scope key.
 /// Falls back to the legacy `https://accounts.x.ai/sign-in` scope key
@@ -367,6 +536,8 @@ pub fn clear_api_key(grok_home: &Path) -> std::io::Result<()> {
     if let Ok(mut map) = read_auth_json(&path) {
         map.remove(API_KEY_SCOPE);
         if map.is_empty() {
+            // Plan 02: multi-provider empty-delete honesty. Until then,
+            // empty xAI slot still removes the whole file (legacy).
             let _ = std::fs::remove_file(&path);
         } else {
             write_auth_json(&path, &map)?;
@@ -375,11 +546,33 @@ pub fn clear_api_key(grok_home: &Path) -> std::io::Result<()> {
     Ok(())
 }
 
+// ── Test helpers ──────────────────────────────────────────────────────
+
+/// Write a nested multi-slot fixture without going through production
+/// merge (used to seed sibling slots for isolation tests).
+#[cfg(test)]
+pub(crate) fn write_fixture_auth_document(
+    path: &Path,
+    xai: AuthStore,
+    codex: Option<AuthStore>,
+) -> std::io::Result<()> {
+    let mut providers = std::collections::BTreeMap::new();
+    providers.insert(PROVIDER_XAI.to_owned(), xai);
+    if let Some(codex) = codex {
+        providers.insert(PROVIDER_CODEX.to_owned(), codex);
+    }
+    let doc = AuthDocument {
+        version: Some(AUTH_DOCUMENT_VERSION),
+        providers,
+    };
+    write_auth_document(path, &doc)
+}
+
 #[cfg(test)]
 mod write_fallback_tests {
     use super::*;
 
-    fn sample_store() -> AuthStore {
+    fn sample_xai_store() -> AuthStore {
         let mut map = AuthStore::new();
         map.insert(
             API_KEY_SCOPE.to_owned(),
@@ -392,24 +585,34 @@ mod write_fallback_tests {
         map
     }
 
+    fn sample_doc() -> AuthDocument {
+        let mut doc = AuthDocument {
+            version: Some(AUTH_DOCUMENT_VERSION),
+            providers: Default::default(),
+        };
+        doc.providers
+            .insert(PROVIDER_XAI.to_owned(), sample_xai_store());
+        doc
+    }
+
     fn read_key(path: &Path) -> Option<String> {
         read_auth_json(path)
             .ok()
             .and_then(|m| m.get(API_KEY_SCOPE).map(|a| a.key.clone()))
     }
 
-    fn fake_storage_full(_: &Path, _: &AuthStore) -> std::io::Result<()> {
+    fn fake_storage_full(_: &Path, _: &AuthDocument) -> std::io::Result<()> {
         Err(std::io::Error::from(std::io::ErrorKind::StorageFull))
     }
 
-    fn fake_permission_denied(_: &Path, _: &AuthStore) -> std::io::Result<()> {
+    fn fake_permission_denied(_: &Path, _: &AuthDocument) -> std::io::Result<()> {
         Err(std::io::Error::from(std::io::ErrorKind::PermissionDenied))
     }
 
     /// Simulates an in-place write that truncates the file (destroying the
     /// old content, as `open_secure_file` does) and then fails partway — the
     /// torn-write case the rollback must recover from.
-    fn fake_truncate_then_fail(path: &Path, _: &AuthStore) -> std::io::Result<()> {
+    fn fake_truncate_then_fail(path: &Path, _: &AuthDocument) -> std::io::Result<()> {
         crate::util::secure_file::open_secure_file(path)?; // truncates to 0 bytes
         Err(std::io::Error::from(std::io::ErrorKind::StorageFull))
     }
@@ -418,7 +621,7 @@ mod write_fallback_tests {
     fn in_place_write_roundtrips() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("auth.json");
-        write_auth_json_in_place(&path, &sample_store()).unwrap();
+        write_auth_document_in_place(&path, &sample_doc()).unwrap();
         assert_eq!(read_key(&path).as_deref(), Some("secret-key"));
     }
 
@@ -428,7 +631,7 @@ mod write_fallback_tests {
         use std::os::unix::fs::PermissionsExt;
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("auth.json");
-        write_auth_json_in_place(&path, &sample_store()).unwrap();
+        write_auth_document_in_place(&path, &sample_doc()).unwrap();
         let mode = std::fs::metadata(&path).unwrap().permissions().mode();
         assert_eq!(mode & 0o777, 0o600, "in-place write must stay 0o600");
     }
@@ -439,7 +642,7 @@ mod write_fallback_tests {
     fn falls_back_to_in_place_on_storage_full() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("auth.json");
-        write_auth_json_with(&path, &sample_store(), fake_storage_full).unwrap();
+        write_auth_document_with(&path, &sample_doc(), fake_storage_full).unwrap();
         assert_eq!(
             read_key(&path).as_deref(),
             Some("secret-key"),
@@ -453,18 +656,24 @@ mod write_fallback_tests {
     fn propagates_non_storage_full_errors() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("auth.json");
-        let err = write_auth_json_with(&path, &sample_store(), fake_permission_denied).unwrap_err();
+        let err =
+            write_auth_document_with(&path, &sample_doc(), fake_permission_denied).unwrap_err();
         assert_eq!(err.kind(), std::io::ErrorKind::PermissionDenied);
         assert!(!path.exists(), "non-ENOSPC failure must not write the file");
     }
 
-    /// The normal (real atomic) path still works end to end.
+    /// The normal (real atomic + acquiring merge) path still works end to end.
     #[test]
     fn atomic_write_roundtrips() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("auth.json");
-        write_auth_json(&path, &sample_store()).unwrap();
+        write_auth_json(&path, &sample_xai_store()).unwrap();
         assert_eq!(read_key(&path).as_deref(), Some("secret-key"));
+        // Nested on-disk shape after production write.
+        let raw: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+        assert!(raw.get("providers").is_some());
+        assert_eq!(raw.get("version").and_then(|v| v.as_u64()), Some(1));
     }
 
     /// A fallback write that truncates then fails must roll back to the prior
@@ -475,11 +684,11 @@ mod write_fallback_tests {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("auth.json");
         // Seed a valid prior credential.
-        write_auth_json_in_place(&path, &sample_store()).unwrap();
+        write_auth_document_in_place(&path, &sample_doc()).unwrap();
         assert_eq!(read_key(&path).as_deref(), Some("secret-key"));
 
-        let mut replacement = AuthStore::new();
-        replacement.insert(
+        let mut replacement_store = AuthStore::new();
+        replacement_store.insert(
             API_KEY_SCOPE.to_owned(),
             GrokAuth {
                 key: "replacement-key".to_owned(),
@@ -487,8 +696,16 @@ mod write_fallback_tests {
                 ..Default::default()
             },
         );
-        let err = write_auth_json_in_place_with(&path, &replacement, fake_truncate_then_fail)
-            .unwrap_err();
+        let mut replacement = AuthDocument {
+            version: Some(AUTH_DOCUMENT_VERSION),
+            providers: Default::default(),
+        };
+        replacement
+            .providers
+            .insert(PROVIDER_XAI.to_owned(), replacement_store);
+        let err =
+            write_auth_document_in_place_with(&path, &replacement, fake_truncate_then_fail)
+                .unwrap_err();
         assert_eq!(err.kind(), std::io::ErrorKind::StorageFull);
         assert_eq!(
             read_key(&path).as_deref(),
@@ -504,9 +721,329 @@ mod write_fallback_tests {
         use std::os::unix::fs::PermissionsExt;
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("auth.json");
-        write_auth_json_in_place(&path, &sample_store()).unwrap();
-        let _ = write_auth_json_in_place_with(&path, &sample_store(), fake_truncate_then_fail);
+        write_auth_document_in_place(&path, &sample_doc()).unwrap();
+        let _ = write_auth_document_in_place_with(&path, &sample_doc(), fake_truncate_then_fail);
         let mode = std::fs::metadata(&path).unwrap().permissions().mode();
         assert_eq!(mode & 0o777, 0o600, "restored file must stay 0o600");
+    }
+}
+
+#[cfg(test)]
+mod multi_slot_tests {
+    use super::*;
+    use crate::auth::manager::lock::try_lock_auth_file_nonblocking;
+    use std::sync::{Arc, Barrier};
+    use std::time::Duration;
+
+    fn xai_store(key: &str) -> AuthStore {
+        let mut map = AuthStore::new();
+        map.insert(
+            API_KEY_SCOPE.to_owned(),
+            GrokAuth {
+                key: key.to_owned(),
+                auth_mode: AuthMode::ApiKey,
+                ..GrokAuth::test_default()
+            },
+        );
+        map
+    }
+
+    fn codex_store(key: &str) -> AuthStore {
+        let mut map = AuthStore::new();
+        map.insert(
+            "codex::fixture".to_owned(),
+            GrokAuth {
+                key: key.to_owned(),
+                auth_mode: AuthMode::ApiKey,
+                ..GrokAuth::test_default()
+            },
+        );
+        map
+    }
+
+    fn raw_json(path: &Path) -> serde_json::Value {
+        let s = std::fs::read_to_string(path).expect("read raw auth.json");
+        serde_json::from_str(&s).expect("parse raw auth.json")
+    }
+
+    #[test]
+    fn legacy_flat_reads_as_xai_slot() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("auth.json");
+        let flat = xai_store("legacy-flat-key");
+        // Write raw flat (no providers key) — not nested fixture.
+        {
+            use crate::util::secure_file::open_secure_file;
+            let file = open_secure_file(&path).unwrap();
+            serde_json::to_writer_pretty(file, &flat).unwrap();
+        }
+        let store = read_auth_json(&path).unwrap();
+        assert_eq!(
+            store.get(API_KEY_SCOPE).map(|a| a.key.as_str()),
+            Some("legacy-flat-key")
+        );
+        // Raw file still flat until a production write rewrites nested.
+        let raw = raw_json(&path);
+        assert!(raw.get("providers").is_none());
+    }
+
+    #[test]
+    fn write_emits_nested_providers_xai() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("auth.json");
+        write_auth_json(&path, &xai_store("nested-key")).unwrap();
+        let raw = raw_json(&path);
+        assert!(raw.get("providers").is_some(), "must have providers");
+        assert_eq!(raw.get("version").and_then(|v| v.as_u64()), Some(1));
+        let xai_key = raw
+            .pointer(&format!("/providers/{PROVIDER_XAI}/{API_KEY_SCOPE}/key"))
+            .and_then(|v| v.as_str());
+        assert_eq!(xai_key, Some("nested-key"));
+        assert_eq!(
+            read_auth_json(&path)
+                .unwrap()
+                .get(API_KEY_SCOPE)
+                .map(|a| a.key.as_str()),
+            Some("nested-key")
+        );
+    }
+
+    #[test]
+    fn seeded_codex_slot_survives_xai_write() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("auth.json");
+        let codex = codex_store("codex-seed");
+        write_fixture_auth_document(&path, xai_store("old-xai"), Some(codex.clone())).unwrap();
+
+        write_auth_json(&path, &xai_store("new-xai")).unwrap();
+
+        let raw = raw_json(&path);
+        let codex_key = raw
+            .pointer("/providers/codex/codex::fixture/key")
+            .and_then(|v| v.as_str());
+        assert_eq!(codex_key, Some("codex-seed"));
+        let xai_key = raw
+            .pointer(&format!("/providers/{PROVIDER_XAI}/{API_KEY_SCOPE}/key"))
+            .and_then(|v| v.as_str());
+        assert_eq!(xai_key, Some("new-xai"));
+        // Round-trip fixture codex payload equality via document read.
+        let doc = read_auth_document(&path).unwrap();
+        let codex_on_disk = doc
+            .providers
+            .get(PROVIDER_CODEX)
+            .expect("codex slot present");
+        assert_eq!(
+            codex_on_disk
+                .get("codex::fixture")
+                .map(|a| a.key.as_str()),
+            Some("codex-seed")
+        );
+        let _ = &codex; // seeded payload used above
+    }
+
+    #[test]
+    fn concurrent_xai_and_codex_mutations_preserve_both() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = Arc::new(dir.path().join("auth.json"));
+        // Seed empty nested doc so both mutators merge into the same file.
+        write_fixture_auth_document(&path, AuthStore::new(), None).unwrap();
+
+        let barrier = Arc::new(Barrier::new(2));
+        let path_x = Arc::clone(&path);
+        let barrier_x = Arc::clone(&barrier);
+        let t_xai = std::thread::spawn(move || {
+            barrier_x.wait();
+            mutate_auth_document(&path_x, |doc| {
+                doc.providers
+                    .insert(PROVIDER_XAI.to_owned(), xai_store("concurrent-xai"));
+                doc.version = Some(AUTH_DOCUMENT_VERSION);
+                Ok(())
+            })
+            .expect("xai mutate");
+        });
+        let path_c = Arc::clone(&path);
+        let barrier_c = Arc::clone(&barrier);
+        let t_codex = std::thread::spawn(move || {
+            barrier_c.wait();
+            mutate_auth_document(&path_c, |doc| {
+                doc.providers
+                    .insert(PROVIDER_CODEX.to_owned(), codex_store("concurrent-codex"));
+                doc.version = Some(AUTH_DOCUMENT_VERSION);
+                Ok(())
+            })
+            .expect("codex mutate");
+        });
+        t_xai.join().expect("xai thread");
+        t_codex.join().expect("codex thread");
+
+        let raw = raw_json(&path);
+        assert_eq!(
+            raw.pointer(&format!("/providers/{PROVIDER_XAI}/{API_KEY_SCOPE}/key"))
+                .and_then(|v| v.as_str()),
+            Some("concurrent-xai")
+        );
+        assert_eq!(
+            raw.pointer("/providers/codex/codex::fixture/key")
+                .and_then(|v| v.as_str()),
+            Some("concurrent-codex")
+        );
+    }
+
+    #[test]
+    fn already_locked_mutate_does_not_self_deadlock() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("auth.json");
+        write_fixture_auth_document(
+            &path,
+            xai_store("pre-xai"),
+            Some(codex_store("held-codex")),
+        )
+        .unwrap();
+
+        let lock = try_lock_auth_file_nonblocking(&path).expect("acquire lock");
+        let path_owned = path.clone();
+        let handle = std::thread::spawn(move || {
+            // Run mutator on this thread so a hang is join-detectable.
+            mutate_auth_document_with_lock(&path_owned, &lock, |doc| {
+                doc.providers
+                    .insert(PROVIDER_XAI.to_owned(), xai_store("post-xai"));
+                doc.version = Some(AUTH_DOCUMENT_VERSION);
+                Ok(())
+            })
+        });
+        // Wall-clock bound: self-deadlock would hang the join forever.
+        let result = match handle.join() {
+            Ok(r) => r,
+            Err(_) => panic!("with-lock mutator thread panicked"),
+        };
+        // Use a short sleep+poll is unnecessary if join returned; assert ok.
+        result.expect("with-lock mutate under held lock must succeed");
+
+        let raw = raw_json(&path);
+        assert_eq!(
+            raw.pointer(&format!("/providers/{PROVIDER_XAI}/{API_KEY_SCOPE}/key"))
+                .and_then(|v| v.as_str()),
+            Some("post-xai")
+        );
+        assert_eq!(
+            raw.pointer("/providers/codex/codex::fixture/key")
+                .and_then(|v| v.as_str()),
+            Some("held-codex")
+        );
+    }
+
+    #[test]
+    fn acquiring_and_with_lock_are_distinct() {
+        // Surface: both APIs exist. Behavior: with-lock never opens a second
+        // lock fd (succeeds under held lock); acquiring under held lock
+        // cannot complete without blocking (modeled by non-blocking acquire
+        // returning None for a second handle on the same process).
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("auth.json");
+        write_fixture_auth_document(&path, xai_store("a"), Some(codex_store("b"))).unwrap();
+
+        let lock = try_lock_auth_file_nonblocking(&path).expect("first lock");
+        assert!(
+            try_lock_auth_file_nonblocking(&path).is_none(),
+            "second non-blocking acquire must fail while first holds the lock"
+        );
+        write_auth_json_with_lock(&path, &lock, &xai_store("via-with-lock")).unwrap();
+        drop(lock);
+
+        // Acquiring path works once lock is free.
+        write_auth_json(&path, &xai_store("via-acquiring")).unwrap();
+        let store = read_auth_json(&path).unwrap();
+        assert_eq!(
+            store.get(API_KEY_SCOPE).map(|a| a.key.as_str()),
+            Some("via-acquiring")
+        );
+        let doc = read_auth_document(&path).unwrap();
+        assert!(doc.providers.contains_key(PROVIDER_CODEX));
+    }
+
+    #[test]
+    fn unsupported_version_fails_closed() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("auth.json");
+        let mut providers = std::collections::BTreeMap::new();
+        providers.insert(PROVIDER_XAI.to_owned(), xai_store("future"));
+        let future = AuthDocument {
+            version: Some(AUTH_DOCUMENT_VERSION + 99),
+            providers,
+        };
+        // Bypass version gate on write: serialize raw nested with high version.
+        {
+            use crate::util::secure_file::open_secure_file;
+            let file = open_secure_file(&path).unwrap();
+            serde_json::to_writer_pretty(file, &future).unwrap();
+        }
+
+        let err = read_auth_json(&path).unwrap_err();
+        assert_eq!(
+            err.kind(),
+            std::io::ErrorKind::Unsupported,
+            "unsupported version must not map to InvalidData"
+        );
+        assert!(
+            err.to_string().contains("unsupported"),
+            "error should mention unsupported: {err}"
+        );
+
+        // Recovery path must NOT wipe / empty-recover unsupported schemas.
+        let recover_err = read_auth_json_or_empty_recovering_corrupt(&path).unwrap_err();
+        assert_eq!(recover_err.kind(), std::io::ErrorKind::Unsupported);
+        assert!(
+            path.exists(),
+            "unsupported version must leave the file in place"
+        );
+        // No corrupt backup should appear.
+        let siblings: Vec<_> = std::fs::read_dir(dir.path())
+            .unwrap()
+            .filter_map(|e| e.ok())
+            .map(|e| e.file_name().to_string_lossy().into_owned())
+            .collect();
+        assert!(
+            !siblings.iter().any(|n| n.contains("corrupt")),
+            "unsupported version must not trigger corrupt backup: {siblings:?}"
+        );
+    }
+
+    #[test]
+    fn nested_fixture_readable_via_read_auth_json() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("auth.json");
+        write_fixture_auth_document(&path, xai_store("from-nested"), None).unwrap();
+        let store = read_auth_json(&path).unwrap();
+        assert_eq!(
+            store.get(API_KEY_SCOPE).map(|a| a.key.as_str()),
+            Some("from-nested")
+        );
+    }
+
+    #[test]
+    fn fixture_helper_writes_nested_with_optional_codex() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("auth.json");
+        write_fixture_auth_document(&path, xai_store("x"), Some(codex_store("c"))).unwrap();
+        let raw = raw_json(&path);
+        assert_eq!(raw.get("version").and_then(|v| v.as_u64()), Some(1));
+        assert!(raw.pointer("/providers/xai").is_some());
+        assert!(raw.pointer("/providers/codex").is_some());
+    }
+
+    /// Smoke: with-lock path completes well under a generous wall clock.
+    #[test]
+    fn already_locked_mutate_completes_quickly() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("auth.json");
+        write_fixture_auth_document(&path, xai_store("t0"), Some(codex_store("c0"))).unwrap();
+        let lock = try_lock_auth_file_nonblocking(&path).expect("lock");
+        let started = std::time::Instant::now();
+        write_auth_json_with_lock(&path, &lock, &xai_store("t1")).unwrap();
+        assert!(
+            started.elapsed() < Duration::from_secs(2),
+            "with-lock write hung: {:?}",
+            started.elapsed()
+        );
     }
 }

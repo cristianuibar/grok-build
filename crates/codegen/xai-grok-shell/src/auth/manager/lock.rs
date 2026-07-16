@@ -357,6 +357,15 @@ fn blocking_acquire(lock_path: &Path) -> io::Result<File> {
 
 // ── Public API ───────────────────────────────────────────────────────
 
+/// Blocking exclusive acquire of `auth.json.lock` for unlocked writers
+/// (e.g. acquiring `mutate_auth_document`). Waits in the kernel flock queue
+/// until free; does not implement the async stale-break timeout path.
+pub(crate) fn lock_auth_file_blocking(auth_json_path: &Path) -> io::Result<AuthFileLock> {
+    let lock_path = auth_json_path.with_file_name("auth.json.lock");
+    let file = blocking_acquire(&lock_path)?;
+    Ok(AuthFileLock { _file: file })
+}
+
 /// Best-effort **non-blocking** acquire for advisory cleanup call sites
 /// (`AuthManager::new` WebLogin cleanup, `remove_scope`).
 ///

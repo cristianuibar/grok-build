@@ -13,6 +13,27 @@ pub(super) const LEGACY_SCOPE: &str = "https://accounts.x.ai/sign-in";
 /// auth.json scope key for plain API key auth (desktop login, `grok login --api-key`).
 pub const API_KEY_SCOPE: &str = "xai::api_key";
 
+/// Stable wire key for the xAI provider slot in multi-slot `auth.json`.
+pub const PROVIDER_XAI: &str = "xai";
+
+/// Stable wire key for the reserved Codex provider slot in multi-slot `auth.json`.
+pub const PROVIDER_CODEX: &str = "codex";
+
+/// On-disk multi-slot document schema version written by this binary.
+pub const AUTH_DOCUMENT_VERSION: u32 = 1;
+
+/// On-disk multi-provider auth document (`version` + `providers` map).
+///
+/// Crate-private: callers keep speaking [`AuthStore`] (xAI scope map) via
+/// storage adapters. Nested form is an on-disk concern.
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub(crate) struct AuthDocument {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub version: Option<u32>,
+    #[serde(default)]
+    pub providers: BTreeMap<String, AuthStore>,
+}
+
 const BLOCKED_REASON_NO_LOGS: &str = "BLOCKED_REASON_NO_LOGS";
 const BLOCKED_REASON_NO_LOGS_MODERATED: &str = "BLOCKED_REASON_NO_LOGS_MODERATED";
 

@@ -7,7 +7,7 @@ use super::AuthManager;
 use super::lock::try_lock_auth_file_async;
 use crate::auth::manager::AUTH_LOCK_TIMEOUT;
 use crate::auth::model::{GrokAuth, UserInfo, lookup_auth};
-use crate::auth::storage::{read_auth_json, write_auth_json};
+use crate::auth::storage::{read_auth_json, write_auth_json, write_auth_json_with_lock};
 
 /// `/user` fetch budget, shared by the inline (login) and background paths.
 const USER_FETCH_TIMEOUT: StdDuration = StdDuration::from_secs(10);
@@ -193,7 +193,13 @@ async fn run_user_info_enrichment(manager: &AuthManager, auth: GrokAuth) {
 
     map.insert(manager.scope.clone(), disk.clone());
     let write_started = std::time::Instant::now();
-    if let Err(e) = write_auth_json(&manager.path, &map) {
+    // Held lock → guard-held mutate (never re-acquire). Timeout/unlocked →
+    // acquiring full-document merge path (preserves sibling provider slots).
+    let write_result = match lock_guard.as_ref() {
+        Some(lock) => write_auth_json_with_lock(&manager.path, lock, &map),
+        None => write_auth_json(&manager.path, &map),
+    };
+    if let Err(e) = write_result {
         xai_grok_telemetry::unified_log::error(
             "auth update enrichment write failed",
             None,
