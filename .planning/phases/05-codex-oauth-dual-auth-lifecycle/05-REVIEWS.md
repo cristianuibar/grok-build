@@ -2,7 +2,7 @@
 phase: 5
 reviewers: [codex]
 reviewed_at: 2026-07-16T16:34:11Z
-cycle: 2
+cycle: 3
 plans_reviewed:
   - 05-01-PLAN.md
   - 05-02-PLAN.md
@@ -10,7 +10,7 @@ plans_reviewed:
   - 05-04-PLAN.md
   - 05-05-PLAN.md
   - 05-06-PLAN.md
-plans_commit: f861084
+plans_commit: 39d28d0
 ---
 # Cross-AI Plan Review — Phase 5
 
@@ -372,3 +372,23 @@ Explicitly resolved in the revised text:
 Not fully resolved: the reconstruct gate is named, but its integration-test execution path remains unavailable.
 
 Recommendation: revise Plan 05 around the three HIGH findings before execution. AUTH-02 through AUTH-04 otherwise look execution-ready.
+## Codex Review — Cycle 3
+
+## Overall risk: MEDIUM
+
+## Resolved from cycle 2
+
+- BYOK/custom endpoint bearer override: fully addressed by the Codex + `SessionToken` + trusted-endpoint gate, zero-IdP assertions, and reconstruct-level negative tests.
+- Lock-held clear deadlock: fully addressed through `clear_provider_slot_with_lock`/guard-held mutation and explicit prohibition on lock reacquisition.
+- Reconstruct seam: fully addressed through registered crate-local `SessionActor::reconstruct_full_config()` tests that assert the resulting key and headers.
+
+## Remaining HIGH (or None.)
+
+None.
+
+## Remaining actionable MEDIUM (or None.)
+
+- Plan 05 Task 1 verifies outer `ensure_fresh` persistence/isolation behavior that Task 2 implements. Move those checks to Task 2 or restrict Task 1 to pure refresh tests.
+- Reconstruct test commands should explicitly use `--lib`. Current crate-wide filters may also execute same-named Wave 0 integration RED stubs unless those stubs are removed or made green during Plan 05.
+
+## Recommendation: REVISE
