@@ -832,6 +832,7 @@ pub fn parse_remote_model_value(
         base_url,
         name,
         description: get_string(obj, "description"),
+        provider: crate::agent::config::ModelProvider::Xai,
         max_completion_tokens: get_u64(obj, "maxCompletionTokens")
             .or_else(|| get_u64(obj, "max_completion_tokens"))
             .and_then(|v| u32::try_from(v).ok()),

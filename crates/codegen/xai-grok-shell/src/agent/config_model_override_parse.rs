@@ -503,6 +503,7 @@ mod tests {
             base_url: Some("https://example.com".into()),
             name: Some("Model M".into()),
             description: Some("desc".into()),
+            provider: Some(crate::agent::config::ModelProvider::Codex),
             api_key: Some("key".into()),
             env_key: Some(crate::agent::config::EnvKeys::single("ENV_KEY")),
             api_base_url: Some("https://api.example.com".into()),

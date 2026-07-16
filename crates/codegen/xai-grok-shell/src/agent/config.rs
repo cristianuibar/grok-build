@@ -3312,6 +3312,38 @@ pub fn effective_classifier_supports_re(
         .map(|e| e.info().supports_reasoning_effort)
         .unwrap_or(false)
 }
+/// Auth/routing provider for a catalog model entry.
+///
+/// Distinct from `agent_type` (harness/prompt family). Wire values match Phase 2
+/// auth slots: `"xai"` and `"codex"`. Missing values deserialize to [`ModelProvider::Xai`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum ModelProvider {
+    /// xAI / Grok models (default when `provider` is omitted).
+    #[default]
+    Xai,
+    /// Codex / ChatGPT models.
+    Codex,
+}
+
+impl ModelProvider {
+    /// Public wire id (`"xai"` / `"codex"`), matching auth slot ids.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Xai => "xai",
+            Self::Codex => "codex",
+        }
+    }
+
+    /// Human-readable label for name suffixes (`xAI` / `Codex`).
+    pub fn display_label(self) -> &'static str {
+        match self {
+            Self::Xai => "xAI",
+            Self::Codex => "Codex",
+        }
+    }
+}
+
 /// JSON-only subset of `ModelEntryConfig`.
 #[derive(Debug, Default, Deserialize)]
 #[serde(default)]
@@ -3320,6 +3352,9 @@ struct DefaultModelJson {
     model: String,
     name: Option<String>,
     description: Option<String>,
+    /// Auth/routing provider; defaults to xAI when omitted (backward compat).
+    #[serde(default)]
+    provider: ModelProvider,
     context_window: Option<NonZeroU64>,
     temperature: Option<f32>,
     top_p: Option<f32>,
@@ -3378,6 +3413,7 @@ fn default_models(endpoints: &EndpointsConfig) -> IndexMap<String, ModelEntryCon
                 api_base_url: Some(endpoints.xai_api_base_url.clone()),
                 name: m.name,
                 description: m.description,
+                provider: m.provider,
                 context_window,
                 auto_compact_threshold_percent: None,
                 system_prompt_label: None,
@@ -3424,6 +3460,9 @@ pub struct ModelEntryConfig {
     pub name: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub description: Option<String>,
+    /// Auth/routing provider (`xai` / `codex`). Defaults to xAI when omitted.
+    #[serde(default)]
+    pub provider: ModelProvider,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub max_completion_tokens: Option<u32>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -3550,6 +3589,8 @@ pub struct ConfigModelOverride {
     pub base_url: Option<String>,
     pub name: Option<String>,
     pub description: Option<String>,
+    /// Optional auth/routing provider override (`xai` / `codex`).
+    pub provider: Option<ModelProvider>,
     pub api_key: Option<String>,
     /// Env var name(s) for the provider key — string or array in config.toml.
     pub env_key: Option<EnvKeys>,
@@ -3608,6 +3649,9 @@ impl ConfigModelOverride {
         }
         if self.description.is_some() {
             entry.info.description.clone_from(&self.description);
+        }
+        if let Some(v) = self.provider {
+            entry.info.provider = v;
         }
         if self.max_completion_tokens.is_some() {
             entry.info.max_completion_tokens = self.max_completion_tokens;
@@ -3704,6 +3748,9 @@ pub struct ModelInfo {
     /// to users in either consumer.
     pub name: Option<String>,
     pub description: Option<String>,
+    /// Auth/routing provider (`xai` / `codex`). Defaults to xAI when omitted.
+    #[serde(default)]
+    pub provider: ModelProvider,
     pub max_completion_tokens: Option<u32>,
     pub temperature: Option<f32>,
     pub top_p: Option<f32>,
@@ -3769,6 +3816,7 @@ impl ModelInfo {
             base_url: String::new(),
             name: None,
             description: None,
+            provider: ModelProvider::default(),
             max_completion_tokens: None,
             temperature: None,
             top_p: None,
@@ -3804,6 +3852,7 @@ impl ModelInfo {
             base_url: entry.base_url.clone(),
             name: entry.name.clone(),
             description: entry.description.clone(),
+            provider: entry.provider,
             max_completion_tokens: entry.max_completion_tokens,
             temperature: entry.temperature,
             top_p: entry.top_p,
@@ -4484,6 +4533,7 @@ pub fn resolve_aux_model_sampling_config(
                 base_url: endpoints.resolve_inference_base_url(),
                 name: None,
                 description: None,
+                provider: ModelProvider::default(),
                 max_completion_tokens: None,
                 temperature: None,
                 top_p: None,
@@ -4706,6 +4756,7 @@ fn resolve_hidden_default_web_search_sampling_config(
             base_url: endpoints.resolve_inference_base_url(),
             name: None,
             description: None,
+            provider: ModelProvider::default(),
             max_completion_tokens: None,
             temperature: None,
             top_p: None,
@@ -5362,6 +5413,7 @@ reasoning_effort = "low"
                 base_url: base_url.to_string(),
                 name: None,
                 description: None,
+                provider: ModelProvider::default(),
                 max_completion_tokens: None,
                 temperature: None,
                 top_p: None,
@@ -6380,6 +6432,7 @@ reasoning_effort = "low"
             base_url: "https://test.api/v1".to_string(),
             name: None,
             description: None,
+            provider: ModelProvider::default(),
             max_completion_tokens: None,
             temperature: None,
             top_p: None,
@@ -6539,6 +6592,7 @@ reasoning_effort = "low"
             base_url: "https://test.api/v1".to_string(),
             name: None,
             description: None,
+            provider: ModelProvider::default(),
             max_completion_tokens: None,
             temperature: None,
             top_p: None,
@@ -6990,6 +7044,7 @@ reasoning_effort = "low"
             base_url: "https://test.api/v1".to_string(),
             name: None,
             description: None,
+            provider: ModelProvider::default(),
             max_completion_tokens: None,
             temperature: None,
             top_p: None,
@@ -10556,6 +10611,7 @@ default = "grok-4.5"
                 base_url: "https://test.example.com/v1".to_owned(),
                 name: Some(slug.to_owned()),
                 description: None,
+                provider: ModelProvider::default(),
                 max_completion_tokens: None,
                 temperature: None,
                 top_p: None,

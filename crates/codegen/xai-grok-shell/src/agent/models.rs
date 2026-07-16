@@ -3361,6 +3361,7 @@ mod tests {
             base_url: "https://test.api/v1".to_owned(),
             name: name.map(|n| n.to_owned()),
             description: None,
+            provider: config::ModelProvider::default(),
             max_completion_tokens: None,
             temperature: None,
             top_p: None,

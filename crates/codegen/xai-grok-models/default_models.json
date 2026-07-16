@@ -6,13 +6,41 @@
   "models": [
     {
       "model": "grok-build",
-      "name": "Grok Build",
+      "name": "Grok Build (xAI)",
       "description": "Best for advanced coding tasks",
+      "provider": "xai",
       "context_window": 500000,
       "temperature": 0.7,
       "top_p": 0.95,
       "api_backend": "responses",
       "supported_in_api": false
+    },
+    {
+      "model": "gpt-5.6-sol",
+      "name": "GPT-5.6 Sol (Codex)",
+      "description": "GPT-5.6 Sol — Codex / ChatGPT",
+      "provider": "codex",
+      "context_window": 272000,
+      "api_backend": "responses",
+      "supported_in_api": true
+    },
+    {
+      "model": "gpt-5.6-terra",
+      "name": "GPT-5.6 Terra (Codex)",
+      "description": "GPT-5.6 Terra — Codex / ChatGPT",
+      "provider": "codex",
+      "context_window": 272000,
+      "api_backend": "responses",
+      "supported_in_api": true
+    },
+    {
+      "model": "gpt-5.6-luna",
+      "name": "GPT-5.6 Luna (Codex)",
+      "description": "GPT-5.6 Luna — Codex / ChatGPT",
+      "provider": "codex",
+      "context_window": 272000,
+      "api_backend": "responses",
+      "supported_in_api": true
     }
   ]
 }
