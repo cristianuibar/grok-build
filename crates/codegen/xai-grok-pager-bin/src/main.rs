@@ -1741,8 +1741,7 @@ async fn async_main() -> Result<()> {
                 oauth,
                 device_auth,
                 devbox,
-                // Dual-provider login body lands in Plan 03; clap accepts --provider now.
-                provider: _,
+                provider,
             } => {
                 init_tracing_simple("cli");
                 let _otel_guard = xai_grok_telemetry::otel_layer::otel_guard();
@@ -1750,8 +1749,23 @@ async fn async_main() -> Result<()> {
                     .map_err(|e| anyhow::anyhow!("Failed to load config: {e}"))?;
                 let config = AgentConfig::new_from_toml_cfg(&config)
                     .map_err(|e| anyhow::anyhow!("Failed to create agent config: {e}"))?;
-                // Wave 0: still xAI-only handler (provider ignored until Plan 03).
-                xai_grok_shell::auth::run_cli_login(&config, oauth, device_auth, devbox).await?;
+                // D-01: bare login → xAI; --provider codex → Codex OAuth (no xAI post_login_sync).
+                let provider = provider.map(|p| match p {
+                    xai_grok_pager::app::cli::AuthProviderArg::Xai => {
+                        xai_grok_shell::auth::AuthProvider::Xai
+                    }
+                    xai_grok_pager::app::cli::AuthProviderArg::Codex => {
+                        xai_grok_shell::auth::AuthProvider::Codex
+                    }
+                });
+                xai_grok_shell::auth::run_cli_login_for_provider(
+                    &config,
+                    oauth,
+                    device_auth,
+                    devbox,
+                    provider,
+                )
+                .await?;
                 println!();
                 xai_grok_shell::instrumentation::finalize_and_exit(0);
             }

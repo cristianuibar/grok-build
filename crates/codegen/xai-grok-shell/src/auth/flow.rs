@@ -771,10 +771,22 @@ async fn persist_or_use_minted(auth_manager: &AuthManager, new_auth: GrokAuth) -
 
 /// Print the CLI "signed in" confirmation, clearing the spinner line first.
 fn report_signed_in(auth: &GrokAuth) {
+    report_signed_in_for_provider(auth, None);
+}
+
+/// Provider-aware signed-in copy (UI-SPEC: Codex vs xAI labels).
+fn report_signed_in_for_provider(auth: &GrokAuth, provider: Option<super::AuthProvider>) {
     eprint!("\r\x1b[K");
-    match auth.email {
-        Some(ref email) => eprintln!("✓ Signed in as {email}"),
-        None => eprintln!("✓ Signed in"),
+    let label = match provider {
+        Some(super::AuthProvider::Codex) => Some("Codex"),
+        Some(super::AuthProvider::Xai) => Some("xAI"),
+        None => None,
+    };
+    match (label, auth.email.as_deref()) {
+        (Some(p), Some(email)) => eprintln!("✓ Signed in to {p} as {email}"),
+        (Some(p), None) => eprintln!("✓ Signed in to {p}"),
+        (None, Some(email)) => eprintln!("✓ Signed in as {email}"),
+        (None, None) => eprintln!("✓ Signed in"),
     }
 }
 
@@ -857,18 +869,51 @@ pub async fn ensure_authenticated_or_noninteractive(
     }
 }
 
-/// Unified `grok login` handler for CLI entry points (tui, pager).
+/// Unified `bum login` / `grok login` handler for CLI entry points (tui, pager).
 ///
 /// Precedence: `--oauth` forces loopback, `--device-auth` forces device,
 /// otherwise `GROK_LOGIN_DEVICE_FLOW` env / `[auth] login_device_flow` config /
 /// loopback default. Both transports run through `run_auth_flow_inner` so the
 /// external auth provider and devbox auto-migration are tried first.
+///
+/// `provider`:
+/// - `None` / `Some(Xai)` → existing xAI path **including** `post_login_sync`
+/// - `Some(Codex)` → Codex OAuth only; **returns before** xAI managed-config sync
 pub async fn run_cli_login(
     config: &crate::agent::config::Config,
     oauth: bool,
     device_auth: bool,
     devbox: bool,
 ) -> anyhow::Result<()> {
+    run_cli_login_for_provider(config, oauth, device_auth, devbox, None).await
+}
+
+/// Like [`run_cli_login`] with an explicit dual-auth provider target (D-01).
+pub async fn run_cli_login_for_provider(
+    config: &crate::agent::config::Config,
+    oauth: bool,
+    device_auth: bool,
+    devbox: bool,
+    provider: Option<super::AuthProvider>,
+) -> anyhow::Result<()> {
+    // Codex path: complete Codex login and return BEFORE any xAI post_login_sync
+    // (T-05-22 — never feed a Codex principal into xAI team managed-config).
+    if matches!(provider, Some(super::AuthProvider::Codex)) {
+        if devbox {
+            anyhow::bail!(
+                "Devbox login is not available for Codex. Use `bum login --provider codex`."
+            );
+        }
+        let auth_file = grok_home::grok_home().join("auth.json");
+        // Device flags force device for the selected provider; --oauth forces browser.
+        let force_device = device_auth && !oauth;
+        let auth = super::codex::run_codex_login(&auth_file, force_device)
+            .await
+            .map_err(|e| anyhow::anyhow!("{e}"))?;
+        report_signed_in_for_provider(&auth, Some(super::AuthProvider::Codex));
+        return Ok(());
+    }
+
     let login_override = LoginTransportOverride::from_flags(oauth, device_auth);
 
     // Mirror `run_auth_flow_inner`'s precedence: enterprise OIDC (oidc=Some,
@@ -902,7 +947,7 @@ pub async fn run_cli_login(
         )
         .await?;
         if did_auth {
-            report_signed_in(&auth);
+            report_signed_in_for_provider(&auth, Some(super::AuthProvider::Xai));
         }
         auth
     } else {
@@ -928,6 +973,7 @@ pub async fn run_cli_login(
     // Sync this principal's config now rather than waiting for the background
     // tick. Stay quiet about absence/failure during login — confirm only when
     // config was actually applied; `grok setup` reports the no-config case.
+    // Codex path returns early above — this is xAI-only managed-config sync.
     let outcome = crate::managed_config::post_login_sync(Some(authenticated)).await;
     match outcome {
         crate::managed_config::ManagedConfigSync::Updated { is_team: true } => {
