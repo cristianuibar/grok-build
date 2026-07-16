@@ -4,17 +4,17 @@ milestone: v1.0
 milestone_name: milestone
 current_phase: 5
 current_phase_name: Codex OAuth & dual auth lifecycle
-current_plan: 5
+current_plan: 6
 status: executing
-stopped_at: Completed 05-04-PLAN.md
-last_updated: "2026-07-16T17:49:21.926Z"
+stopped_at: Completed 05-05-PLAN.md
+last_updated: "2026-07-16T18:19:50.228Z"
 last_activity: 2026-07-16
 last_activity_desc: Completed 05-01 Wave 0 dual-auth harness + clap scaffolds
 progress:
   total_phases: 5
   completed_phases: 4
   total_plans: 24
-  completed_plans: 21
+  completed_plans: 22
 ---
 
 # Project State
@@ -29,13 +29,13 @@ See: .planning/PROJECT.md (updated 2026-07-16)
 ## Current Position
 
 Phase: 5 of 9 (Codex OAuth & dual auth lifecycle)
-Plan: 5 of 6
+Plan: 6 of 6
 Status: Ready to execute
 Last activity: 2026-07-16 — Completed 05-01 Wave 0 dual-auth harness + clap scaffolds
-Current Plan: 5
+Current Plan: 6
 Total Plans in Phase: 6
 
-Progress: [█████████░] 88% (18/24 plans)
+Progress: [█████████░] 92% (18/24 plans)
 
 ## Performance Metrics
 
@@ -80,6 +80,7 @@ Progress: [█████████░] 88% (18/24 plans)
 | Phase 05 P02 | 7min | 2 tasks | 5 files |
 | Phase 05 P03 | 15min | 2 tasks | 9 files |
 | Phase 05 P04 | 10min | 2 tasks | 7 files |
+| Phase 05 P05 | 29min | 3 tasks | 16 files |
 
 ## Accumulated Context
 
@@ -143,6 +144,8 @@ Recent decisions affecting current work:
 - [Phase ?]: Disk logout SoT is blocking clear_provider_slot/clear_all; remove_scope secondary memory only
 - [Phase ?]: TUI/ACP bare logout fail-closed; selective via CLI provider|all or ACP params
 - [Phase ?]: run_cli_auth_status returns String / injectable Write; paste-safe dual status
+- [Phase ?]: AUTH-05 production hook is reconstruct_full_config with SessionToken + first-party Codex gate
+- [Phase ?]: Permanent Codex refresh fail uses clear_provider_slot_with_lock only (no reacquire)
 
 ### Pending Todos
 
@@ -165,7 +168,7 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-07-16T17:49:21.917Z
-Stopped at: Completed 05-04-PLAN.md
+Last session: 2026-07-16T18:19:50.217Z
+Stopped at: Completed 05-05-PLAN.md
 Resume file: None
 Next: execute 05-02-PLAN.md (auth status / usable semantics wave)

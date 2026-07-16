@@ -19,7 +19,7 @@ Requirements for initial release. Each maps to roadmap phases.
 - [x] **AUTH-02**: User can log in to ChatGPT/Codex via ChatGPT OAuth (Codex CLI-style PKCE browser flow, plus device-code where applicable), credentials stored only under the bum auth store
 - [x] **AUTH-03**: User can log out of one provider without clearing the other provider’s credentials
 - [x] **AUTH-04**: User can inspect per-provider auth status (which providers are logged in / usable)
-- [ ] **AUTH-05**: Access tokens for each provider refresh independently without wiping or invalidating the other provider’s session
+- [x] **AUTH-05**: Access tokens for each provider refresh independently without wiping or invalidating the other provider’s session
 
 ### Models & routing
 
@@ -95,7 +95,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 | AUTH-02 | Phase 5 | Complete |
 | AUTH-03 | Phase 5 | Complete |
 | AUTH-04 | Phase 5 | Complete |
-| AUTH-05 | Phase 5 | Pending |
+| AUTH-05 | Phase 5 | Complete |
 | MOD-01 | Phase 3 | Complete |
 | MOD-02 | Phase 3 | Complete |
 | MOD-03 | Phase 6 | Pending |
