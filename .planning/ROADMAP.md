@@ -102,14 +102,14 @@ Plans:
   2. Requests for GPT/Codex models use the OpenAI/Codex (ChatGPT backend) path with ChatGPT OAuth credentials — not the xAI proxy
   3. Switching the active model changes resolved base URL / credential slot for the next sample (verifiable in logs or tests with fake tokens)
 
-**Plans:** 5 plans
+**Plans:** 5 plans (replanned 2026-07-16 from Codex review cycle 1)
 
 Plans:
-- [ ] 04-01-PLAN.md — Wave 0 provider_routing harness + RED dual-route contracts
-- [ ] 04-02-PLAN.md — Codex endpoints + pure resolve_provider_route
-- [ ] 04-03-PLAN.md — default_models stamping + provider-aware credentials
-- [ ] 04-04-PLAN.md — prepare / ModelsManager / reconstruct BearerResolver slot-aware
-- [ ] 04-05-PLAN.md — Observability, fail-closed, phase gate suite
+- [ ] 04-01-PLAN.md — Wave 0 harness + RED dual-route; dual-token never_cross_slot scaffold; honest prepare/reconstruct switch contract
+- [ ] 04-02-PLAN.md — Codex endpoints + resolve_provider_route production authority + first-party session_oauth_allowed
+- [ ] 04-03-PLAN.md — default_models via resolver + provider rebind + dual-key credentials + caller inventory
+- [ ] 04-04-PLAN.md — prepare/ModelsManager/model_switch + ModelAuthFacts.provider + select_provider_access_token + reconstruct
+- [ ] 04-05-PLAN.md — Local fail-closed + mock on-wire Authorization + secret log fix + phase gate
 
 ### Phase 5: Codex OAuth & dual auth lifecycle
 
