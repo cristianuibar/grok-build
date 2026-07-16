@@ -271,7 +271,7 @@ impl AuthManager {
                 "scope": &scope,
                 "grok_home": grok_home.display().to_string(),
                 "HOME": std::env::var("HOME").unwrap_or_else(|_| "(unset)".into()),
-                "GROK_HOME": std::env::var("GROK_HOME").unwrap_or_else(|_| "(unset)".into()),
+                "BUM_HOME": std::env::var("BUM_HOME").unwrap_or_else(|_| "(unset)".into()),
                 "GROK_AUTH_PATH": std::env::var("GROK_AUTH_PATH").unwrap_or_else(|_| "(unset)".into()),
                 "GROK_AUTH": std::env::var("GROK_AUTH").map(|_| "(set)".to_string()).unwrap_or_else(|_| "(unset)".into()),
             })),
@@ -292,7 +292,7 @@ impl AuthManager {
             tracing::warn!("GROK_AUTH set but failed to parse as JSON, falling back to file");
         }
 
-        // GROK_AUTH_PATH: custom file path (overrides default $GROK_HOME/auth.json).
+        // GROK_AUTH_PATH: custom file path (overrides default $BUM_HOME/auth.json).
         let path = std::env::var("GROK_AUTH_PATH")
             .map(PathBuf::from)
             .unwrap_or_else(|_| grok_home.join("auth.json"));

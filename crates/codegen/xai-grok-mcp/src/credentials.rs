@@ -1,8 +1,9 @@
 //! Persistent credential storage for MCP server OAuth tokens.
 //!
-//! Credentials are stored in `$GROK_HOME/mcp_credentials.json`, keyed by a
-//! composite key derived from the server name and URL. This keeps MCP OAuth
-//! tokens isolated from the user's xAI auth (`auth.json`).
+//! Credentials are stored in `$BUM_HOME/mcp_credentials.json` (or
+//! `~/.bum/mcp_credentials.json`), keyed by a composite key derived from the
+//! server name and URL. This keeps MCP OAuth tokens isolated from the user's
+//! xAI auth (`auth.json`).
 //!
 //! Stores rmcp's `StoredCredentials` type directly — the same type that
 //! rmcp's `AuthorizationManager` uses internally.
@@ -27,10 +28,10 @@ pub enum McpCredentialError {
     Other(String),
 }
 
-/// File name for the credential store inside `$GROK_HOME`.
+/// File name for the credential store inside product home (`$BUM_HOME` / `~/.bum`).
 const CREDENTIALS_FILENAME: &str = "mcp_credentials.json";
 
-/// On-disk credential store: `$GROK_HOME/mcp_credentials.json`.
+/// On-disk credential store: `$BUM_HOME/mcp_credentials.json` (or `~/.bum/...`).
 ///
 /// Stores rmcp `StoredCredentials` per MCP server, keyed by
 /// `"{server_name}:{server_url}"`.
@@ -54,7 +55,7 @@ impl McpCredentialStore {
         format!("{}:{}", server_name, server_url)
     }
 
-    /// Load the credential store from the default path (`$GROK_HOME/mcp_credentials.json`).
+    /// Load the credential store from the default path (`$BUM_HOME/mcp_credentials.json`).
     ///
     /// Returns an empty store if the file does not exist.
     pub fn load_default() -> Result<Self> {
@@ -77,7 +78,9 @@ impl McpCredentialStore {
     /// Save the credential store to the default path.
     pub fn save_default(&self) -> Result<()> {
         let path = Self::default_path().ok_or_else(|| {
-            McpCredentialError::Other("no user grok home (set $GROK_HOME or $HOME)".into())
+            McpCredentialError::Other(
+                "no user product home (set $BUM_HOME or ensure $HOME resolves to ~/.bum)".into(),
+            )
         })?;
         self.save_to(&path)
     }
@@ -99,7 +102,9 @@ impl McpCredentialStore {
         creds: rmcp::transport::auth::StoredCredentials,
     ) -> Result<()> {
         let path = Self::default_path().ok_or_else(|| {
-            McpCredentialError::Other("no user grok home (set $GROK_HOME or $HOME)".into())
+            McpCredentialError::Other(
+                "no user product home (set $BUM_HOME or ensure $HOME resolves to ~/.bum)".into(),
+            )
         })?;
         let lock_path = path.with_extension("lock");
 
@@ -236,7 +241,7 @@ impl McpCredentialStore {
         self.entries.is_empty()
     }
 
-    /// Default path: `$GROK_HOME/mcp_credentials.json`.
+    /// Default path: `$BUM_HOME/mcp_credentials.json` (or `~/.bum/...`).
     fn default_path() -> Option<PathBuf> {
         Some(xai_grok_config::user_grok_home()?.join(CREDENTIALS_FILENAME))
     }
@@ -356,11 +361,11 @@ mod tests {
         assert!(loaded.get("test", &url).is_some());
     }
 
-    /// Raw JSON fixture in the exact shape rmcp 0.17 persisted to
-    /// `$GROK_HOME/mcp_credentials.json`. Existing credential files must keep
-    /// loading across rmcp upgrades (2.1's `OAuthTokenResponse` gained vendor
-    /// extra token fields), so this must be a string literal — never JSON
-    /// serialized by the current code.
+    /// Raw JSON fixture in the exact shape rmcp 0.17 persisted to the product
+    /// home credential store (`mcp_credentials.json`). Existing credential
+    /// files must keep loading across rmcp upgrades (2.1's `OAuthTokenResponse`
+    /// gained vendor extra token fields), so this must be a string literal —
+    /// never JSON serialized by the current code.
     #[test]
     fn legacy_on_disk_fixture_still_deserializes() {
         use oauth2::TokenResponse as _;
