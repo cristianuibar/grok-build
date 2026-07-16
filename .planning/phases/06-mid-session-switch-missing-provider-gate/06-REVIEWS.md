@@ -1,8 +1,8 @@
 ---
 phase: 6
 reviewers: [codex]
-reviewed_at: 2026-07-17T00:35:00Z
-cycle: 1
+reviewed_at: 2026-07-17T00:51:00Z
+cycle: 2
 plans_reviewed:
   - 06-01-PLAN.md
   - 06-02-PLAN.md
@@ -12,9 +12,11 @@ plans_reviewed:
   - 06-06-PLAN.md
 verdict: FAIL
 finding_counts:
-  high: 3
-  medium: 7
-  low: 2
+  high: 1
+  medium: 6
+  low: 1
+cycle1_high_still_open: 1
+replan_commit: 8dfdef6
 ---
 
 # Cross-AI Plan Review — Phase 6
@@ -203,3 +205,203 @@ No Phase 7 or Phase 8 scope creep was found. The plans remain focused on provide
 ### Next step
 
 Replan with `--reviews` feedback incorporating the three HIGHs and actionable MEDIUM/LOW items above, then re-run cycle 2 review.
+
+---
+
+## Codex Review — Cycle 2
+
+**Phase:** 06 — Mid-session switch & missing-provider gate  
+**Requirements:** MOD-03, MOD-06  
+**Reviewer:** Codex CLI (`gpt-5.6-sol` / high, sandbox read-only)  
+**Cycle:** 2 (post-replan `8dfdef6`)  
+**Reviewed:** 2026-07-17  
+**Raw output:** `/tmp/gsd-review-grok-build-1557405645-cycle2-out.md`
+
+### Overall verdict
+
+FAIL
+
+The replan materially improved Phase 6: H1 is now transactional, H2 has a provider-aware deferred path covering external login, and most cycle-1 MEDIUM/LOW findings are incorporated. However, H3 remains incomplete: Plan 04 defines dual-slot metadata and a refresh effect but does not assign concrete startup, login, logout, and ordinary focus-refresh triggers to executable tasks. The badge cache can therefore remain stale. There is also a same-wave conflict between Plans 02 and 04 and several residual validation gaps.
+
+### Cycle-1 HIGH verification
+
+- **H1 — RESOLVED.** Plan 02 explicitly forbids changes to `models.current`, `app.models`, toast, and `PersistSetting` until `SwitchModelComplete(Ok)` (`06-02-PLAN.md` must_haves + Task 1 transactional rewrite of `set_default_model`, `p6_transactional_default_*` tests). Live code confirms this is the correct seam: current `set_default_model` optimistically calls `set_default_model_inner`, shows the toast, and emits `PersistSetting` before `SwitchModel` (`setters.rs`). A deferred settings-intent hole remains (MEDIUM below), but the original optimistic-mutation defect is fully planned.
+
+- **H2 — RESOLVED.** Plan 03 replaces the deferred tuple with a provider-aware intent, defines a shared readiness check, and explicitly covers in-process `AuthComplete`, bounded polling after CLI-primary login, and `FocusGained` refresh (`06-03-PLAN.md` contract + Task 2). Live code confirms `FocusGained` exists (`event_loop.rs`) and current `handle_auth_complete` is in-process-only. Implementation-trigger tests remain under-specified (MEDIUM), but the product contract itself is present.
+
+- **H3 — PARTIAL (still HIGH).** Plan 04 now specifies dual `xai`/`codex` usable booleans in `AuthMeta`, populated through `AuthStatusReport`/`store_usable`, plus an AppView cache and explicit refresh effect. This fixes the missing **producer design**. The remaining HIGH hole is **refresh ownership**: Task 1 defines metadata, cache setters, and an effect but never instructs where startup, normal login, logout, and non-deferred focus refreshes are emitted; declared files omit `actions.rs`, task-result dispatch, auth dispatch, and `event_loop.rs`. Plan 03 only wires refresh while a deferred switch is pending. Live `AuthMeta` remains xAI-only (`auth/meta.rs`), and its current producer is tied to xAI `auth_manager.current()` paths in `mvp_agent`.
+
+### Cycle-1 MEDIUM/LOW verification
+
+| Cycle-1 finding | Status | Plan evidence |
+|---|---|---|
+| 06-01 real `model_switch::apply` harness | RESOLVED | New `tests/model_switch_gate.rs`; real ACP/MvpAgent apply path and no-side-effect assertions |
+| 06-02 omitted `interactions.rs` exhaustive match | RESOLVED | File added to frontmatter and Task 2 |
+| 06-03 deferred intent lacks provider | RESOLVED | `DeferredModelSwitch` includes `required_provider`; wrong-provider tests specified |
+| 06-04 BYOK badge mislabel | RESOLVED | `hasOwnCredentials` ACP metadata plus badge suppression test |
+| 06-04 AppCtx constructor surface | RESOLVED | Task directs compiler-driven updates to all production/test literals |
+| 06-05 history/non-cancel session proof | PARTIAL | Real session harness required, but “lightest” / code-path-only substitutes still allowed |
+| 06-06 false-green filters | PARTIAL | Unique `p6_` names + discovery planned; Plan 06 Task 2 verify still only aggregate `p6_` presence |
+| 06-02 free-form provider parsing | RESOLVED | Strict `xai`/`codex` parsing with malformed → `Other` and test |
+| 06-06 stale wave/conditional edit metadata | RESOLVED | Wave table corrected; conditional test rename documented |
+
+### Per-plan analysis
+
+#### 06-01 — Shell gate and typed ACP error
+
+**Verdict:** PASS  
+**Strengths:** Correct authoritative boundary; gate after resolve, before prepare/`SetSessionModel`/`ModelChanged`; dual-slot `store_usable`; BYOK skip; separate incompatible-agent code; real ACP/MvpAgent integration target with `p6_` prefixes.  
+**Findings:** None.
+
+#### 06-02 — Transactional pager gate and QuestionView
+
+**Verdict:** PASS_WITH_WARNINGS  
+**Strengths:** H1 fully specified; MissingProvider distinct; provider parse strict; `interactions.rs` included; Keep current defined.  
+**Findings:**
+- [MEDIUM] Deferred settings intent loses `persist_default` — Plan 02 no-session `set_default_model` path stashes a switch, but Plan 03’s `DeferredModelSwitch` carries only model, effort, and provider. After session appears, settings-specific `app.models` update / success toast / default persist intent cannot be recovered. Add `persist_default` (or equivalent) to deferred struct + test no-session → session-created → Ok path.
+
+#### 06-03 — Login recovery and external CLI observation
+
+**Verdict:** PASS_WITH_WARNINGS  
+**Strengths:** Provider-aware deferred; wrong-provider auth cannot consume; Codex does not start xAI OAuth; external CLI not AuthComplete-only.  
+**Findings:**
+- [MEDIUM] External-login trigger not tested end to end — `p6_external_cli_status_refresh_applies_deferred` only injects a completed status refresh; production action leaves poll vs session flag open with no required `FocusGained`/timer emission assertion. Pin one bounded scheduling contract, stale-generation/cancellation, and test that Login now / FocusGained actually emits `RefreshProviderAuthStatus`.
+
+#### 06-04 — Auth usability cache and badges
+
+**Verdict:** FAIL  
+**Strengths:** Dual-slot semantics, refreshable usable, BYOK meta, pure cache reads, full catalog, exact badge copy.  
+**Findings:**
+- [HIGH] Badge-cache refresh triggers remain unowned — must_haves promise startup/login/logout/explicit refresh, but Task 1 only defines metadata, setters, and an effect. No task wires lifecycle emission surfaces; files omit `actions.rs`, task-result, auth dispatch, event_loop. Add explicit startup, AuthComplete, logout, focus, and manual-refresh wiring with stale/error behavior + tests.
+- [MEDIUM] Same-wave effect/action conflict — Plans 02 and 04 both modify `app/effects/mod.rs` in wave 2; `Effect::RefreshProviderAuthStatus` also needs `actions.rs` which Plan 04 does not declare. Serialize or assign shared Effect/TaskResult contract to one prerequisite plan.
+- [MEDIUM] Settings DynamicEnum badge made optional contrary to UI-SPEC component inventory (`06-UI-SPEC.md` settings model enum = same badge policy). Extend settings path or amend UI contract.
+- [LOW] Task 2 verify masking — `(pager && shell) || fallback shell` can green a failed `p6_needs_login` run. Keep pager test unconditional under `set -e`.
+
+#### 06-05 — Dual-provider continuity proofs
+
+**Verdict:** PASS_WITH_WARNINGS  
+**Strengths:** Both switch directions, same-provider, BYOK, next-route, history, in-flight named as outcomes; real apply harness required over pure routing.  
+**Findings:**
+- [MEDIUM] History and in-flight observables still under-specified — “lightest” history surface and code-path-only cancel assertions still allowed. Select named chat-history/session-storage + paced turn fixture (e.g. MockInferenceServer) and assert no cancel while prompt open.
+
+#### 06-06 — Validation and phase gate
+
+**Verdict:** PASS_WITH_WARNINGS  
+**Strengths:** Correct wave table; unique `p6_` prefixes; shell/pager separation; `06-VALIDATION.md` has solid per-group `discover` helper.  
+**Findings:**
+- [MEDIUM] Plan 06 Task 2 automated verify can pass with required subgroups absent — aggregate `p6_` count per crate only; leading doc checks can be bypassed by `&&` placement. Execute per-group discovery for every named filter (or run the VALIDATION aggregate script as written).
+
+### Cross-cutting findings
+
+- Wave 2 is not conflict-free: Plans 02 and 04 overlap on `effects/mod.rs`; Plan 04 has undeclared `actions.rs` need.
+- `persist_default` must span immediate and deferred switch-intent fields.
+- Badge freshness and deferred retry should share one status snapshot contract with centralized lifecycle trigger ownership (not split only into deferred-pending Plan 03 path).
+- Approved badge contract covers slash **and** settings model pickers.
+- Threat models prevent credential leakage/cross-slot use; residual hole is stale/runaway external-login polling — bound attempts + generation token.
+
+### Symbol verification table
+
+| Plan claim | Code reality | Status |
+|---|---|---|
+| `model_switch::apply` resolves before prepare/apply | Resolve then prepare / SetSessionModel / broadcast | OK |
+| Dual-provider usable semantics | `AuthStatusReport` + `credential_usable`/`store_usable` | OK |
+| `ModelProvider::{Xai,Codex}` and labels | Present in `agent/config.rs` | OK |
+| BYOK `has_own_credentials` | Public on `ModelEntry` | OK |
+| `MODEL_SWITCH_MISSING_PROVIDER` typed error | Not live; Plan 01 | PLANNED |
+| Transactional `set_default_model` | Live still optimistic; Plan 02 | PLANNED |
+| Provider-aware deferred switch | Live still `(ModelId, Option<Effort>)` tuple | PLANNED |
+| Dual-slot `AuthMeta` | Live xAI account/subscription only | PLANNED |
+| `RefreshProviderAuthStatus` | No live Effect/TaskResult | PLANNED |
+| `Event::FocusGained` refresh seam | Exists in event_loop | OK |
+| ACP model `provider` metadata | Emitted | OK |
+| ACP `hasOwnCredentials` | Not emitted | PLANNED |
+| MissingProvider QuestionView kind | Not live | PLANNED |
+| Exhaustive `LocalQuestionKind` consumer | `interactions.rs` match exists | OK |
+| `AppCtx` auth snapshot | No provider_auth field yet | PLANNED |
+| `model_switch_gate.rs` / `p6_` tests | Not present yet | PLANNED |
+| Real MvpAgent ACP harness patterns | `session_load_perf`, `git_contention_e2e` | OK |
+| Named history/cancel observation API (Plan 05) | No concrete symbol selected | MISSING |
+| `switch_changes_next_sample_route` | Pure routing test only | OK |
+
+### Residual checker / test executability notes
+
+- Cargo tests not executed (read-only review; target lock writes). Symbols verified with `rg`/reads.
+- No `p6_` tests or `model_switch_gate.rs` yet — expected pre-execute RED.
+- Documented cargo forms are syntactically valid; VALIDATION has a good per-filter discover helper.
+- Plan 04 Task 2 `&&`/`||` masking defect; Plan 06 Task 2 aggregate-only discovery; Plan 05 history/in-flight still need concrete observables.
+
+### Scope creep check
+
+No Phase 7 or Phase 8 scope creep. Provider-status polling, `bum login` copy, and model-picker metadata are necessary Phase 6 work.
+
+### Recommended plan edits before execute
+
+1. Add explicit startup/login/logout/focus/manual refresh trigger ownership + tests to Plan 04 (close H3).
+2. Serialize Plans 02 and 04, or move shared Effect/TaskResult definitions into one prerequisite plan.
+3. Carry `persist_default` through `DeferredModelSwitch`.
+4. Pin and test one bounded external-login polling/focus contract, including stale-generation handling.
+5. Apply `needs login` to settings DynamicEnum picker or amend UI-SPEC.
+6. Replace Plan 05 fallback observables with named history + paced real-turn non-cancel assertions.
+7. Make Plan 06 execute independent discovery asserts for every required subgroup.
+8. Fix Plan 04 Task 2 verify masking.
+
+### Finding counts (cycle 2)
+
+- HIGH: 1
+- MEDIUM: 6
+- LOW: 1
+- cycle1_high_still_open: 1 (H3 partial)
+
+---
+
+## Synthesis (orchestrator) — Cycle 2
+
+**Overall:** Cycle 2 **FAIL** — replan closed H1 (transactional switch) and H2 (external CLI deferred via status refresh/poll/focus). H3 producer shape is planned but **refresh trigger ownership** is not task-wired, so badge cache can stay false/stale after real auth lifecycle events. Six new residual MEDIUMs + one LOW remain actionable in plans.
+
+### Cycle-1 HIGH disposition
+
+| # | Topic | Cycle 2 |
+|---|--------|---------|
+| H1 | Transactional switch / no optimistic current | **RESOLVED** in 06-02 |
+| H2 | External CLI → deferred apply | **RESOLVED** in 06-03 |
+| H3 | AuthMeta dual-slot usable producer | **PARTIAL** — producer + effect planned; lifecycle emission ownership still **HIGH** |
+
+### Unresolved HIGH (cycle 2)
+
+1. **Badge-cache refresh triggers unowned (06-04, residual of H3)** — AuthMeta dual usable fields + `RefreshProviderAuthStatus` are planned, but no executable task wires startup / login (`AuthComplete` / `apply_auth_meta` consumers), logout, non-deferred focus, or manual refresh emission surfaces (`actions.rs`, task_result, auth dispatch, event_loop). Plan 03 only consumes refresh while deferred is pending. Without this, badges stay default-false after real dual-login/logout.
+
+### Unresolved actionable Non-HIGH (not yet fully in PLAN tasks)
+
+1. **[M] `persist_default` on deferred struct (02/03)** — no-session settings stash loses default-persist intent when Plan 03 reshapes deferred.
+2. **[M] External-login scheduling E2E test (03)** — pin poll/focus emission + generation/cancel; not only injected TaskResult.
+3. **[M] Same-wave `effects/mod.rs` (+ undeclared `actions.rs`) conflict (02 ∥ 04)** — serialize or single-owner shared Effect contract.
+4. **[M] Settings DynamicEnum badge vs UI-SPEC (04)** — optional in plan; required in UI inventory.
+5. **[M] Plan 05 concrete history/mid-turn observables** — still allows lightest/code-path substitutes.
+6. **[M] Plan 06 Task 2 per-group discovery** — aggregate `p6_` only in verify block.
+7. **[L] Plan 04 Task 2 verify `||` masks pager failure.**
+
+### Fully incorporated cycle-1 items (do not re-count)
+
+- Shell apply harness; interactions.rs; provider-aware deferred; BYOK badge meta; AppCtx churn; provider parse; wave table alignment; unique `p6_` naming + VALIDATION discovery pattern (content — Plan 06 execute verify still weak).
+
+### Criteria checklist (cycle 2)
+
+| Criterion | Result |
+|-----------|--------|
+| Shell gate before prepare/SetSessionModel/ModelChanged | OK planned (01 PASS) |
+| Usable creds both xai + codex | OK planned via `store_usable` |
+| BYOK / `has_own_credentials` | Shell + badge suppress planned |
+| Typed MISSING_PROVIDER ≠ IncompatibleAgent | OK planned |
+| QuestionView + no optimistic current | **H1 RESOLVED** (transactional 02) |
+| deferred after Login now + external CLI | **H2 RESOLVED** (03 contract); scheduling test residual MEDIUM |
+| Dual-slot usable producer + refresh | **H3 PARTIAL** — producer OK; trigger ownership HIGH |
+| Badge does not hide models | OK planned |
+| Test commands / discovery | Mostly OK; 04 mask + 06 aggregate residual |
+| Threat models | Adequate; poll generation residual |
+| Hallucinated symbols | Core OK; planned symbols marked PLANNED |
+| Phase 7/8 scope creep | None |
+| Same-wave file ownership | **MEDIUM** 02/04 effects overlap |
+
+### Next step
+
+Replan focusing on: (1) close H3 with explicit refresh-trigger tasks/files/tests on 06-04, (2) wave-2 Effect ownership, (3) `persist_default` on deferred, (4) remaining MEDIUM/LOW list above — then cycle 3 review.
