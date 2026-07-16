@@ -153,12 +153,12 @@ Plans:
 **Plans**: 6 plans
 
 Plans:
-- [ ] 06-01-PLAN.md — Shell typed MODEL_SWITCH_MISSING_PROVIDER + authoritative gate in model_switch::apply
-- [ ] 06-02-PLAN.md — Pager MissingProvider QuestionView + no optimistic current + Keep current
-- [ ] 06-03-PLAN.md — Login now deferred_model_switch + AuthComplete auto-retry
-- [ ] 06-04-PLAN.md — Dual-slot usable cache + picker needs login badge (full mixed catalog)
-- [ ] 06-05-PLAN.md — Dual-login free Grok↔GPT switch + BYOK/history/mid-turn proofs
-- [ ] 06-06-PLAN.md — Phase validation map + aggregate cargo gate
+- [ ] 06-01-PLAN.md — Shell typed MODEL_SWITCH_MISSING_PROVIDER + apply gate + session side-effect harness
+- [ ] 06-02-PLAN.md — QuestionView + transactional default switch (no optimistic current/persist)
+- [ ] 06-03-PLAN.md — Provider-aware deferred + AuthComplete + external CLI status refresh retry
+- [ ] 06-04-PLAN.md — AuthMeta dual-slot usable producer + needs login badge + BYOK suppress
+- [ ] 06-05-PLAN.md — Dual-login free switch + history/mid-turn session harness proofs
+- [ ] 06-06-PLAN.md — Validation map + phase gate with p6_ discovery asserts
 
 **UI hint**: yes
 

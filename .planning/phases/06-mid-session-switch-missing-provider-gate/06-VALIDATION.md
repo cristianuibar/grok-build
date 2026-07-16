@@ -6,6 +6,7 @@ nyquist_compliant: true
 wave_0_complete: false
 created: 2026-07-17
 updated: 2026-07-17
+review_cycle: 1
 ---
 
 # Phase 6 — Validation Strategy
@@ -17,7 +18,10 @@ updated: 2026-07-17
 >
 > **Authority:** shell `model_switch::apply` is the single missing-provider gate (Plan 01).
 > Pager QuestionView + deferred login (Plans 02–03) and picker badge (Plan 04) are UX halves.
-> Free dual-provider switch proofs live in Plan 05 (`provider_routing`).
+> Free dual-provider switch proofs live in Plan 05 (`model_switch_gate` session harness).
+>
+> **Review cycle 1:** unique `p6_` test prefixes + discovery assert ≥1 match before each
+> filtered execute group (prevents cargo false-green on empty filters).
 >
 > **Cargo verify hygiene:** one TESTNAME filter per `cargo test`; never bare `| tail` without
 > `set -o pipefail`; chain with `&&` only. Prefer `-p xai-grok-shell` / `-p xai-grok-pager`
@@ -31,9 +35,9 @@ updated: 2026-07-17
 |----------|-------|
 | **Framework** | Cargo built-in `cargo test` (shell integration + pager unit/dispatch tests) |
 | **Config file** | none global — per-crate; `rust-toolchain.toml` (1.92.0) |
-| **Quick run command** | `cargo test -p xai-grok-shell --test provider_routing missing_provider -- --nocapture` |
+| **Quick run command** | `cargo test -p xai-grok-shell --test model_switch_gate p6_missing_provider -- --nocapture` |
 | **Full suite command** | See Phase gate aggregate below |
-| **Estimated runtime** | ~60–180 seconds after first compile (shell routing + pager dispatch) |
+| **Estimated runtime** | ~60–180 seconds after first compile (shell gate + pager dispatch) |
 
 ### Cargo verify hygiene (locked)
 
@@ -43,6 +47,8 @@ updated: 2026-07-17
 | Multi-test coverage | Chain single-filter invocations with `&&` |
 | Exit status | Prefer **no pipe** on cargo |
 | Chains | Use `&&` only — never `;` that masks failures |
+| Discovery assert | Before each group: `n=$(cargo test … -- --list \| grep -c 'p6_…' \|\| true); test "$n" -ge 1` |
+| Unique prefixes | All new Phase 6 tests use `p6_` prefix (avoid `auth_complete`, `needs_login`, `deferred_model_switch` alone) |
 | Forbidden gates | Unfiltered `cargo test -p xai-grok-shell --lib` |
 | Fixtures only | Fake tokens / tempfile `auth.json`; no live OAuth secrets |
 
@@ -50,11 +56,12 @@ updated: 2026-07-17
 
 | Allowed | Forbidden |
 |---------|-----------|
-| `cargo test -p xai-grok-shell --test provider_routing <filter>` | Unfiltered shell `--lib` as phase gate |
-| `cargo test -p xai-grok-shell <narrow unit filter>` | Live ChatGPT / xAI login as required gate |
-| `cargo test -p xai-grok-pager <dispatch/slash filter>` | Phase 7 subagent orchestration tests as Phase 6 proof |
+| `cargo test -p xai-grok-shell --test model_switch_gate <p6_ filter>` | Unfiltered shell `--lib` as phase gate |
+| `cargo test -p xai-grok-shell --test provider_routing switch_changes_next_sample_route` | Treating pure routing as history/mid-turn proof |
+| `cargo test -p xai-grok-pager p6_<filter>` | Live ChatGPT / xAI login as required gate |
 | Explicit auth file paths | Stock `~/.codex` / `~/.grok` credential import |
 | Dual-slot fixture tokens | Collapsing MissingProvider into IncompatibleAgent |
+| Session/MvpAgent apply path | provider_routing-only for MOD-06 gate proofs |
 
 ---
 
@@ -62,30 +69,33 @@ updated: 2026-07-17
 
 | Req ID | Behavior | Plan | Automated Command | File Exists? |
 |--------|----------|------|-------------------|--------------|
-| MOD-06 | Missing Codex blocks switch to GPT model | 01 | `cargo test -p xai-grok-shell --test provider_routing missing_provider -- --nocapture` | ❌ until Plan 01 |
-| MOD-06 | Typed ACP error code + suggestion round-trip | 01 | `cargo test -p xai-grok-shell model_switch_missing_provider_error -- --nocapture` | ❌ until Plan 01 |
-| MOD-06 | Refreshable token is usable (not blocked) | 01 | `cargo test -p xai-grok-shell --test provider_routing missing_provider -- --nocapture` | ❌ until Plan 01 |
-| MOD-06 | BYOK `has_own_credentials` skips OAuth-slot gate | 01 / 05 | `cargo test -p xai-grok-shell --test provider_routing byok -- --nocapture` | ❌ until Plan 01/05 |
-| MOD-06 | SwitchModelComplete → QuestionView MissingProviderLogin | 02 | `cargo test -p xai-grok-pager missing_provider -- --nocapture` | ❌ until Plan 02 |
-| MOD-06 | No optimistic `models.current` on MissingProvider | 02 | `cargo test -p xai-grok-pager missing_provider -- --nocapture` | ❌ until Plan 02 |
-| MOD-06 | Keep current dismisses; stays on previous model | 02 | `cargo test -p xai-grok-pager keep_current -- --nocapture` | ❌ until Plan 02 |
-| MOD-06 | Login now stashes `deferred_model_switch` | 03 | `cargo test -p xai-grok-pager login_now -- --nocapture` | ❌ until Plan 03 |
-| MOD-06 | AuthComplete applies deferred switch retry | 03 | `cargo test -p xai-grok-pager auth_complete -- --nocapture` | ❌ until Plan 03 |
-| MOD-06 | Full mixed catalog + `needs login` badge | 04 | `cargo test -p xai-grok-pager needs_login -- --nocapture` | ❌ until Plan 04 |
-| MOD-06 | Badge usable semantics (refreshable = no badge) | 04 | `cargo test -p xai-grok-pager build_model_items -- --nocapture` | ❌ until Plan 04 |
-| MOD-03 | Successful switch updates next sample route | 05 / Phase 4 | `cargo test -p xai-grok-shell --test provider_routing switch_changes_next_sample_route -- --nocapture` | ✅ |
-| MOD-03 | Dual-login free Grok↔GPT switch | 05 | `cargo test -p xai-grok-shell --test provider_routing dual_login -- --nocapture` | ❌ until Plan 05 |
-| MOD-03 | Same-provider switch no missing-provider friction | 05 | `cargo test -p xai-grok-shell --test provider_routing same_provider -- --nocapture` | ❌ until Plan 05 |
-| MOD-03 / D-06 | History preserved + next-turn-only switch | 05 | `cargo test -p xai-grok-shell --test provider_routing history -- --nocapture` | ❌ until Plan 05 |
+| MOD-06 | Missing Codex blocks switch to GPT (apply path) | 01 | `cargo test -p xai-grok-shell --test model_switch_gate p6_missing_provider -- --nocapture` | ❌ until Plan 01 |
+| MOD-06 | Typed ACP error code + suggestion round-trip | 01 | `cargo test -p xai-grok-shell p6_model_switch_missing_provider_error -- --nocapture` | ❌ until Plan 01 |
+| MOD-06 | Apply blocked → no side effects | 01 | `cargo test -p xai-grok-shell --test model_switch_gate p6_missing_provider_apply_no_side_effects -- --nocapture` | ❌ until Plan 01 |
+| MOD-06 | Refreshable token is usable (not blocked) | 01 | `cargo test -p xai-grok-shell --test model_switch_gate p6_missing_provider -- --nocapture` | ❌ until Plan 01 |
+| MOD-06 | BYOK `has_own_credentials` skips OAuth-slot gate | 01 / 05 | `cargo test -p xai-grok-shell --test model_switch_gate p6_byok -- --nocapture` | ❌ until Plan 01/05 |
+| MOD-06 | SwitchModelComplete → QuestionView MissingProviderLogin | 02 | `cargo test -p xai-grok-pager p6_missing_provider -- --nocapture` | ❌ until Plan 02 |
+| MOD-06 | Transactional default — no optimistic current/persist | 02 | `cargo test -p xai-grok-pager p6_transactional_default -- --nocapture` | ❌ until Plan 02 |
+| MOD-06 | Keep current dismisses; stays on previous model | 02 | `cargo test -p xai-grok-pager p6_keep_current -- --nocapture` | ❌ until Plan 02 |
+| MOD-06 | Login now stashes provider-aware deferred | 03 | `cargo test -p xai-grok-pager p6_login_now -- --nocapture` | ❌ until Plan 03 |
+| MOD-06 | AuthComplete applies deferred when required provider usable | 03 | `cargo test -p xai-grok-pager p6_auth_ -- --nocapture` | ❌ until Plan 03 |
+| MOD-06 | External CLI status refresh applies deferred | 03 | `cargo test -p xai-grok-pager p6_external_cli -- --nocapture` | ❌ until Plan 03 |
+| MOD-06 | Full mixed catalog + `needs login` badge | 04 | `cargo test -p xai-grok-pager p6_needs_login -- --nocapture` | ❌ until Plan 04 |
+| MOD-06 | AuthMeta dual-slot usable + AppView cache | 04 | `cargo test -p xai-grok-pager p6_provider_auth -- --nocapture` | ❌ until Plan 04 |
+| MOD-06 | BYOK suppresses needs-login badge | 04 | `cargo test -p xai-grok-pager p6_needs_login_byok -- --nocapture` | ❌ until Plan 04 |
+| MOD-03 | Successful switch updates next sample route (pure) | 05 / Phase 4 | `cargo test -p xai-grok-shell --test provider_routing switch_changes_next_sample_route -- --nocapture` | ✅ |
+| MOD-03 | Dual-login free Grok↔GPT switch (apply) | 05 | `cargo test -p xai-grok-shell --test model_switch_gate p6_dual_login -- --nocapture` | ❌ until Plan 05 |
+| MOD-03 | Same-provider switch no missing-provider friction | 05 | `cargo test -p xai-grok-shell --test model_switch_gate p6_same_provider -- --nocapture` | ❌ until Plan 05 |
+| MOD-03 / D-06 | History preserved + mid-turn non-cancel | 05 | `cargo test -p xai-grok-shell --test model_switch_gate p6_history -- --nocapture` + `p6_mid_turn` | ❌ until Plan 05 |
 | MOD-06 / D-07 | IncompatibleAgent path not collapsed | 02 / 06 | `cargo test -p xai-grok-pager incompatible_agent -- --nocapture` | ✅ pattern |
 
 ### ROADMAP success criteria map
 
 | Criterion | Proof |
 |-----------|--------|
-| 1. Switch mid-session anytime; next turn uses new model | Plan 05 free switch + `switch_changes_next_sample_route`; Plan 03 success scrollback reuse |
-| 2. Missing credentials block switch + login prompt | Plans 01–03 (shell gate + QuestionView + deferred login) |
-| 3. Both providers logged in → free Grok↔GPT in one session | Plan 05 `dual_login` / `free_switch` |
+| 1. Switch mid-session anytime; next turn uses new model | Plan 05 `p6_dual_login` + next-sample assert; pure `switch_changes_next_sample_route`; Plan 03 success scrollback reuse |
+| 2. Missing credentials block switch + login prompt | Plans 01–03 (shell gate + transactional QuestionView + deferred + external CLI) |
+| 3. Both providers logged in → free Grok↔GPT in one session | Plan 05 `p6_dual_login` on apply harness |
 
 ### Explicit exclusions
 
@@ -100,21 +110,23 @@ updated: 2026-07-17
 
 | Wave | Plans | Per-task verify | Sampling rule |
 |------|-------|-----------------|---------------|
-| 1 | 01 | shell unit + `provider_routing missing_provider` | 2/2 automated |
-| 2 | 02, 05 | pager missing_provider / keep_current; shell dual_login | ≥2/3 per 3-task window |
-| 3 | 03, 04 | login_now / auth_complete; needs_login / build_model_items | 4/4 automated |
-| 4 | 06 | VALIDATION present + aggregate cargo gate | docs + green filters |
+| 1 | 01 | shell unit + `model_switch_gate p6_missing_provider` | 2/2 automated |
+| 2 | 02, 04, 05 | pager p6_missing_provider / p6_transactional_default; shell p6_dual_login; pager p6_needs_login | ≥2/3 per 3-task window |
+| 3 | 03 | p6_login_now / p6_auth_ / p6_external_cli | 2/2 automated |
+| 4 | 06 | VALIDATION present + aggregate cargo gate with discovery asserts | docs + green filters |
+
+> **Wave alignment (review cycle 1):** Plan 04 is **wave 2** (parallel with 02 and 05); Plan 03 is **wave 3** (depends on 02 + 04). Do not list 04 under wave 3.
 
 ---
 
 ## Wave 0 gaps (closed by plan RED tasks, not a separate plan)
 
-- [ ] Shell unit: pure provider_slot_usable decision table + ModelSwitchMissingProviderError serde (Plan 01 T1)
-- [ ] Shell integration: apply returns missing-provider when Codex empty (Plan 01 T2)
-- [ ] Pager: SwitchModelError::MissingProvider + QuestionView (Plan 02)
-- [ ] Pager: deferred retry after simulated AuthComplete (Plan 03)
-- [ ] Pager: build_model_items badge (Plan 04)
-- [ ] Shell: dual free switch + history/BYOK (Plan 05)
+- [ ] Shell unit: pure provider_slot_usable + ModelSwitchMissingProviderError serde (Plan 01 T1)
+- [ ] Shell integration: apply returns missing-provider + no side effects (Plan 01 T2 — `model_switch_gate`)
+- [ ] Pager: SwitchModelError::MissingProvider + transactional default + QuestionView (Plan 02)
+- [ ] Pager: AuthMeta dual-slot + badge + BYOK suppress (Plan 04)
+- [ ] Shell: dual free switch + history/mid-turn session proofs (Plan 05)
+- [ ] Pager: deferred retry after AuthComplete + external CLI refresh (Plan 03)
 - [ ] IncompatibleAgent regression still green (Plan 02 / 06)
 
 ---
@@ -122,14 +134,34 @@ updated: 2026-07-17
 ## Phase gate aggregate (Plan 06)
 
 ```bash
-cargo test -p xai-grok-shell --test provider_routing switch_changes_next_sample_route -- --nocapture && \
-cargo test -p xai-grok-shell missing_provider -- --nocapture && \
-cargo test -p xai-grok-shell --test provider_routing dual_login -- --nocapture && \
-cargo test -p xai-grok-pager missing_provider -- --nocapture && \
-cargo test -p xai-grok-pager keep_current -- --nocapture && \
-cargo test -p xai-grok-pager login_now -- --nocapture && \
-cargo test -p xai-grok-pager auth_complete -- --nocapture && \
-cargo test -p xai-grok-pager needs_login -- --nocapture && \
+set -euo pipefail
+
+discover() {
+  local pkg="$1" filter="$2"; shift 2
+  local extra=("$@")
+  local n
+  n=$(cargo test -p "$pkg" "${extra[@]}" -- --list 2>/dev/null | grep -c "$filter" || true)
+  test "$n" -ge 1
+  cargo test -p "$pkg" "${extra[@]}" "$filter" -- --nocapture
+}
+
+discover xai-grok-shell p6_missing_provider --test model_switch_gate
+discover xai-grok-shell p6_dual_login --test model_switch_gate
+discover xai-grok-shell p6_byok --test model_switch_gate
+discover xai-grok-shell p6_history --test model_switch_gate
+discover xai-grok-shell p6_mid_turn --test model_switch_gate
+cargo test -p xai-grok-shell --test provider_routing switch_changes_next_sample_route -- --nocapture
+discover xai-grok-shell p6_model_switch_missing_provider
+
+discover xai-grok-pager p6_missing_provider
+discover xai-grok-pager p6_transactional_default
+discover xai-grok-pager p6_keep_current
+discover xai-grok-pager p6_login_now
+discover xai-grok-pager p6_deferred
+discover xai-grok-pager p6_auth_
+discover xai-grok-pager p6_external_cli
+discover xai-grok-pager p6_needs_login
+discover xai-grok-pager p6_provider_auth
 cargo test -p xai-grok-pager incompatible_agent -- --nocapture
 ```
 
@@ -142,7 +174,9 @@ cargo test -p xai-grok-pager incompatible_agent -- --nocapture
 
 | Threat | Mitigation proven by |
 |--------|----------------------|
-| Silent mid-turn 401 as primary UX | Switch-time shell gate (missing_provider filters) |
-| Client-spoofed provider on error | Provider from catalog `ModelEntry.info.provider` only |
+| Silent mid-turn 401 as primary UX | Switch-time shell gate (p6_missing_provider filters) |
+| Client-spoofed provider on error | Provider from catalog `ModelEntry.info.provider` only; pager parses xai\|codex only |
 | Token leak in error/modal | Suggestion is CLI only; structured fields; sanitize Other |
-| Cross-slot credential use | Phase 4 route + dual free-switch asserts target slot |
+| Optimistic default persist | p6_transactional_default |
+| Cross-slot credential use | Phase 4 route + p6_dual_login asserts target slot |
+| Empty filter false green | Discovery assert ≥1 per p6_ group |
