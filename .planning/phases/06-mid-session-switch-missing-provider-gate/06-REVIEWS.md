@@ -631,3 +631,18 @@ None.
 Optional micro-replan of 02/03 for `persist_default` on QuestionView/answer/deferred Login now + one E2E `p6_` test; otherwise start `/gsd-execute-phase 6` with that residual as a hard execute acceptance check.
 
 **Counts:** HIGH 0 · MEDIUM 1 · LOW 0 · cycle1/2 high still open 0 · CURRENT_ACTIONABLE 1
+
+---
+
+## Micro-replan note — Cycle 3 residual MEDIUM incorporated
+
+**Date:** 2026-07-17  
+**Scope:** Plans `06-02-PLAN.md` + `06-03-PLAN.md` only.
+
+**Finding closed in plan text:** Live-session settings `persist_default` was dropped across MissingProvider QuestionView → Login now because kind/answer carried only model/effort/provider and Login now defaulted deferred to `persist_default: false` unless a no-session stash already existed.
+
+**Preferred contract now planned:**
+1. **Plan 02** — On `SwitchModelComplete(Err MissingProvider)`, stash full `DeferredModelSwitch { model_id, effort, required_provider: Some(...), persist_default }` from the complete intent, then open QuestionView. Session-only switches stash `persist_default: false`; settings path stashes `true`. Keep current clears the stash (zero-persist tests).
+2. **Plan 03** — Login now **consumes** the gate-open stash and must not overwrite `persist_default` to false; post-login/status-refresh apply re-issues `Effect::SwitchModel` with deferred’s flag. E2E unit: live-session settings → block → Login now → usable → retry persists default once; Keep current zero-persist.
+
+After this micro-replan, the cycle-3 MEDIUM is **planned** (execute-ready). Residual actionable count for execute: treat as closed in plan space; verify via `p6_missing_provider_live_session_settings_*`, `p6_login_now_preserves_gate_open_persist_default_true`, `p6_live_session_settings_login_now_retry_persists_default`, `p6_live_session_settings_keep_current_zero_persist` / `p6_keep_current_after_settings_*`.
