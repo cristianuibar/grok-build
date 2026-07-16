@@ -551,21 +551,24 @@ impl SamplingClient {
         self.defaults.api_backend.clone()
     }
 
-    /// True when construction-time headers hold a nonblank static credential.
-    fn has_usable_static_auth(&self) -> bool {
-        match self.defaults.auth_scheme {
-            AuthScheme::XApiKey => self
-                .default_headers
+    /// True when `headers` hold a nonblank credential for `scheme`.
+    fn headers_have_usable_auth(headers: &HeaderMap, scheme: AuthScheme) -> bool {
+        match scheme {
+            AuthScheme::XApiKey => headers
                 .get(HeaderName::from_static("x-api-key"))
                 .and_then(|v| v.to_str().ok())
                 .is_some_and(|s| !s.trim().is_empty()),
-            AuthScheme::Bearer => self
-                .default_headers
+            AuthScheme::Bearer => headers
                 .get(AUTHORIZATION)
                 .and_then(|v| v.to_str().ok())
                 .and_then(|s| s.strip_prefix("Bearer ").or(Some(s)))
                 .is_some_and(|s| !s.trim().is_empty()),
         }
+    }
+
+    /// True when construction-time headers hold a nonblank static credential.
+    fn has_usable_static_auth(&self) -> bool {
+        Self::headers_have_usable_auth(&self.default_headers, self.defaults.auth_scheme)
     }
 
     /// True when a live resolver yields a nonblank bearer.
@@ -595,6 +598,8 @@ impl SamplingClient {
     ///
     /// Fails closed with [`SamplingError::Auth`] when neither a nonblank
     /// static key nor a nonblank live bearer is available (no HTTP send).
+    /// Live bearer values that cannot form a valid HTTP header value also
+    /// fail closed — never strip static auth and send unauthenticated.
     fn post(&self, url: impl reqwest::IntoUrl) -> Result<reqwest::RequestBuilder> {
         self.ensure_usable_auth_material()?;
 
@@ -607,18 +612,32 @@ impl SamplingClient {
                 match self.defaults.auth_scheme {
                     AuthScheme::XApiKey => {
                         headers.remove(AUTHORIZATION);
-                        if let Ok(v) = HeaderValue::from_str(fresh) {
-                            headers.insert(HeaderName::from_static("x-api-key"), v);
-                        }
+                        let v = HeaderValue::from_str(fresh).map_err(|_| {
+                            SamplingError::Auth(
+                                "Invalid live bearer: cannot convert to HTTP header".into(),
+                            )
+                        })?;
+                        headers.insert(HeaderName::from_static("x-api-key"), v);
                     }
                     AuthScheme::Bearer => {
                         headers.remove(HeaderName::from_static("x-api-key"));
-                        if let Ok(v) = HeaderValue::from_str(&format!("Bearer {fresh}")) {
-                            headers.insert(AUTHORIZATION, v);
-                        }
+                        let v = HeaderValue::from_str(&format!("Bearer {fresh}")).map_err(|_| {
+                            SamplingError::Auth(
+                                "Invalid live bearer: cannot convert to Authorization header"
+                                    .into(),
+                            )
+                        })?;
+                        headers.insert(AUTHORIZATION, v);
                     }
                 }
             }
+        }
+        // Defense in depth (D-11): never send if request headers still lack
+        // usable material after applying the live resolver.
+        if !Self::headers_have_usable_auth(&headers, self.defaults.auth_scheme) {
+            return Err(SamplingError::Auth(
+                "Missing credentials for sampling request: no usable api_key or bearer".to_string(),
+            ));
         }
         {
             let auth_prefix = headers
@@ -2455,6 +2474,33 @@ mod tests {
             .and_then(|v| v.to_str().ok());
         assert_eq!(auth, Some("Bearer fresh-bearer"));
         assert!(request.headers().get("x-api-key").is_none());
+    }
+
+    /// D-11: nonblank live bearer that cannot form a valid HTTP header value
+    /// must fail closed as Auth — never strip static auth and send bare HTTP.
+    #[test]
+    fn invalid_live_bearer_header_value_fail_closed() {
+        // Control characters are illegal in HeaderValue::from_str.
+        let cfg = SamplerConfig {
+            api_key: None,
+            api_backend: ApiBackend::Responses,
+            auth_scheme: AuthScheme::Bearer,
+            bearer_resolver: Some(std::sync::Arc::new(StaticBearerResolver("bad\ntoken"))),
+            ..minimal_config()
+        };
+        let client = SamplingClient::new(cfg).expect("client should build");
+        let err = client
+            .post("https://example.test/v1/responses")
+            .expect_err("invalid live bearer must not build a request");
+        match err {
+            SamplingError::Auth(msg) => {
+                assert!(
+                    msg.contains("Invalid live bearer") || msg.contains("Missing credentials"),
+                    "expected Auth about invalid/missing bearer, got: {msg}"
+                );
+            }
+            other => panic!("expected SamplingError::Auth, got {other:?}"),
+        }
     }
 
     /// Regression: when `api_key` (which seeds `default_headers` with an
