@@ -33,7 +33,14 @@ Decimal phases appear between their surrounding integers in numeric order.
   1. User can invoke the primary CLI as `bum` (not `grok` / `xai-grok-pager` as the shipped command name)
   2. Fresh run creates/uses config, auth, and session paths under `~/.bum` (or `BUM_HOME`), not `~/.grok` or stock Codex paths
   3. Running with a temporary home shows no writes under `~/.grok` / `~/.codex` for product state
-**Plans**: TBD
+**Plans**: 5 plans
+
+Plans:
+- [ ] 01-01-PLAN.md — SoT home cutover (`~/.bum` / `BUM_HOME`) + path display labels
+- [ ] 01-02-PLAN.md — Twin resolver, managed bin leaf, workspace fallback lockstep
+- [ ] 01-03-PLAN.md — Ship `[[bin]]` as `bum` + harness binary resolution
+- [ ] 01-04-PLAN.md — Test sandbox env cutover to `BUM_HOME`
+- [ ] 01-05-PLAN.md — Legacy stock-home read gate + isolation proof integration test
 
 ### Phase 2: Multi-slot credentials & xAI OAuth
 **Goal**: Auth storage is provider-scoped so dual OAuth is safe; xAI login still works end-to-end under bum
@@ -139,7 +146,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 →
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Product identity & isolated home | 0/TBD | Not started | - |
+| 1. Product identity & isolated home | 0/5 | Not started | - |
 | 2. Multi-slot credentials & xAI OAuth | 0/TBD | Not started | - |
 | 3. Model catalog & GPT-5.6 entries | 0/TBD | Not started | - |
 | 4. Provider-aware request routing | 0/TBD | Not started | - |
