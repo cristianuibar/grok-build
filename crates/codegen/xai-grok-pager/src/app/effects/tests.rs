@@ -709,7 +709,7 @@ fn spawn_fake_acp_agent(
 fn setup_grok_home_in_tempdir() -> tempfile::TempDir {
     let tmp = tempfile::tempdir().expect("tempdir creation");
     unsafe {
-        std::env::set_var("GROK_HOME", tmp.path());
+        std::env::set_var("BUM_HOME", tmp.path());
     }
     tmp
 }

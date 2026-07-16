@@ -1,19 +1,19 @@
 //! End-to-end tests for the `--debug` firehose file logging.
 //!
 //! Runs the built grok binary against the mock inference server with a
-//! caller-owned `$GROK_HOME`, then inspects `~/.grok/debug/`:
+//! caller-owned `$BUM_HOME`, then inspects `~/.bum/debug/`:
 //! - the `--debug` FLAG drives the firehose end to end through the master switch:
 //!   a live `agent` session launched with `--debug` writes a non-empty per-session
-//!   `~/.grok/debug/<sessionId>.txt` with first-party content, and does NOT enable
+//!   `~/.bum/debug/<sessionId>.txt` with first-party content, and does NOT enable
 //!   sampling/instrumentation. Regression for the master switch having bundled
 //!   `GROK_LOG_SAMPLING`/`GROK_INSTRUMENTATION`, whose global `TargetFilterLayer`
 //!   suppressed every other target and starved the firehose.
 //! - `--debug` (headless) runs cleanly without crashing arg-parsing (smoke).
 //! - no `--debug` writes no firehose files.
 //! - a live `agent` session (explicit `GROK_DEBUG_LOG=1`) writes a per-session
-//!   `~/.grok/debug/<sessionId>.txt` with real first-party content + `latest.txt`.
+//!   `~/.bum/debug/<sessionId>.txt` with real first-party content + `latest.txt`.
 //! - `--debug-file <path>` writes one explicit file and bypasses per-session
-//!   routing entirely (no `~/.grok/debug/` files).
+//!   routing entirely (no `~/.bum/debug/` files).
 //! - `GROK_LOG_FILE=<path>` writes that explicit file (back-compat single file).
 //!
 //! Per-session content is asserted via the live `agent`, not the headless run:
@@ -46,12 +46,12 @@ where
     tokio::task::LocalSet::new().run_until(f()).await;
 }
 
-/// The per-session firehose directory under a pinned `$GROK_HOME`.
+/// The per-session firehose directory under a pinned `$BUM_HOME`.
 fn debug_dir(home: &Path) -> PathBuf {
-    home.join(".grok").join("debug")
+    home.join(".bum").join("debug")
 }
 
-/// List firehose `*.txt` files under `~/.grok/debug` (excluding the `latest.txt`
+/// List firehose `*.txt` files under `~/.bum/debug` (excluding the `latest.txt`
 /// symlink). Empty if the dir is missing.
 fn firehose_txt_files(home: &Path) -> Vec<PathBuf> {
     let Ok(entries) = std::fs::read_dir(debug_dir(home)) else {
@@ -68,8 +68,8 @@ fn firehose_txt_files(home: &Path) -> Vec<PathBuf> {
         .collect()
 }
 
-/// Build a headless `grok -p` command with a pinned `$GROK_HOME` so the firehose
-/// lands under `<home>/.grok/debug`. Firehose env knobs are cleared so the test
+/// Build a headless `grok -p` command with a pinned `$BUM_HOME` so the firehose
+/// lands under `<home>/.bum/debug`. Firehose env knobs are cleared so the test
 /// is hermetic regardless of the developer's shell.
 fn debug_cmd(
     server: &MockInferenceServer,
@@ -89,7 +89,7 @@ fn debug_cmd(
         .kill_on_drop(true);
     xai_grok_test_support::env::test_env_cmd_tokio(&mut cmd, &server.url(), home);
     // Pin the home location and drop inherited firehose toggles for determinism.
-    cmd.env("GROK_HOME", home.join(".grok"));
+    cmd.env("BUM_HOME", home.join(".bum"));
     cmd.env_remove("GROK_DEBUG_LOG");
     cmd.env_remove("GROK_LOG_FILE");
     cmd.env_remove("GROK_LOG_SAMPLING");
@@ -170,7 +170,7 @@ async fn no_debug_flag_writes_no_debug_dir() {
     );
 }
 
-/// A live `agent` session writes `~/.grok/debug/<sessionId>.txt` with real
+/// A live `agent` session writes `~/.bum/debug/<sessionId>.txt` with real
 /// first-party content, and points `latest.txt` at it. This is the same
 /// `init_tracing_simple("agent")` path the spawned leader uses, so it covers
 /// leader capture deterministically without a flaky detached process.
@@ -183,14 +183,14 @@ async fn agent_session_writes_named_session_file() {
             .expect("start mock server");
         let workdir = git_workdir();
         let home = TempDir::new().expect("create temp home");
-        let grok_home = home.path().join(".grok");
+        let grok_home = home.path().join(".bum");
         let grok_home_str = grok_home.to_string_lossy().into_owned();
 
         let client = GrokStdioClient::spawn_with_home_and_env(
             &server,
             workdir.path(),
             home,
-            &[("GROK_DEBUG_LOG", "1"), ("GROK_HOME", &grok_home_str)],
+            &[("GROK_DEBUG_LOG", "1"), ("BUM_HOME", &grok_home_str)],
         )
         .await;
         client.initialize_with_timeout().await;
@@ -204,7 +204,7 @@ async fn agent_session_writes_named_session_file() {
         read_session_firehose_when_ready(&session_file, &client).await;
 
         // `latest.txt` is a sibling symlink pointing at the just-opened session
-        // file, so `tail -f ~/.grok/debug/latest.txt` follows the live session.
+        // file, so `tail -f ~/.bum/debug/latest.txt` follows the live session.
         #[cfg(unix)]
         {
             let link = grok_home.join("debug").join("latest.txt");
@@ -232,7 +232,7 @@ async fn debug_flag_master_switch_enables_firehose() {
             .expect("start mock server");
         let workdir = git_workdir();
         let home = TempDir::new().expect("create temp home");
-        let grok_home = home.path().join(".grok");
+        let grok_home = home.path().join(".bum");
         let grok_home_str = grok_home.to_string_lossy().into_owned();
 
         // Drive `grok --debug agent stdio`: the master switch (which runs before
@@ -243,7 +243,7 @@ async fn debug_flag_master_switch_enables_firehose() {
             &server,
             workdir.path(),
             home,
-            &[("GROK_HOME", &grok_home_str)],
+            &[("BUM_HOME", &grok_home_str)],
             &["--debug"],
         )
         .await;
@@ -257,7 +257,7 @@ async fn debug_flag_master_switch_enables_firehose() {
 
         // Slimming guard: `--debug` must NOT enable sampling. The agent spawn
         // clears GROK_LOG_SAMPLING (hermetic), so the sampling layer stays off and
-        // `~/.grok/logs/sampling.jsonl` is never written — the `--debug`
+        // `~/.bum/logs/sampling.jsonl` is never written — the `--debug`
         // set-if-unset must not flip it on (the pre-fix code did, starving the
         // firehose). Instrumentation isn't checked: the harness pins
         // GROK_INSTRUMENTATION=disabled, so that assertion would be vacuous.
@@ -272,7 +272,7 @@ async fn debug_flag_master_switch_enables_firehose() {
 }
 
 /// `--debug-file <path>` writes one explicit file and bypasses per-session
-/// routing entirely (no `~/.grok/debug/` files created).
+/// routing entirely (no `~/.bum/debug/` files created).
 #[tokio::test]
 #[ignore] // requires pre-built binary; run with --ignored
 async fn debug_file_flag_writes_single_file_and_bypasses_routing() {

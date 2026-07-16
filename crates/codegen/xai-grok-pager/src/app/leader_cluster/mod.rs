@@ -10,13 +10,13 @@
 //! effects run through the real `effects::execute` (the same loop
 //! `event_loop::run` performs, minus the terminal).
 //!
-//! Env sandboxing follows this crate's `serial(GROK_HOME)` idiom; note
+//! Env sandboxing follows this crate's `serial(BUM_HOME)` idiom; note
 //! `grok_home()` is process-cached (OnceLock), so disk assertions always go
 //! through [`effective_grok_home`] rather than assuming the temp dir won.
 //!
 //! The scenarios are `#[ignore]`d in the shared lib test binary: the harness
 //! mutates process-global env (proxy URLs, `XAI_API_KEY`,
-//! `GROK_LEADER_SOCKET`, `GROK_HOME`) for a real agent's whole lifetime, and
+//! `GROK_LEADER_SOCKET`, `BUM_HOME`) for a real agent's whole lifetime, and
 //! in a several-thousand-test process that poisons concurrently-running tests
 //! (and `grok_home()`'s OnceLock is usually already pinned). Run on demand:
 //!
@@ -305,7 +305,7 @@ struct PagerLeaderCluster {
 }
 
 impl PagerLeaderCluster {
-    /// Stand up the cluster. Callers MUST be `#[serial_test::serial(GROK_HOME)]`
+    /// Stand up the cluster. Callers MUST be `#[serial_test::serial(BUM_HOME)]`
     /// (env mutation) and run inside a current-thread `LocalSet`.
     async fn start() -> Self {
         let _ = rustls::crypto::ring::default_provider().install_default();
@@ -316,7 +316,7 @@ impl PagerLeaderCluster {
         let sock_path = grok_home.path().join("leader-cluster.sock");
 
         let env = vec![
-            crate::test_util::EnvVarGuard::set("GROK_HOME", grok_home.path()),
+            crate::test_util::EnvVarGuard::set("BUM_HOME", grok_home.path()),
             crate::test_util::EnvVarGuard::set("GROK_CLI_CHAT_PROXY_BASE_URL", server.url()),
             crate::test_util::EnvVarGuard::set("GROK_XAI_API_BASE_URL", server.url()),
             crate::test_util::EnvVarGuard::set("XAI_API_KEY", "test-key-for-ci"),

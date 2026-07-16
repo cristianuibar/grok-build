@@ -17,3 +17,13 @@
 **Mitigation used in 01-02:** `cargo check -p xai-grok-shell --lib` (production) green; source inspection confirms `managed_grok_bin_name` returns `bum`/`bum.exe` and hard-coded test fixtures use that helper.
 
 **Not caused by:** 01-02 managed leaf rename or twin home work.
+
+**Reconfirmed during:** 01-04 Task 3 (`cargo test -p xai-grok-shell leader`) — same pre-existing lib-test break; product-home fixture cutover verified via shell **integration** tests (`test_config_update_isolation`, `test_mcp_permission_persistence`, `test_debug_logging` compile) and workspace lib filters instead.
+
+## Pre-existing: permission::resolution tests pick up host `~/.claude`
+
+**Found during:** 01-04 Task 3 (`cargo test -p xai-grok-workspace --lib permission::resolution`)
+
+**Issue:** Several resolution tests that do **not** isolate `HOME` can merge the developer’s real `~/.claude/settings*.json` (e.g. `discovery_with_no_settings_files`, `claude_only_returns_claude_settings_source` — expected 1 rule, got host merge). Product-home–isolated cases (`load_claude_env_*` with `BUM_HOME` + optional `HOME` guards) pass.
+
+**Not caused by:** BUM_HOME product-home setter cutover (those failing tests never set the product-home env key).

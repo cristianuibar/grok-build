@@ -145,7 +145,7 @@ pub fn small_good_artifact() -> Vec<u8> {
     b"#!/bin/sh\nexit 0\n".to_vec()
 }
 
-/// Backdate every file in `GROK_HOME/downloads` by ~2 hours.
+/// Backdate every file in `BUM_HOME/downloads` by ~2 hours.
 ///
 /// `cleanup_old_downloads` deliberately never deletes a freshly-written
 /// binary or temp file (it may belong to a concurrent in-flight install), so

@@ -1423,11 +1423,11 @@ mod tests {
     // how the caller binds the fixture's return.
     use crate::LockedTestEnv;
 
-    /// Point `GROK_HOME` at an isolated tempdir and register one grok-managed
+    /// Point `BUM_HOME` at an isolated tempdir and register one grok-managed
     /// worktree at `<home>/worktrees/repo/<name>` recording `source_repo` and
     /// `creation_mode`. The worktree dir is a PLAIN directory — NOT a git linked
     /// worktree — so only the registry can collapse it. Returns `(env, worktree
-    /// dir)`; the [`LockedTestEnv`] holds the lock and restores `GROK_HOME` on
+    /// dir)`; the [`LockedTestEnv`] holds the lock and restores `BUM_HOME` on
     /// drop (before releasing the lock), so the caller may bind it any way.
     fn register_grok_worktree(
         temp: &tempfile::TempDir,
@@ -1440,13 +1440,13 @@ mod tests {
         // Canonicalize so macOS /var -> /private/var agrees between the stored
         // record path and the canonicalized lookup query.
         let root = dunce::canonicalize(temp.path()).unwrap();
-        let home = root.join("grok-home");
+        let home = root.join("bum-home");
         let wt = home.join("worktrees").join("repo").join(name);
         std::fs::create_dir_all(&wt).unwrap();
 
         // Acquire the lock, then set the env under it (LockedTestEnv restores the
         // env before releasing the lock on drop).
-        let env = LockedTestEnv::lock().set("GROK_HOME", &home);
+        let env = LockedTestEnv::lock().set("BUM_HOME", &home);
 
         let db = WorktreeDb::open(&home).unwrap();
         let record = WorktreeRecord {
@@ -1544,7 +1544,7 @@ mod tests {
         let (_env, _wt) = register_grok_worktree(&temp, "wt", &source_repo, "standalone");
 
         // Under grok HOME but NOT under `<home>/worktrees`, and its own git repo.
-        let outside = root.join("grok-home").join("not-worktrees").join("proj");
+        let outside = root.join("bum-home").join("not-worktrees").join("proj");
         std::fs::create_dir_all(&outside).unwrap();
         git2::Repository::init(&outside).unwrap();
 

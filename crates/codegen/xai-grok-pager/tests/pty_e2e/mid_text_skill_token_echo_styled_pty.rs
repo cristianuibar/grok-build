@@ -39,6 +39,7 @@ fn run_fg_on_row(rows: &[StyledLine], row_marker: &str, needle: &str) -> Option<
 /// git workspaces (offline `grok inspect` scans plain dirs too) — same shape
 /// as the mid_text_skill_token_echo.yaml scenario's `git_init: true`.
 fn seed_test_skill(dir: &Path) {
+    // Project-local skills still live under workspace `.grok/` (not product home).
     let skill_dir = dir.join(".grok").join("skills").join("test-skill");
     std::fs::create_dir_all(&skill_dir).expect("create skill dir");
     std::fs::write(

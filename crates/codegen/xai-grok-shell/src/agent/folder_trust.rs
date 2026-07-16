@@ -544,10 +544,10 @@ mod tests {
         // revoke downgrades the in-process cache so `project_scope_allowed` flips
         // to false at once (a cached grant would otherwise short-circuit
         // `resolve_and_record`). Seed the trust store so `was_trusted` is genuinely
-        // true; GROK_HOME-isolated so the seed can't touch the real user file and
+        // true; BUM_HOME-isolated so the seed can't touch the real user file and
         // `#[serial]` because GROK_HOME is process-global.
         let home = tempfile::tempdir().unwrap();
-        let _env = EnvGuard::set("GROK_HOME", home.path());
+        let _env = EnvGuard::set("BUM_HOME", home.path());
         let tmp = repo_tmp();
         let mut store = TrustStore::load();
         store.set_trusted(&workspace_key(tmp.path())).unwrap();
@@ -572,10 +572,10 @@ mod tests {
         // cascades to the child — a spurious child `set_untrusted` would win
         // most-specific and break the cascade. It must STILL downgrade the
         // in-process cache, though, so a cached storeless grant cannot survive a
-        // mid-session untrust. GROK_HOME-isolated so the grant writes to a temp
+        // mid-session untrust. BUM_HOME-isolated so the grant writes to a temp
         // store; `#[serial]` because GROK_HOME is global.
         let home = tempfile::tempdir().unwrap();
-        let _env = EnvGuard::set("GROK_HOME", home.path());
+        let _env = EnvGuard::set("BUM_HOME", home.path());
         // Distinct git roots for parent/child so `workspace_key` does not collapse
         // them onto one key (the child's own `.git` stops discovery at the child).
         let parent = repo_tmp();
@@ -617,10 +617,10 @@ mod tests {
         // Revoke on a child trusted ONLY via an ancestor cascade (no direct child
         // grant) must report was_trusted=true and actually untrust the child: it
         // writes an explicit child deny (overriding the cascade) and downgrades
-        // the cache. GROK_HOME-isolated so the grant writes to a temp store;
+        // the cache. BUM_HOME-isolated so the grant writes to a temp store;
         // `#[serial]` because GROK_HOME is process-global.
         let home = tempfile::tempdir().unwrap();
-        let _env = EnvGuard::set("GROK_HOME", home.path());
+        let _env = EnvGuard::set("BUM_HOME", home.path());
         // Distinct git roots so `workspace_key` keeps parent/child as separate
         // keys (the child's own `.git` stops discovery at the child).
         let parent = repo_tmp();
@@ -662,12 +662,12 @@ mod tests {
         // decide() always trusts an unrecordable root and no grant/store/prompt
         // could ever lift the deny, so the gate must keep allowing after an
         // untrust click. HOME overridden so workspace_key sees the tempdir as
-        // home; GROK_HOME-isolated store; GROK_FOLDER_TRUST unset so the
+        // home; BUM_HOME-isolated store; GROK_FOLDER_TRUST unset so the
         // default-on flag applies.
         let home = tempfile::tempdir().unwrap();
         let _home = EnvGuard::set("HOME", home.path());
         let grok_home = tempfile::tempdir().unwrap();
-        let _env = EnvGuard::set("GROK_HOME", grok_home.path());
+        let _env = EnvGuard::set("BUM_HOME", grok_home.path());
         let _flag = EnvGuard::unset("GROK_FOLDER_TRUST");
         git2::Repository::init(home.path()).unwrap();
         // Repo-local code-exec config, so the final allow is the unrecordable-key
@@ -695,10 +695,10 @@ mod tests {
         // The `.envrc` load sites gate on the folder-trust verdict: an
         // `.envrc`-only untrusted clone resolves false (so the call site loads an
         // empty env), while a store-trusted folder resolves true and the loader
-        // actually reads `.envrc`. GROK_HOME-isolated so the trust store is empty;
+        // actually reads `.envrc`. BUM_HOME-isolated so the trust store is empty;
         // GROK_FOLDER_TRUST unset so the default-on feature flag applies.
         let home = tempfile::tempdir().unwrap();
-        let _env = EnvGuard::set("GROK_HOME", home.path());
+        let _env = EnvGuard::set("BUM_HOME", home.path());
         let _flag = EnvGuard::unset("GROK_FOLDER_TRUST");
         let tmp = repo_tmp();
         std::fs::write(tmp.path().join(".envrc"), "export GATED_ENVRC=1\n").unwrap();
@@ -729,11 +729,11 @@ mod tests {
         // `load_claude_env_with_project(cwd, project_scope_allowed(cwd))`: an
         // untrusted clone's repo-tree env (which would feed BASH_ENV /
         // GIT_SSH_COMMAND / … to every subprocess) is dropped; a store-trusted
-        // folder merges it. GROK_HOME-isolated so the trust store is empty;
+        // folder merges it. BUM_HOME-isolated so the trust store is empty;
         // GROK_FOLDER_TRUST unset so the default-on feature flag applies.
         use xai_grok_workspace::permission::claude_settings::load_claude_env_with_project;
         let home = tempfile::tempdir().unwrap();
-        let _env = EnvGuard::set("GROK_HOME", home.path());
+        let _env = EnvGuard::set("BUM_HOME", home.path());
         let _flag = EnvGuard::unset("GROK_FOLDER_TRUST");
         let tmp = repo_tmp();
         let claude = tmp.path().join(".claude");
@@ -774,10 +774,10 @@ mod tests {
         // a SUBDIR — the ONLY repo config — launched from that subdir must flip the
         // folder untrusted AND have its env dropped. The env loader walks
         // cwd→repo-root, so detection MUST walk too (a git-root-only probe missed
-        // this). GROK_HOME-isolated so the trust store is empty.
+        // this). BUM_HOME-isolated so the trust store is empty.
         use xai_grok_workspace::permission::claude_settings::load_claude_env_with_project;
         let home = tempfile::tempdir().unwrap();
-        let _env = EnvGuard::set("GROK_HOME", home.path());
+        let _env = EnvGuard::set("BUM_HOME", home.path());
         let _flag = EnvGuard::unset("GROK_FOLDER_TRUST");
         let tmp = repo_tmp();
         let subdir = tmp.path().join("sub");
@@ -823,10 +823,10 @@ mod tests {
         // A cwd-discovered PROJECT agent's inline `hooks:` is gated on folder-trust
         // (it can SHADOW a built-in subagent => near-auto RCE); a user/built-in
         // agent's hooks are kept. Exercises real discovery + the exact call-site
-        // predicate used at mvp_agent/subagent. GROK_HOME-isolated (empty store).
+        // predicate used at mvp_agent/subagent. BUM_HOME-isolated (empty store).
         use xai_grok_agent::config::AgentScope;
         let home = tempfile::tempdir().unwrap();
-        let _env = EnvGuard::set("GROK_HOME", home.path());
+        let _env = EnvGuard::set("BUM_HOME", home.path());
         let _flag = EnvGuard::unset("GROK_FOLDER_TRUST");
         let tmp = repo_tmp();
         let agents = tmp.path().join(".grok").join("agents");
@@ -876,11 +876,11 @@ mod tests {
         // feature on by default, an untrusted folder that ships repo-local
         // code-exec config (here `.grok/hooks`), and no store grant must be
         // DENIED — even though no verdict was recorded first (the gate re-resolves
-        // fail-closed rather than defaulting open). GROK_HOME-isolated (empty
+        // fail-closed rather than defaulting open). BUM_HOME-isolated (empty
         // store); GROK_FOLDER_TRUST unset so the default-on flag applies.
         let _sim = simulate_release_build();
         let home = tempfile::tempdir().unwrap();
-        let _env = EnvGuard::set("GROK_HOME", home.path());
+        let _env = EnvGuard::set("BUM_HOME", home.path());
         let _flag = EnvGuard::unset("GROK_FOLDER_TRUST");
         let tmp = repo_tmp();
         std::fs::create_dir_all(tmp.path().join(".grok").join("hooks")).unwrap();
@@ -896,12 +896,12 @@ mod tests {
         // The over-deny guard: a folder with NO repo-local code-exec config has
         // nothing to gate, so it must be ALLOWED even though its (provisional)
         // Trusted verdict is never cached — a naive `.unwrap_or(false)` cache peek
-        // would wrongly deny it. Release-stamped + GROK_HOME-isolated so the
+        // would wrongly deny it. Release-stamped + BUM_HOME-isolated so the
         // verdict comes from `decide` rule 4 (no repo configs), not the inert
         // short-circuit.
         let _sim = simulate_release_build();
         let home = tempfile::tempdir().unwrap();
-        let _env = EnvGuard::set("GROK_HOME", home.path());
+        let _env = EnvGuard::set("BUM_HOME", home.path());
         let _flag = EnvGuard::unset("GROK_FOLDER_TRUST");
         let tmp = repo_tmp();
         assert!(
@@ -914,11 +914,11 @@ mod tests {
     #[serial_test::serial]
     fn project_scope_allowed_allows_store_trusted_repo() {
         // A folder the user explicitly trusted is ALLOWED even with repo-local
-        // configs present. GROK_HOME-isolated so the seeded store is the temp one;
+        // configs present. BUM_HOME-isolated so the seeded store is the temp one;
         // GROK_FOLDER_TRUST unset so the default-on flag applies.
         let _sim = simulate_release_build();
         let home = tempfile::tempdir().unwrap();
-        let _env = EnvGuard::set("GROK_HOME", home.path());
+        let _env = EnvGuard::set("BUM_HOME", home.path());
         let _flag = EnvGuard::unset("GROK_FOLDER_TRUST");
         let tmp = repo_tmp();
         std::fs::create_dir_all(tmp.path().join(".grok").join("hooks")).unwrap();
@@ -942,7 +942,7 @@ mod tests {
             return; // a release-stamped test binary is not a local build
         }
         let home = tempfile::tempdir().unwrap();
-        let _env = EnvGuard::set("GROK_HOME", home.path());
+        let _env = EnvGuard::set("BUM_HOME", home.path());
         let tmp = repo_tmp();
         std::fs::create_dir_all(tmp.path().join(".grok").join("hooks")).unwrap();
         assert!(
@@ -957,11 +957,11 @@ mod tests {
         // A plugin-only untrusted repo (just `.grok/plugins/<x>/`, no
         // hooks/MCP/LSP, no store grant) is repo-controlled code-exec and must be
         // DENIED — the verdict the shell plugin call sites feed into
-        // discover_plugins/build_for_cwd/reload. GROK_HOME-isolated (empty store);
+        // discover_plugins/build_for_cwd/reload. BUM_HOME-isolated (empty store);
         // GROK_FOLDER_TRUST unset so the default-on flag applies.
         let _sim = simulate_release_build();
         let home = tempfile::tempdir().unwrap();
-        let _env = EnvGuard::set("GROK_HOME", home.path());
+        let _env = EnvGuard::set("BUM_HOME", home.path());
         let _flag = EnvGuard::unset("GROK_FOLDER_TRUST");
         let tmp = repo_tmp();
         std::fs::create_dir_all(tmp.path().join(".grok").join("plugins").join("evil")).unwrap();
@@ -978,11 +978,11 @@ mod tests {
         // configs under a remote kill-switch (folder_trust_enabled = Some(false))
         // must resolve ALLOWED. The session spawn path resolves once with the real
         // RemoteSettings before any gate read, so the gate cache-hits that verdict.
-        // GROK_HOME-isolated (empty store); GROK_FOLDER_TRUST unset so the kill-switch
+        // BUM_HOME-isolated (empty store); GROK_FOLDER_TRUST unset so the kill-switch
         // is the only signal.
         let _sim = simulate_release_build();
         let home = tempfile::tempdir().unwrap();
-        let _env = EnvGuard::set("GROK_HOME", home.path());
+        let _env = EnvGuard::set("BUM_HOME", home.path());
         let _flag = EnvGuard::unset("GROK_FOLDER_TRUST");
         let remote = RemoteSettings {
             folder_trust_enabled: Some(false),
@@ -1022,13 +1022,13 @@ mod tests {
         // verdict/discovery/registry unit tests alone do NOT catch a silent
         // un-gating here.
         //
-        // GROK_HOME-isolated so both the folder-trust store and the plugin trust
+        // BUM_HOME-isolated so both the folder-trust store and the plugin trust
         // store start empty (deterministic untrusted); GROK_FOLDER_TRUST unset so
         // the default-on flag applies; `#[serial]` because both are process-global.
         use xai_grok_agent::plugins::discovery::DiscoveryConfig;
         use xai_grok_agent::plugins::{PluginRegistry, SharedPluginRegistryHandle};
         let home = tempfile::tempdir().unwrap();
-        let _env = EnvGuard::set("GROK_HOME", home.path());
+        let _env = EnvGuard::set("BUM_HOME", home.path());
         let _flag = EnvGuard::unset("GROK_FOLDER_TRUST");
         let tmp = repo_tmp();
         // A project plugin. Project scope is default-disabled, so name it in the
@@ -1080,10 +1080,10 @@ mod tests {
         // End-to-end load path: the folder-trust verdict threaded into `discover_hooks`
         // excludes a repo-local project hook while untrusted, and includes it after the
         // folder is granted trust — the path where the regression historically re-opened.
-        // GROK_HOME-isolated so the grant writes to a temp store; GROK_FOLDER_TRUST unset
+        // BUM_HOME-isolated so the grant writes to a temp store; GROK_FOLDER_TRUST unset
         // so the default-on flag applies.
         let home = tempfile::tempdir().unwrap();
-        let _env = EnvGuard::set("GROK_HOME", home.path());
+        let _env = EnvGuard::set("BUM_HOME", home.path());
         let _flag = EnvGuard::unset("GROK_FOLDER_TRUST");
         let tmp = repo_tmp();
         let hooks_dir = tmp.path().join(".grok").join("hooks");
@@ -1466,7 +1466,7 @@ mod tests {
         let _feature = EnvGuard::set("GROK_FOLDER_TRUST", "1");
         let _sim = simulate_release_build();
         let home = tempfile::tempdir().unwrap();
-        let _env = EnvGuard::set("GROK_HOME", home.path());
+        let _env = EnvGuard::set("BUM_HOME", home.path());
 
         // (a) No configs => provisional Trusted, NOT cached by the shared path.
         let empty = repo_tmp();
@@ -1504,14 +1504,14 @@ mod tests {
         // true, and the `.envrc` loads without any grant. Assert the local branch
         // ONLY when compiled unstamped (mirrors the workspace
         // `is_local_build_honors_test_version_override`), with GROK_TEST_VERSION
-        // unset so `is_local_build()` is genuinely true. GROK_HOME-isolated so the
+        // unset so `is_local_build()` is genuinely true. BUM_HOME-isolated so the
         // real store is never touched.
         let _sim = EnvGuard::unset(xai_grok_version::TEST_VERSION_ENV);
         if option_env!("GROK_VERSION").is_some() {
             return; // a release-stamped test binary is not a local build
         }
         let home = tempfile::tempdir().unwrap();
-        let _env = EnvGuard::set("GROK_HOME", home.path());
+        let _env = EnvGuard::set("BUM_HOME", home.path());
         let tmp = repo_tmp();
         std::fs::write(tmp.path().join(".envrc"), "export LOCAL_BUILD_ENVRC=1\n").unwrap();
 
@@ -1544,10 +1544,10 @@ mod tests {
     #[serial_test::serial]
     fn prompt_warranted_true_for_untrusted_repo_with_configs() {
         // Feature on (via remote), untrusted (empty store), repo configs present
-        // => the GUI prompt is warranted. GROK_HOME-isolated so the store starts
+        // => the GUI prompt is warranted. BUM_HOME-isolated so the store starts
         // empty; `#[serial]` because GROK_HOME is process-global.
         let home = tempfile::tempdir().unwrap();
-        let _env = EnvGuard::set("GROK_HOME", home.path());
+        let _env = EnvGuard::set("BUM_HOME", home.path());
         let tmp = repo_tmp();
         std::fs::write(tmp.path().join(".mcp.json"), "{}").unwrap();
         // Simulate a release-stamped build so the inert local-build gate is off
@@ -1569,10 +1569,10 @@ mod tests {
         // The remote kill-switch (folder_trust_enabled = Some(false)) disables the
         // feature even on a release-stamped build, so no prompt is warranted even
         // with repo configs present. Simulate a release build so the inert
-        // local-build path is not what's under test; GROK_HOME-isolated and
+        // local-build path is not what's under test; BUM_HOME-isolated and
         // GROK_FOLDER_TRUST unset so the kill-switch is the only signal.
         let home = tempfile::tempdir().unwrap();
-        let _env = EnvGuard::set("GROK_HOME", home.path());
+        let _env = EnvGuard::set("BUM_HOME", home.path());
         let _flag = EnvGuard::unset("GROK_FOLDER_TRUST");
         let _sim = simulate_release_build();
         let tmp = repo_tmp();
@@ -1589,7 +1589,7 @@ mod tests {
     fn prompt_warranted_false_when_store_trusted() {
         // A folder the user already trusted resolves Trusted, not Prompt.
         let home = tempfile::tempdir().unwrap();
-        let _env = EnvGuard::set("GROK_HOME", home.path());
+        let _env = EnvGuard::set("BUM_HOME", home.path());
         let tmp = repo_tmp();
         std::fs::write(tmp.path().join(".mcp.json"), "{}").unwrap();
         let mut store = TrustStore::load();
@@ -1606,7 +1606,7 @@ mod tests {
     fn prompt_warranted_false_without_repo_configs() {
         // Nothing repo-local to gate => Trusted, not Prompt.
         let home = tempfile::tempdir().unwrap();
-        let _env = EnvGuard::set("GROK_HOME", home.path());
+        let _env = EnvGuard::set("BUM_HOME", home.path());
         let tmp = repo_tmp();
         let remote = RemoteSettings {
             folder_trust_enabled: Some(true),
