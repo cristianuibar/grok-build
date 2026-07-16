@@ -18,6 +18,7 @@ use crate::agent::config::{
 };
 use crate::auth::{AuthMode, AuthProvider, GrokAuth, mutate_provider_store_or_prune};
 use chrono::{Duration, Utc};
+use serial_test::serial;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 use tokio::sync::mpsc;
@@ -113,11 +114,15 @@ async fn make_codex_actor(
 
 /// Mid-session: prepared SessionToken is stale; reconstruct spends RT and
 /// surfaces fresh bearer + account header.
+///
+/// `#[serial]`: process-wide ensure_fresh synthetic hooks.
 #[tokio::test(flavor = "current_thread")]
+#[serial]
 async fn codex_reconstruct_refreshes_mid_session_expiry() {
     let local = tokio::task::LocalSet::new();
     local
         .run_until(async {
+            clear_ensure_fresh_codex_test_hooks();
             let dir = tempfile::tempdir().expect("tempdir");
             let path = dir.path().join("auth.json");
             write_codex_slot(&path, near_expiry_codex_auth());
@@ -165,10 +170,12 @@ async fn codex_reconstruct_refreshes_mid_session_expiry() {
 
 /// BYOK / ApiKey: reconstruct keeps prepared key; zero IdP.
 #[tokio::test(flavor = "current_thread")]
+#[serial]
 async fn codex_byok_key_not_overridden() {
     let local = tokio::task::LocalSet::new();
     local
         .run_until(async {
+            clear_ensure_fresh_codex_test_hooks();
             let dir = tempfile::tempdir().expect("tempdir");
             let path = dir.path().join("auth.json");
             write_codex_slot(&path, near_expiry_codex_auth());
@@ -211,10 +218,12 @@ async fn codex_byok_key_not_overridden() {
 
 /// Custom host: session OAuth not allowed — no bearer override, zero IdP.
 #[tokio::test(flavor = "current_thread")]
+#[serial]
 async fn codex_oauth_bearer_absent_on_custom_endpoint() {
     let local = tokio::task::LocalSet::new();
     local
         .run_until(async {
+            clear_ensure_fresh_codex_test_hooks();
             let dir = tempfile::tempdir().expect("tempdir");
             let path = dir.path().join("auth.json");
             write_codex_slot(&path, near_expiry_codex_auth());

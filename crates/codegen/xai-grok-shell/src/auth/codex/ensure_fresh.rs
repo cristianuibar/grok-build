@@ -180,7 +180,14 @@ pub async fn ensure_fresh_codex_auth_at(
         .token_url_override
         .or(hooks.token_url)
         .filter(|s| !s.is_empty());
-    let synthetic = hooks.synthetic;
+    // Synthetic IdP is path-scoped: only apply when the hook's auth_file matches
+    // this call's path (avoids cross-fixture bleed if hooks are left installed).
+    let synthetic = hooks.synthetic.filter(|_| {
+        hooks
+            .auth_file
+            .as_ref()
+            .is_some_and(|p| p.as_path() == auth_file)
+    });
 
     let _in_process = refresh_mutex().lock().await;
 

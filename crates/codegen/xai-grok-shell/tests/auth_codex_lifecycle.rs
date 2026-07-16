@@ -42,6 +42,7 @@ use std::path::Path;
 
 use chrono::{Duration, Utc};
 use indexmap::IndexMap;
+use serial_test::serial;
 use xai_grok_shell::agent::config::{
     clear_ensure_fresh_codex_test_hooks, ensure_fresh_codex_auth_at, inject_chatgpt_account_id_header,
     inject_url_derived_headers, is_first_party_codex_url, set_ensure_fresh_codex_synthetic_permanent,
@@ -848,8 +849,12 @@ fn fresh_rotated_codex() -> GrokAuth {
 }
 
 /// Outer ensure_fresh must update only codex slot.
+///
+/// `#[serial]`: process-wide synthetic IdP hooks in `ensure_fresh` must not race.
 #[tokio::test(flavor = "current_thread")]
+#[serial]
 async fn codex_refresh_isolates() {
+    clear_ensure_fresh_codex_test_hooks();
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("auth.json");
     write_near_expiry_codex_dual(&path, near_expiry_codex(CODEX_FAKE));
@@ -877,7 +882,9 @@ async fn codex_refresh_isolates() {
 
 /// invalid_grant on Codex must not wipe xAI.
 #[tokio::test(flavor = "current_thread")]
+#[serial]
 async fn codex_invalid_grant_no_xai_wipe() {
+    clear_ensure_fresh_codex_test_hooks();
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("auth.json");
     write_near_expiry_codex_dual(&path, near_expiry_codex(CODEX_FAKE));
@@ -936,8 +943,12 @@ fn codex_refresh_preserves_identity_when_response_omits_refresh_token() {
 }
 
 /// Concurrent ensure_fresh must spend IdP refresh once.
+///
+/// `#[serial]`: process-wide synthetic IdP hooks + in-process refresh mutex.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[serial]
 async fn codex_concurrent_refresh_single_idp_spend() {
+    clear_ensure_fresh_codex_test_hooks();
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("auth.json");
     write_near_expiry_codex_dual(&path, near_expiry_codex(CODEX_FAKE));
@@ -966,7 +977,9 @@ async fn codex_concurrent_refresh_single_idp_spend() {
 
 /// Fresh unexpired token must skip IdP entirely.
 #[tokio::test(flavor = "current_thread")]
+#[serial]
 async fn codex_fresh_token_skips_idp() {
+    clear_ensure_fresh_codex_test_hooks();
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("auth.json");
     write_dual_auth_fixture(&path);
@@ -988,7 +1001,9 @@ async fn codex_fresh_token_skips_idp() {
 
 /// Transient fail with hard-unexpired access keeps old token.
 #[tokio::test(flavor = "current_thread")]
+#[serial]
 async fn codex_transient_fail_hard_unexpired_keeps_token() {
+    clear_ensure_fresh_codex_test_hooks();
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("auth.json");
     // Near-expiry (buffer) but hard-unexpired (real exp in future).
@@ -1006,7 +1021,9 @@ async fn codex_transient_fail_hard_unexpired_keeps_token() {
 
 /// Transient fail with hard-expired access yields no usable credential.
 #[tokio::test(flavor = "current_thread")]
+#[serial]
 async fn codex_transient_fail_hard_expired_no_credential() {
+    clear_ensure_fresh_codex_test_hooks();
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("auth.json");
     let mut expired = sample_codex_auth();
