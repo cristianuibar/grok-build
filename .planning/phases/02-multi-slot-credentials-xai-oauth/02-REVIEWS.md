@@ -3,8 +3,9 @@ phase: 02
 title: Multi-slot credentials & xAI OAuth
 reviewers: [codex]
 cycle: 1
-status: pending_incorporation
+status: incorporated
 date: 2026-07-16
+incorporated_date: 2026-07-16
 ---
 
 # Phase 2 Plan Reviews

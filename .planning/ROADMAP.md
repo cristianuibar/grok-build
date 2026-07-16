@@ -63,10 +63,10 @@ Plans:
 
 Plans:
 
-- [ ] 02-01-PLAN.md — Multi-slot AuthDocument schema + read migrate + merge-safe nested write
-- [ ] 02-02-PLAN.md — API key isolation + multi-provider empty-delete / scope-removal prune
-- [ ] 02-03-PLAN.md — AuthManager + credential Bearer path proof against multi-slot store
-- [ ] 02-04-PLAN.md — bum login CLI/path seal + full auth lib suite gate
+- [ ] 02-01-PLAN.md — Multi-slot AuthDocument + lock-scoped mutate + concurrency + version fail-closed
+- [ ] 02-02-PLAN.md — Locked API keys + multi-provider prune + try_devbox_recovery
+- [ ] 02-03-PLAN.md — AuthManager + ShellAuthCredentialProvider + sampling_config.api_key Bearer seam
+- [ ] 02-04-PLAN.md — GROK_AUTH_PATH isolation + mock multi-slot login asserts + phase gate
 
 ### Phase 3: Model catalog & GPT-5.6 entries
 
