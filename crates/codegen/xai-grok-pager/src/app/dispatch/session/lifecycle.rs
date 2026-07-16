@@ -931,6 +931,9 @@ pub(in crate::app::dispatch) fn handle_session_created(
             agent_id,
             silent: true,
         });
+        // Session-ready badge cache refresh (H3 residual): dual-slot usable
+        // flags from disk so badges are non-default after dual fixtures.
+        effects.push(Effect::RefreshProviderAuthStatus);
         if let Some(deferred) = deferred {
             effects.push(Effect::SwitchModel {
                 agent_id,
@@ -1022,6 +1025,9 @@ pub(in crate::app::dispatch) fn handle_worktree_session_created(
             agent_id,
             silent: true,
         });
+        // Session-ready badge cache refresh (H3 residual): dual-slot usable
+        // flags from disk so badges are non-default after dual fixtures.
+        effects.push(Effect::RefreshProviderAuthStatus);
         if let Some(deferred) = deferred {
             effects.push(Effect::SwitchModel {
                 agent_id,

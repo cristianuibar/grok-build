@@ -328,12 +328,16 @@ pub(super) fn handle_auth_complete(
             if app.usage_visible {
                 effects.push(Effect::FetchAppBilling);
             }
+            // Badge cache: AuthMeta may omit dual-slot usable; re-read disk.
+            effects.push(Effect::RefreshProviderAuthStatus);
             effects.extend(retry_effects);
             return effects;
         }
 
         // status only; shell auto-syncs post-auth
         let mut effects = dispatch(Action::RequestBundleStatus, app);
+        // Dual-slot badge cache refresh after successful login (H3 residual).
+        effects.push(Effect::RefreshProviderAuthStatus);
 
         // Start auto-checking subscription if gated.
         // Check immediately (don't wait 5s) then schedule the timer.

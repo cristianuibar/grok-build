@@ -977,6 +977,10 @@ pub(super) fn dispatch_task_result(result: TaskResult, app: &mut AppView) -> Vec
             app.login_method_id = None;
             ensure_login_method(app);
             app.auth_clipboard_copied = false;
+            // In-process logout cleared credentials — badge cache fail-closed.
+            // TUI bare /logout is CLI-pointer only (dispatch_logout); FocusGained
+            // + external RefreshProviderAuthStatus cover post-CLI logout.
+            app.set_provider_auth_usable(false, false);
             let effects = dispatch_exit_session(app);
             app.welcome_prompt_focused = false;
             effects

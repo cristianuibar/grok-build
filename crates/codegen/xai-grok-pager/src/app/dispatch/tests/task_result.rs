@@ -1553,6 +1553,121 @@ fn p6_refresh_provider_auth_status_updates_cache() {
 }
 
 #[test]
+fn p6_provider_auth_refresh_on_auth_complete() {
+    let mut app = test_app();
+    app.auth_state = crate::app::app_view::AuthState::Authenticating {
+        request_seq: 1,
+        handle: None,
+        auth_url: None,
+        mode: crate::app::app_view::AuthMode::Pending,
+    };
+    let meta = serde_json::to_value(xai_grok_shell::auth::AuthMeta {
+        providers: Some(xai_grok_shell::auth::ProviderAuthMetaSlots {
+            xai: xai_grok_shell::auth::ProviderSlotUsableMeta { usable: true },
+            codex: xai_grok_shell::auth::ProviderSlotUsableMeta { usable: true },
+        }),
+        ..Default::default()
+    })
+    .unwrap();
+    let effects = dispatch(
+        Action::TaskComplete(TaskResult::AuthComplete {
+            request_seq: 1,
+            meta: Some(meta),
+        }),
+        &mut app,
+    );
+    // apply_auth_meta updated cache from dual-slot fixture
+    assert!(app.provider_auth.xai);
+    assert!(app.provider_auth.codex);
+    // And we always also enqueue disk refresh (covers AuthMeta omit paths).
+    assert!(
+        effects
+            .iter()
+            .any(|e| matches!(e, Effect::RefreshProviderAuthStatus)),
+        "AuthComplete must emit RefreshProviderAuthStatus"
+    );
+}
+
+#[test]
+fn p6_provider_auth_refresh_on_focus_gained() {
+    let app = test_app_with_agent();
+    // Even with deferred None, focus refresh fires.
+    assert!(
+        app.agents[&AgentId(0)]
+            .session
+            .deferred_model_switch
+            .is_none()
+    );
+    let effects = app.provider_auth_refresh_on_focus_gained();
+    assert!(
+        matches!(
+            effects.as_slice(),
+            [Effect::RefreshProviderAuthStatus]
+        ),
+        "FocusGained helper must emit RefreshProviderAuthStatus unconditionally"
+    );
+}
+
+#[test]
+fn p6_provider_auth_startup_or_session_ready_non_default() {
+    // SessionCreated emits RefreshProviderAuthStatus; completing it with
+    // dual-slot fixture leaves cache non-default.
+    let mut app = test_app_with_agent();
+    let id = AgentId(0);
+    let effects = dispatch(
+        Action::TaskComplete(TaskResult::SessionCreated {
+            agent_id: id,
+            session_id: "sess-p6-auth".into(),
+            models: None,
+        }),
+        &mut app,
+    );
+    assert!(
+        effects
+            .iter()
+            .any(|e| matches!(e, Effect::RefreshProviderAuthStatus)),
+        "SessionCreated must emit RefreshProviderAuthStatus"
+    );
+    // Simulate the effect completing with dual fixtures both usable.
+    dispatch(
+        Action::TaskComplete(TaskResult::ProviderAuthStatusRefreshed {
+            xai_usable: Some(true),
+            codex_usable: Some(true),
+        }),
+        &mut app,
+    );
+    assert!(
+        app.provider_auth.xai && app.provider_auth.codex,
+        "after dual-slot refresh, cache must not stay default-false"
+    );
+}
+
+#[test]
+fn p6_provider_auth_logout_or_clear_marks_unusable() {
+    let mut app = test_app();
+    app.set_provider_auth_usable(true, true);
+    dispatch(
+        Action::TaskComplete(TaskResult::LogoutComplete),
+        &mut app,
+    );
+    assert!(!app.provider_auth.xai);
+    assert!(!app.provider_auth.codex);
+
+    // Injected unusable AuthMeta also marks cache for badges.
+    let mut app = test_app();
+    app.set_provider_auth_usable(true, true);
+    app.apply_auth_meta(&xai_grok_shell::auth::AuthMeta {
+        providers: Some(xai_grok_shell::auth::ProviderAuthMetaSlots {
+            xai: xai_grok_shell::auth::ProviderSlotUsableMeta { usable: false },
+            codex: xai_grok_shell::auth::ProviderSlotUsableMeta { usable: false },
+        }),
+        ..Default::default()
+    });
+    assert!(!app.provider_auth.xai);
+    assert!(!app.provider_auth.codex);
+}
+
+#[test]
 fn bundle_status_ready_populates_state() {
     let mut app = test_app();
 

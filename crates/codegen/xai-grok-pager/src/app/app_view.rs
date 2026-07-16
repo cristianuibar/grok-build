@@ -1198,6 +1198,15 @@ impl AppView {
     pub fn provider_auth_usable(&self) -> ProviderAuthUsableSnapshot {
         self.provider_auth
     }
+
+    /// Effects to emit on terminal FocusGained for dual-slot badge freshness.
+    ///
+    /// **Not gated** on `deferred_model_switch` — badge cache refresh is
+    /// independent of Plan 03 deferred apply polls (H3 residual ownership).
+    pub fn provider_auth_refresh_on_focus_gained(&self) -> Vec<crate::app::actions::Effect> {
+        let _ = self; // pure; no state read required today
+        vec![crate::app::actions::Effect::RefreshProviderAuthStatus]
+    }
     pub(crate) fn ensure_voice_for_api_key(&mut self) {
         if self.is_api_key_auth && !self.voice_mode_enabled {
             self.apply_voice_mode_enabled(true);

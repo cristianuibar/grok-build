@@ -729,6 +729,10 @@ pub(crate) async fn run(
             app.ensure_voice_for_api_key();
         }
     }
+    // Badge-freshness startup refresh (H3 residual): AuthMeta may omit dual-slot
+    // providers on older shells / no-auth paths. One-shot re-read of product-home
+    // auth.json booleans after first paint (coalesced with other post-render work).
+    post_render_effects.push(crate::app::actions::Effect::RefreshProviderAuthStatus);
 
     // Fallback: prefetch may have gate info the shell's AuthMeta missed.
     // Errs on the side of blocking if stale.
@@ -2688,6 +2692,17 @@ async fn drain_and_process(
                     && crate::clipboard::clipboard_image_probe_supported()
                 {
                     crate::clipboard::prewarm_image_probe();
+                }
+                // Dual-slot badge cache refresh on focus (H3 residual).
+                // Not gated on deferred_model_switch — badge freshness is
+                // independent of Plan 03 deferred apply polls.
+                if process_effects(
+                    app.provider_auth_refresh_on_focus_gained(),
+                    tasks,
+                    app,
+                    progress_tx,
+                ) {
+                    return true;
                 }
                 // The user may have just subscribed in the browser and
                 // tabbed back.
