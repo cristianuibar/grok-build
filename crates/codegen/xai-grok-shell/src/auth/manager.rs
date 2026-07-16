@@ -30,13 +30,13 @@ use xai_grok_telemetry::events::ManualAuthSurface;
 #[cfg(test)]
 use super::model::UserInfo;
 use super::model::{
-    AuthMode, GrokAuth, early_invalidation, is_expired, is_expired_with_buffer, lookup_auth,
-    token_suffix,
+    AUTH_DOCUMENT_VERSION, AuthMode, GrokAuth, PROVIDER_XAI, early_invalidation, is_expired,
+    is_expired_with_buffer, lookup_auth, token_suffix,
 };
 use super::refresh::{RefreshOutcome, TokenRefresher, resolve_refresh_credential};
 use super::storage::{
-    AuthFileLock, XaiStoreMutation, mutate_xai_store_or_prune, mutate_xai_store_or_prune_with_lock,
-    read_auth_json, read_auth_json_or_empty_recovering_corrupt, write_auth_json,
+    AuthFileLock, XaiStoreMutation, mutate_auth_document, mutate_auth_document_with_lock,
+    mutate_xai_store_or_prune, mutate_xai_store_or_prune_with_lock, read_auth_json, write_auth_json,
     write_auth_json_with_lock,
 };
 
@@ -888,8 +888,12 @@ impl AuthManager {
 
     /// Shared disk+memory persist for update / save_without_enrichment.
     ///
-    /// `held_lock = Some` → [`write_auth_json_with_lock`] (no re-acquire).
-    /// `held_lock = None` → acquiring [`write_auth_json`].
+    /// Inserts **only** this manager's OAuth scope into the xAI provider map
+    /// under the document lock (re-read + merge), so concurrent API-key or
+    /// other-scope writes are not clobbered by a stale full-slot replace.
+    ///
+    /// `held_lock = Some` → guard-held mutate (no re-acquire).
+    /// `held_lock = None` → acquiring mutate.
     /// Does **not** spawn enrichment — callers that need it spawn after.
     async fn persist_scope(
         &self,
@@ -910,28 +914,39 @@ impl AuthManager {
                 "auth update skipped disk write (read failed, no enrichment)",
             ),
         };
-        let map = match read_auth_json_or_empty_recovering_corrupt(&self.path) {
-            Ok(map) => map,
-            Err(e) => {
-                // Non-recoverable error (PermissionDenied, unsupported version, etc.)
-                tracing::warn!(error = %e, "auth: read failed, updating in-memory only");
-                xai_grok_telemetry::unified_log::warn(
-                    log_skip,
-                    None,
-                    Some(serde_json::json!({ "error": e.to_string() })),
-                );
-                self.with_inner_write(|inner| *inner = Some(auth.clone()));
-                return Ok(auth);
-            }
-        };
-        let mut map = map;
         // One entry per scope (personal and team share the scope key).
         tracing::debug!(scope = %self.scope, "auth: storing token");
-        map.insert(self.scope.clone(), auth.clone());
+        let scope = self.scope.clone();
+        let auth_for_disk = auth.clone();
         let write_result = match held_lock {
-            Some(lock) => write_auth_json_with_lock(&self.path, lock, &map),
-            None => write_auth_json(&self.path, &map),
+            Some(lock) => mutate_auth_document_with_lock(&self.path, lock, |doc| {
+                let xai = doc.providers.entry(PROVIDER_XAI.to_owned()).or_default();
+                xai.insert(scope.clone(), auth_for_disk.clone());
+                doc.version = Some(AUTH_DOCUMENT_VERSION);
+                Ok(())
+            }),
+            None => mutate_auth_document(&self.path, |doc| {
+                let xai = doc.providers.entry(PROVIDER_XAI.to_owned()).or_default();
+                xai.insert(scope.clone(), auth_for_disk.clone());
+                doc.version = Some(AUTH_DOCUMENT_VERSION);
+                Ok(())
+            }),
         };
+        // Map non-recoverable write errors: if mutate failed before persist
+        // (e.g. unsupported version), keep memory update path consistent with
+        // historical "in-memory only" behavior for skip cases.
+        if let Err(ref e) = write_result
+            && e.kind() == std::io::ErrorKind::Unsupported
+        {
+            tracing::warn!(error = %e, "auth: read/write failed, updating in-memory only");
+            xai_grok_telemetry::unified_log::warn(
+                log_skip,
+                None,
+                Some(serde_json::json!({ "error": e.to_string() })),
+            );
+            self.with_inner_write(|inner| *inner = Some(auth.clone()));
+            return Ok(auth);
+        }
         let elapsed_ms = started.elapsed().as_millis() as u64;
         match &write_result {
             Ok(()) => xai_grok_telemetry::unified_log::info(

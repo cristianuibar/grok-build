@@ -6,8 +6,12 @@ use std::time::Duration as StdDuration;
 use super::AuthManager;
 use super::lock::try_lock_auth_file_async;
 use crate::auth::manager::AUTH_LOCK_TIMEOUT;
-use crate::auth::model::{GrokAuth, UserInfo, lookup_auth};
-use crate::auth::storage::{read_auth_json, write_auth_json, write_auth_json_with_lock};
+use crate::auth::model::{
+    AUTH_DOCUMENT_VERSION, GrokAuth, PROVIDER_XAI, UserInfo, lookup_auth,
+};
+use crate::auth::storage::{
+    mutate_auth_document, mutate_auth_document_with_lock, read_auth_json,
+};
 
 /// `/user` fetch budget, shared by the inline (login) and background paths.
 const USER_FETCH_TIMEOUT: StdDuration = StdDuration::from_secs(10);
@@ -148,7 +152,10 @@ async fn run_user_info_enrichment(manager: &AuthManager, auth: GrokAuth) {
         tracing::warn!("auth: enrichment proceeding without auth.json.lock");
     }
 
-    let Ok(mut map) = read_auth_json(&manager.path) else {
+    // Preflight read (outside mutate) only to skip network-already-done work
+    // when disk auth is missing. The real merge + sibling-stomp check happens
+    // under the document lock so we never full-slot-replace a stale xAI map.
+    let Ok(map) = read_auth_json(&manager.path) else {
         xai_grok_telemetry::unified_log::warn(
             "auth update enrichment skipped",
             None,
@@ -156,7 +163,7 @@ async fn run_user_info_enrichment(manager: &AuthManager, auth: GrokAuth) {
         );
         return;
     };
-    let Some(mut disk) = lookup_auth(&map, &manager.scope) else {
+    if lookup_auth(&map, &manager.scope).is_none() {
         xai_grok_telemetry::unified_log::info(
             "auth update enrichment skipped",
             None,
@@ -164,41 +171,67 @@ async fn run_user_info_enrichment(manager: &AuthManager, auth: GrokAuth) {
         );
         return;
     };
-    // Sibling-stomp guard. If either the access token or refresh
-    // token on disk differs from the one we wrote, a sibling process
-    // rotated tokens since our update(). Skip enrichment to avoid
-    // writing stale profile data over the sibling's fresher entry.
-    //
-    // OR logic (not AND): a single-field rotation (key changes, RT
-    // stays) is the common case during concurrent refresh. The old
-    // AND logic required ALL three fields to differ, letting
-    // single-field rotations through.
-    //
-    // Team-login transitions (placeholder→real user_id) don't rotate
-    // tokens, so OR correctly allows enrichment for that case.
-    if disk.key != auth.key || disk.refresh_token != auth.refresh_token {
-        xai_grok_telemetry::unified_log::info(
-            "auth update enrichment skipped",
-            None,
-            Some(serde_json::json!({
-                "reason": "sibling_rotated",
-                "written_key_prefix": crate::auth::token_suffix(&auth.key),
-                "disk_key_prefix": crate::auth::token_suffix(&disk.key),
-            })),
-        );
-        return;
-    }
 
-    apply_user_info_enrichment(&mut disk, user_info);
+    let scope = manager.scope.clone();
+    let expected_key = auth.key.clone();
+    let expected_rt = auth.refresh_token.clone();
+    let mut enriched_disk: Option<GrokAuth> = None;
+    let mut skip_reason: Option<&'static str> = None;
+    let mut skip_disk_key_prefix: Option<String> = None;
 
-    map.insert(manager.scope.clone(), disk.clone());
     let write_started = std::time::Instant::now();
     // Held lock → guard-held mutate (never re-acquire). Timeout/unlocked →
-    // acquiring full-document merge path (preserves sibling provider slots).
+    // acquiring full-document merge path (preserves sibling provider slots
+    // and merges only this OAuth scope into providers.xai).
     let write_result = match lock_guard.as_ref() {
-        Some(lock) => write_auth_json_with_lock(&manager.path, lock, &map),
-        None => write_auth_json(&manager.path, &map),
+        Some(lock) => mutate_auth_document_with_lock(&manager.path, lock, |doc| {
+            let xai = doc.providers.entry(PROVIDER_XAI.to_owned()).or_default();
+            let Some(mut disk) = lookup_auth(xai, &scope) else {
+                skip_reason = Some("no_disk_auth");
+                return Ok(());
+            };
+            // Sibling-stomp guard under lock (OR: key or RT rotated).
+            if disk.key != expected_key || disk.refresh_token != expected_rt {
+                skip_reason = Some("sibling_rotated");
+                skip_disk_key_prefix = Some(crate::auth::token_suffix(&disk.key).to_string());
+                return Ok(());
+            }
+            apply_user_info_enrichment(&mut disk, user_info.clone());
+            xai.insert(scope.clone(), disk.clone());
+            doc.version = Some(AUTH_DOCUMENT_VERSION);
+            enriched_disk = Some(disk);
+            Ok(())
+        }),
+        None => mutate_auth_document(&manager.path, |doc| {
+            let xai = doc.providers.entry(PROVIDER_XAI.to_owned()).or_default();
+            let Some(mut disk) = lookup_auth(xai, &scope) else {
+                skip_reason = Some("no_disk_auth");
+                return Ok(());
+            };
+            if disk.key != expected_key || disk.refresh_token != expected_rt {
+                skip_reason = Some("sibling_rotated");
+                skip_disk_key_prefix = Some(crate::auth::token_suffix(&disk.key).to_string());
+                return Ok(());
+            }
+            apply_user_info_enrichment(&mut disk, user_info.clone());
+            xai.insert(scope.clone(), disk.clone());
+            doc.version = Some(AUTH_DOCUMENT_VERSION);
+            enriched_disk = Some(disk);
+            Ok(())
+        }),
     };
+    if let Some(reason) = skip_reason {
+        let mut payload = serde_json::json!({ "reason": reason });
+        if reason == "sibling_rotated" {
+            payload["written_key_prefix"] =
+                serde_json::json!(crate::auth::token_suffix(&expected_key));
+            if let Some(prefix) = skip_disk_key_prefix {
+                payload["disk_key_prefix"] = serde_json::json!(prefix);
+            }
+        }
+        xai_grok_telemetry::unified_log::info("auth update enrichment skipped", None, Some(payload));
+        return;
+    }
     if let Err(e) = write_result {
         xai_grok_telemetry::unified_log::error(
             "auth update enrichment write failed",
@@ -212,6 +245,9 @@ async fn run_user_info_enrichment(manager: &AuthManager, auth: GrokAuth) {
         );
         return;
     }
+    let Some(disk) = enriched_disk else {
+        return;
+    };
     manager.with_inner_write(|inner| *inner = Some(disk));
     xai_grok_telemetry::unified_log::info(
         "auth update enrichment done",

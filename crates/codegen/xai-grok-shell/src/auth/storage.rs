@@ -259,17 +259,55 @@ pub(crate) fn read_auth_json_or_empty_recovering_corrupt(
     }
 }
 
-/// Document reader for merge-safe writes: recover true corrupt files to an
-/// empty document; fail closed on unsupported version / other I/O errors.
+/// Document reader for merge-safe writes.
+///
+/// - Missing → empty document (safe to write fresh)
+/// - Valid → parsed document
+/// - Unsupported version → error (fail closed)
+/// - Corrupt JSON → backup the raw file, then **preserve any still-parseable
+///   sibling provider maps** from the raw JSON. Only wipe to empty when no
+///   sibling provider payload can be recovered (legacy single-store recovery).
+///   This prevents a torn/corrupt multi-slot document from deleting live
+///   Codex (or other) credentials during an xAI-only write.
 fn read_auth_document_for_write(auth_file: &Path) -> std::io::Result<AuthDocument> {
     match read_auth_document(auth_file) {
         Ok(doc) => Ok(doc),
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(AuthDocument::default()),
         Err(e) if e.kind() == std::io::ErrorKind::InvalidData => {
+            let preserved = preserve_sibling_providers_from_corrupt(auth_file);
             let _ = backup_corrupt_auth_file(auth_file);
-            Ok(AuthDocument::default())
+            Ok(preserved.unwrap_or_default())
         }
         Err(e) => Err(e),
+    }
+}
+
+/// Best-effort recovery of parseable `providers.*` maps from a file that
+/// failed typed document deserialize. Returns `None` when nothing useful
+/// can be recovered (caller treats as empty).
+fn preserve_sibling_providers_from_corrupt(auth_file: &Path) -> Option<AuthDocument> {
+    let bytes = std::fs::read(auth_file).ok()?;
+    let value: serde_json::Value = serde_json::from_slice(&bytes).ok()?;
+    let providers = value.get("providers")?.as_object()?;
+    let mut doc = AuthDocument::default();
+    if let Some(v) = value.get("version").and_then(|v| v.as_u64()) {
+        // Cap at AUTH_DOCUMENT_VERSION for rewrite; unsupported versions
+        // never reach this path (they fail closed before recovery).
+        if v <= u64::from(AUTH_DOCUMENT_VERSION) {
+            doc.version = Some(v as u32);
+        }
+    }
+    for (key, raw) in providers {
+        if let Ok(store) = serde_json::from_value::<AuthStore>(raw.clone())
+            && !store.is_empty()
+        {
+            doc.providers.insert(key.clone(), store);
+        }
+    }
+    if doc.providers.is_empty() {
+        None
+    } else {
+        Some(doc)
     }
 }
 
