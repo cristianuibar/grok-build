@@ -431,18 +431,30 @@ map.insert(
 
 ## Open Questions
 
-1. **Should empty prefetched map (`Some({})`) still receive Codex defaults?**  
-   - What we know: test currently expects empty base.  
-   - What's unclear: whether any production path passes empty `Some`. Fetch failures use `None` (falls back to defaults).  
-   - Recommendation: still inject Codex defaults when `!has_custom_endpoint()`; update the unit test.
+### Q1 — Empty prefetched map Codex inject — **RESOLVED**
 
-2. **Should remote-prefetched Grok names be rewritten to include `(xAI)`?**  
-   - What we know: UI-SPEC locks default JSON names; remote overrides matching keys.  
-   - Recommendation: do not rewrite remote names this phase; ensure GPT names and `provider` field are correct; optional polish later.
+**Decision:** Empty `Some(IndexMap::new())` **still receives** bundled Codex defaults when `!has_custom_endpoint()`.
 
-3. **Shell `--lib` test harness health**  
-   - What we know: Phase 2 verification noted some lib-test compile issues (`WorkspaceOps::for_test` et al.).  
-   - Recommendation: prefer tests colocated in `config.rs` modules already used, or integration tests that compile; Wave 0 verify `cargo test -p xai-grok-shell --lib resolve_model_list` (or filtered) actually runs.
+- Rationale: Fetch failures use `None` (full defaults path). An empty `Some` is a degenerate remote list; re-appending Codex-only bundles matches D-03/D-09 mixed-catalog intent without resurrecting pruned xAI defaults.
+- Plan impact: Plan 02 encodes `empty_prefetch_still_gets_codex_defaults` in `tests/model_catalog.rs`; do not keep empty-base as the phase gate.
+
+### Q2 — Rewrite remote xAI names with `(xAI)` — **RESOLVED**
+
+**Decision:** **Do not** rewrite remote-prefetched Grok display names this phase.
+
+- Rationale: UI-SPEC locks embedded default JSON names; remote overrides matching keys keep server-provided labels. GPT bundled names + explicit `provider` field carry Phase 3 labeling; optional polish later.
+- Plan impact: Plan 01 sets remote parse `provider = Xai` only; Plan 03 ACP/CLI pass through catalog `name` without suffix synthesis on remote rows.
+
+### Q3 — Shell/pager `--lib` harness health — **RESOLVED**
+
+**Decision:** Wave 0 and all Phase 3 gates use **integration tests on public APIs** — not repair of shell/pager `--lib` suites.
+
+- What we know: `cargo test -p xai-grok-shell --lib` fails to compile (~cross-crate `cfg(test)` leakage, missing test-only re-exports); pager `--lib` similarly unhealthy at scale. Do **not** schedule fixing ~32 shell / ~169 pager lib-test errors in Phase 3.
+- Plan impact:
+  - Shell: `crates/codegen/xai-grok-shell/tests/model_catalog.rs` via `cargo test -p xai-grok-shell --test model_catalog …` against `resolve_model_list`, `available_models`, `to_acp_model_info`, `Config`, `ModelEntry`, `ModelProvider`.
+  - Pager CLI: make `format_cli_model_row` **pub**; `crates/codegen/xai-grok-pager/tests/format_cli_model_row.rs` via `cargo test -p xai-grok-pager --test format_cli_model_row …`.
+  - Models crate: `cargo test -p xai-grok-models --lib` remains OK.
+- See `03-VALIDATION.md` for full phase gate and sampling rates.
 
 ## Environment Availability
 
@@ -461,46 +473,49 @@ map.insert(
 ## Validation Architecture
 
 > `workflow.nyquist_validation` is **true** in `.planning/config.json`.
+> Canonical per-phase contract: `03-VALIDATION.md` (authoritative after plan revision).
 
 ### Test Framework
 
 | Property | Value |
 |----------|-------|
-| Framework | Built-in `cargo test` (crate unit + integration) |
-| Config file | none (Cargo defaults); `serial_test` for env-sensitive tests |
-| Quick run command | `cargo test -p xai-grok-shell --lib resolve_model_list -- --nocapture` (adjust filter to new test names) |
-| Full suite command | `cargo test -p xai-grok-models --lib && cargo test -p xai-grok-shell --lib available_models provider -- --nocapture` + targeted pager tests if added |
+| Framework | Built-in `cargo test` — **integration preferred** for shell/pager (Q3 RESOLVED) |
+| Config file | none (Cargo defaults) |
+| Quick run command | `cargo test -p xai-grok-shell --test model_catalog -- --nocapture` |
+| Full suite command | `cargo test -p xai-grok-models --lib && cargo test -p xai-grok-shell --test model_catalog -- --nocapture && cargo test -p xai-grok-pager --test format_cli_model_row -- --nocapture` |
+| Forbidden gates | `cargo test -p xai-grok-shell --lib …` and `cargo test -p xai-grok-pager --lib …` for Phase 3 |
 
 ### Phase Requirements → Test Map
 
 | Req ID | Behavior | Test Type | Automated Command | File Exists? |
 |--------|----------|-----------|-------------------|-------------|
-| MOD-01 | Catalog contains Sol/Terra/Luna with provider=codex and Codex-labeled names | unit | `cargo test -p xai-grok-shell --lib catalog_includes_gpt56 -- --nocapture` | ❌ Wave 0 |
-| MOD-01 | Names match UI-SPEC / provider suffix | unit | same | ❌ Wave 0 |
-| MOD-02 | Mixed list: Grok + GPT together; order Grok then Sol→Terra→Luna when no prefetch | unit | `cargo test -p xai-grok-shell --lib mixed_catalog_order -- --nocapture` | ❌ Wave 0 |
-| MOD-02 | Prefetched xAI-only map still includes GPT rows | unit | `cargo test -p xai-grok-shell --lib codex_defaults_survive_prefetch -- --nocapture` | ❌ Wave 0 |
-| MOD-02 | Custom models endpoint does **not** inject GPT | unit | update enterprise tests | ✅ exists (extend) |
-| Success #3 | Every entry has provider; missing defaults to xai | unit | `cargo test -p xai-grok-shell --lib provider_default_xai -- --nocapture` | ❌ Wave 0 |
-| Success #3 | `to_acp_model_info` exposes name + optional meta.provider | unit | extend existing agentType meta tests | ✅ pattern exists |
-| MOD-01/02 | GPT visible for API-key auth (`supported_in_api`) and OAuth; not filtered by Codex credentials | unit | `available_models` with `is_session_auth` true/false | ❌ Wave 0 |
-| Default | `default` remains `grok-build` / `default_model()` | unit | existing default + assert | ✅ partial |
-| CLI | `bum models` format id + name | unit or small pure format helper test | pager models format | ❌ Wave 0 |
+| MOD-01 | Catalog contains Sol/Terra/Luna with provider=codex and Codex-labeled names | integration | `cargo test -p xai-grok-shell --test model_catalog catalog_includes_gpt56 -- --nocapture` | ❌ Wave 0 |
+| MOD-01 | Names match UI-SPEC / provider suffix | integration | same + inherit name-suffix assert in model_catalog | ❌ Wave 0 |
+| MOD-02 | Mixed list: Grok + GPT together; order Grok then Sol→Terra→Luna when no prefetch | integration | `cargo test -p xai-grok-shell --test model_catalog mixed_catalog_order -- --nocapture` | ❌ Wave 0 |
+| MOD-02 | Prefetched xAI-only map still includes GPT rows | integration | `cargo test -p xai-grok-shell --test model_catalog codex_defaults_survive_prefetch -- --nocapture` | ❌ Wave 0 |
+| MOD-02 | Custom models endpoint does **not** inject GPT | integration | `… custom_endpoint_skips_codex_inject` in model_catalog | ❌ Wave 0 |
+| MOD-02 | Empty `Some({})` still injects Codex when `!has_custom_endpoint` (Q1) | integration | `… empty_prefetch_still_gets_codex_defaults` | ❌ Wave 0 |
+| Success #3 | Every entry has provider; missing defaults to xai | integration | `cargo test -p xai-grok-shell --test model_catalog provider_default_xai -- --nocapture` | ❌ Wave 0 |
+| Success #3 | `to_acp_model_info` exposes name + meta.provider | integration | `cargo test -p xai-grok-shell --test model_catalog to_acp_model_info -- --nocapture` | ❌ Wave 0 |
+| MOD-01/02 | GPT visible for API-key auth (`supported_in_api`) and OAuth; not filtered by Codex credentials | integration | `cargo test -p xai-grok-shell --test model_catalog gpt_visible -- --nocapture` | ❌ Wave 0 |
+| Default | `default` remains `grok-build` / `default_model()` | unit + integration | `cargo test -p xai-grok-models --lib` + model_catalog assert | ✅ partial |
+| CLI | `bum models` format id + name | integration | `cargo test -p xai-grok-pager --test format_cli_model_row -- --nocapture` | ❌ Wave 0 (Plan 03) |
 
 ### Sampling Rate
 
-- **Per task commit:** targeted filter tests for the crate touched  
-- **Per wave merge:** shell catalog resolve + models crate tests green  
-- **Phase gate:** all Phase 3 requirement tests green before `/gsd:verify-work`
+- **Per task commit:** targeted filter on the integration binary touched  
+- **Per wave merge:** full suite command above  
+- **Phase gate:** all Phase 3 requirement tests green before `/gsd:verify-work` (see 03-VALIDATION.md)
 
 ### Wave 0 Gaps
 
-- [ ] Unit tests for mixed catalog + provider binding + prefetch survival (shell `config`/`models` tests)
-- [ ] Update outdated prefetch-prune tests that assume zero non-prefetched keys
-- [ ] Optional: lightweight `xai-grok-models` test that JSON `default` ∈ models ids after GPT add (existing assert in LazyLock already)
-- [ ] CLI name formatting test or snapshot for `pager/src/models.rs`
-- [ ] Confirm which `cargo test -p xai-grok-shell --lib …` filters compile under current harness debt
+- [ ] `crates/codegen/xai-grok-shell/tests/model_catalog.rs` — mixed catalog + provider binding + prefetch survival + ACP meta (public APIs only)
+- [ ] Prefetch contracts that replace empty-base expectation with Q1 Codex inject
+- [ ] Optional: lightweight `xai-grok-models` test that JSON `default` ∈ models ids after GPT add (existing LazyLock assert already)
+- [ ] `crates/codegen/xai-grok-pager/tests/format_cli_model_row.rs` + `pub format_cli_model_row` (Plan 03)
+- [x] ~~Confirm shell `--lib` health~~ — **RESOLVED Q3:** do not use `--lib`; use integration tests only
 
-*(If shell lib suite is broken globally, plan a minimal `#[cfg(test)]` module path known to compile, or a tiny integration test binary that only exercises pure `resolve_model_list`.)*
+*(Do not plan repair of entire shell/pager lib-test suites in this phase.)*
 
 ## Security Domain
 

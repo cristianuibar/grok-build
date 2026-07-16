@@ -83,9 +83,9 @@ Plans:
 **Plans:** 3 plans
 
 Plans:
-- [ ] 03-01-PLAN.md — Provider schema + embedded mixed catalog (JSON, ModelProvider, no-prefetch proofs)
-- [ ] 03-02-PLAN.md — Prefetch Codex union-append merge + dual-auth visibility
-- [ ] 03-03-PLAN.md — ACP meta.provider + bum models CLI id (name) surface
+- [ ] 03-01-PLAN.md — Wave 0 model_catalog integration harness + provider schema + embedded mixed catalog
+- [ ] 03-02-PLAN.md — Prefetch Codex union-append merge + dual-auth visibility (integration tests)
+- [ ] 03-03-PLAN.md — ACP meta.provider + pub format_cli_model_row CLI surface (integration tests)
 
 **UI hint**: yes
 
