@@ -1,33 +1,37 @@
-//! `GROK_HOME` override tests in an isolated binary so `grok_home()`'s
+//! `BUM_HOME` override tests in an isolated binary so `grok_home()`'s
 //! process-wide `OnceLock` initializes from the overridden env var.
+//!
+//! Only one env-sensitive scenario lives in this process — do not add a
+//! second OnceLock-touching home scenario here.
 
 use std::path::PathBuf;
 
 #[test]
-fn grok_home_override_path_helpers() {
+fn bum_home_override_path_helpers() {
     let tmp = tempfile::tempdir().expect("tempdir");
-    let grok_home = tmp.path().to_path_buf();
+    let bum_home = tmp.path().to_path_buf();
+    // SAFETY: isolated test binary; set before any resolver/display call.
     unsafe {
-        std::env::set_var("GROK_HOME", &grok_home);
+        std::env::set_var("BUM_HOME", &bum_home);
     }
 
     assert_eq!(
         xai_grok_pager::util::pager_toml_path(),
-        grok_home.join("pager.toml")
+        bum_home.join("pager.toml")
     );
     assert_eq!(
         xai_grok_pager::util::display_grok_home_prefix(),
-        "$GROK_HOME"
+        "$BUM_HOME"
     );
     assert_eq!(
         xai_grok_pager::util::display_user_grok_path("config.toml"),
-        "$GROK_HOME/config.toml"
+        "$BUM_HOME/config.toml"
     );
 
-    let memory_path = grok_home.join("memory/MEMORY.md");
+    let memory_path = bum_home.join("memory/MEMORY.md");
     assert_eq!(
         xai_grok_pager::util::abbreviate_path(&memory_path.display().to_string()),
-        "$GROK_HOME/memory/MEMORY.md"
+        "$BUM_HOME/memory/MEMORY.md"
     );
 
     assert!(xai_grok_pager::util::is_under_user_grok_home(&memory_path));
