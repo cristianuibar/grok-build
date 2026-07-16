@@ -4,17 +4,17 @@ milestone: v1.0
 milestone_name: milestone
 current_phase: 6
 current_phase_name: Mid-session switch & missing-provider gate
-current_plan: 2
-status: in_progress
-stopped_at: Completed 06-01-PLAN.md
-last_updated: "2026-07-16T22:31:35.744Z"
+current_plan: 3
+status: executing
+stopped_at: Completed 06-02-PLAN.md
+last_updated: "2026-07-16T22:58:36.443Z"
 last_activity: 2026-07-16
 last_activity_desc: Completed 06-01 missing-provider shell gate
 progress:
-  total_phases: 9
+  total_phases: 6
   completed_phases: 5
   total_plans: 29
-  completed_plans: 24
+  completed_plans: 25
 ---
 
 # Project State
@@ -29,13 +29,13 @@ See: .planning/PROJECT.md (updated 2026-07-16)
 ## Current Position
 
 Phase: 6 of 9 (Mid-session switch & missing-provider gate)
-Plan: 2 of 6
-Status: In progress
+Plan: 3 of 6
+Status: Ready to execute
 Last activity: 2026-07-16 — Completed 06-01 missing-provider shell gate
-Current Plan: 2
+Current Plan: 3
 Total Plans in Phase: 6
 
-Progress: [████████░░] 83% (24/29 plans)
+Progress: [█████████░] 86% (24/29 plans)
 
 ## Performance Metrics
 
@@ -62,13 +62,17 @@ Progress: [████████░░] 83% (24/29 plans)
 | Plan | Duration | Tasks | Files |
 |------|----------|-------|-------|
 | Phase 06 P01 | 16min | 2 tasks | 5 files |
+| Phase 06 P02 | 25min | 2 tasks | 32 files |
 
 ## Decisions
 
 - [Phase 6]: Missing-provider gate lives in model_switch::apply (catalog provider, store_usable/credential_usable, BYOK skip)
+- [Phase ?]: Introduce DeferredModelSwitch early with persist_default + required_provider for gate-open handoff
+- [Phase ?]: Transactional set_default_model: no current/persist/toast until SwitchModelComplete(Ok)
+- [Phase ?]: MissingProvider QuestionView Login now / Keep current; Keep current clears deferred zero-persist
 
 ## Session
 
-**Last session:** 2026-07-16T22:31:35.733Z
-**Stopped at:** Completed 06-01-PLAN.md
+**Last session:** 2026-07-16T22:58:36.431Z
+**Stopped at:** Completed 06-02-PLAN.md
 **Resume file:** None
