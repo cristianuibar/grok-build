@@ -401,34 +401,39 @@ impl SamplingClient {
     pub fn new(config: SamplerConfig) -> Result<Self> {
         let mut headers = HeaderMap::new();
         headers.insert(CONTENT_TYPE, HeaderValue::from_static("application/json"));
+        // Blank/whitespace-only static keys are not usable auth material (D-11).
+        // Construction still succeeds; live sample preflight fails closed.
         if let Some(ref api_key) = config.api_key {
-            match config.auth_scheme {
-                AuthScheme::XApiKey => {
-                    let header_value = HeaderValue::from_str(api_key).map_err(|_| {
-                        tracing::debug!(
-                            api_key = %api_key,
-                            "Invalid api_key: cannot be converted to a valid HTTP header"
-                        );
-                        SamplingError::Auth(
-                            "Invalid api_key: cannot be converted to a valid HTTP header"
-                                .to_string(),
-                        )
-                    })?;
-                    headers.insert(HeaderName::from_static("x-api-key"), header_value);
-                }
-                AuthScheme::Bearer => {
-                    let bearer = format!("Bearer {}", api_key);
-                    let header_value = HeaderValue::from_str(&bearer).map_err(|_| {
-                        tracing::debug!(
-                            api_key = %api_key,
-                            "Invalid api_key: cannot be converted to a valid HTTP Authorization header"
-                        );
-                        SamplingError::Auth(
-                            "Invalid api_key: cannot be converted to a valid HTTP Authorization header"
-                                .to_string(),
-                        )
-                    })?;
-                    headers.insert(AUTHORIZATION, header_value);
+            let api_key = api_key.trim();
+            if !api_key.is_empty() {
+                match config.auth_scheme {
+                    AuthScheme::XApiKey => {
+                        let header_value = HeaderValue::from_str(api_key).map_err(|_| {
+                            tracing::debug!(
+                                api_key_len = api_key.len(),
+                                "Invalid api_key: cannot be converted to a valid HTTP header"
+                            );
+                            SamplingError::Auth(
+                                "Invalid api_key: cannot be converted to a valid HTTP header"
+                                    .to_string(),
+                            )
+                        })?;
+                        headers.insert(HeaderName::from_static("x-api-key"), header_value);
+                    }
+                    AuthScheme::Bearer => {
+                        let bearer = format!("Bearer {}", api_key);
+                        let header_value = HeaderValue::from_str(&bearer).map_err(|_| {
+                            tracing::debug!(
+                                api_key_len = api_key.len(),
+                                "Invalid api_key: cannot be converted to a valid HTTP Authorization header"
+                            );
+                            SamplingError::Auth(
+                                "Invalid api_key: cannot be converted to a valid HTTP Authorization header"
+                                    .to_string(),
+                            )
+                        })?;
+                        headers.insert(AUTHORIZATION, header_value);
+                    }
                 }
             }
         }
@@ -546,23 +551,71 @@ impl SamplingClient {
         self.defaults.api_backend.clone()
     }
 
+    /// True when construction-time headers hold a nonblank static credential.
+    fn has_usable_static_auth(&self) -> bool {
+        match self.defaults.auth_scheme {
+            AuthScheme::XApiKey => self
+                .default_headers
+                .get(HeaderName::from_static("x-api-key"))
+                .and_then(|v| v.to_str().ok())
+                .is_some_and(|s| !s.trim().is_empty()),
+            AuthScheme::Bearer => self
+                .default_headers
+                .get(AUTHORIZATION)
+                .and_then(|v| v.to_str().ok())
+                .and_then(|s| s.strip_prefix("Bearer ").or(Some(s)))
+                .is_some_and(|s| !s.trim().is_empty()),
+        }
+    }
+
+    /// True when a live resolver yields a nonblank bearer.
+    fn has_usable_resolved_bearer(&self) -> bool {
+        self.bearer_resolver
+            .as_ref()
+            .and_then(|r| r.current_bearer())
+            .is_some_and(|s| !s.trim().is_empty())
+    }
+
+    /// Local fail-closed preflight (D-11 / T-04-14): require nonblank static
+    /// api_key **or** nonblank resolved bearer before any network I/O.
+    ///
+    /// Present resolvers that return `None` or whitespace-only do **not**
+    /// count as usable material — they must not leave headers unchanged and
+    /// send unauthenticated HTTP.
+    fn ensure_usable_auth_material(&self) -> Result<()> {
+        if self.has_usable_static_auth() || self.has_usable_resolved_bearer() {
+            return Ok(());
+        }
+        Err(SamplingError::Auth(
+            "Missing credentials for sampling request: no usable api_key or bearer".to_string(),
+        ))
+    }
+
     /// POST with default headers. Overrides auth from resolver if wired.
-    fn post(&self, url: impl reqwest::IntoUrl) -> reqwest::RequestBuilder {
+    ///
+    /// Fails closed with [`SamplingError::Auth`] when neither a nonblank
+    /// static key nor a nonblank live bearer is available (no HTTP send).
+    fn post(&self, url: impl reqwest::IntoUrl) -> Result<reqwest::RequestBuilder> {
+        self.ensure_usable_auth_material()?;
+
         let mut headers = self.default_headers.clone();
         if let Some(resolver) = &self.bearer_resolver
             && let Some(fresh) = resolver.current_bearer()
         {
-            match self.defaults.auth_scheme {
-                AuthScheme::XApiKey => {
-                    headers.remove(AUTHORIZATION);
-                    if let Ok(v) = HeaderValue::from_str(&fresh) {
-                        headers.insert(HeaderName::from_static("x-api-key"), v);
+            let fresh = fresh.trim();
+            if !fresh.is_empty() {
+                match self.defaults.auth_scheme {
+                    AuthScheme::XApiKey => {
+                        headers.remove(AUTHORIZATION);
+                        if let Ok(v) = HeaderValue::from_str(fresh) {
+                            headers.insert(HeaderName::from_static("x-api-key"), v);
+                        }
                     }
-                }
-                AuthScheme::Bearer => {
-                    headers.remove(HeaderName::from_static("x-api-key"));
-                    if let Ok(v) = HeaderValue::from_str(&format!("Bearer {fresh}")) {
-                        headers.insert(AUTHORIZATION, v);
+                    AuthScheme::Bearer => {
+                        headers.remove(HeaderName::from_static("x-api-key"));
+                        if let Ok(v) = HeaderValue::from_str(&format!("Bearer {fresh}")) {
+                            headers.insert(AUTHORIZATION, v);
+                        }
                     }
                 }
             }
@@ -593,7 +646,7 @@ impl SamplingClient {
         if let Some(injector) = &self.header_injector {
             injector.inject(&mut headers);
         }
-        self.http.post(url).headers(headers)
+        Ok(self.http.post(url).headers(headers))
     }
 
     /// Bearer prefix for 401 attribution. Prefers live resolver, falls back to default_headers.
@@ -862,7 +915,7 @@ impl SamplingClient {
             user_id: payload.x_grok_user_id.as_deref(),
         };
         let http_request = grok_headers
-            .apply(self.post(self.endpoint("chat/completions")))
+            .apply(self.post(self.endpoint("chat/completions"))?)
             .json(&payload);
 
         let response = http_request.send().await.map_err(|e| {
@@ -920,7 +973,7 @@ impl SamplingClient {
             user_id: payload.x_grok_user_id.as_deref(),
         };
         let http_request = grok_headers
-            .apply(self.post(self.endpoint("chat/completions")))
+            .apply(self.post(self.endpoint("chat/completions"))?)
             .header(ACCEPT, HeaderValue::from_static("text/event-stream"))
             .json(&streaming_request);
 
@@ -1143,7 +1196,7 @@ impl SamplingClient {
         // old raw_output machinery.
         xai_grok_sampling_types::patch_reasoning_text_types(&mut request_body);
         let http_request = grok_headers
-            .apply(self.post(self.endpoint("responses")))
+            .apply(self.post(self.endpoint("responses"))?)
             .json(&request_body);
 
         let response = http_request.send().await.map_err(|e| {
@@ -1294,7 +1347,7 @@ impl SamplingClient {
             .doom_loop_recovery
             .map(crate::doom_loop::DoomLoopSignalCollector::new);
         let mut http_request = grok_headers
-            .apply(self.post(self.endpoint("responses")))
+            .apply(self.post(self.endpoint("responses"))?)
             .header(ACCEPT, HeaderValue::from_static("text/event-stream"));
         if doom_loop.is_some() {
             // Presence opts in; the server ignores the value.
@@ -1501,7 +1554,7 @@ impl SamplingClient {
             user_id: request.x_grok_user_id.as_deref(),
         };
         let http_request = grok_headers
-            .apply(self.post(self.endpoint("messages")))
+            .apply(self.post(self.endpoint("messages"))?)
             .json(&request.inner);
 
         let response = http_request.send().await.map_err(|e| {
@@ -1617,7 +1670,7 @@ impl SamplingClient {
             user_id: request.x_grok_user_id.as_deref(),
         };
         let http_request = grok_headers
-            .apply(self.post(self.endpoint("messages")))
+            .apply(self.post(self.endpoint("messages"))?)
             .header(ACCEPT, HeaderValue::from_static("text/event-stream"))
             .json(&request.inner);
 
@@ -2258,6 +2311,7 @@ mod tests {
         let client = SamplingClient::new(config).expect("build");
         let req = client
             .post("http://localhost/test")
+            .expect("post preflight")
             .build()
             .expect("build request");
         assert!(
@@ -2392,6 +2446,7 @@ mod tests {
         let client = SamplingClient::new(cfg).expect("client should build");
         let request = client
             .post("https://example.test/v1/messages")
+            .expect("post preflight")
             .build()
             .expect("request should build");
         let auth = request
@@ -2420,6 +2475,7 @@ mod tests {
         let client = SamplingClient::new(cfg).expect("client should build");
         let request = client
             .post("https://example.test/v1/responses")
+            .expect("post preflight")
             .build()
             .expect("request should build");
         let auth_count = request.headers().get_all(AUTHORIZATION).iter().count();
@@ -2448,6 +2504,7 @@ mod tests {
         let client = SamplingClient::new(cfg).expect("client should build");
         let request = client
             .post("https://example.test/v1/messages")
+            .expect("post preflight")
             .build()
             .expect("request should build");
         let api_key = request
@@ -2530,7 +2587,9 @@ mod tests {
         let client = SamplingClient::new(cfg).expect("client should build");
 
         // Build a request to inspect the final headers.
-        let builder = client.post("https://example.test/v1/responses");
+        let builder = client
+            .post("https://example.test/v1/responses")
+            .expect("post preflight");
         let request = builder.body("").build().expect("request should build");
 
         let auth_values: Vec<_> = request.headers().get_all(AUTHORIZATION).iter().collect();

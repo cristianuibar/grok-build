@@ -1,16 +1,31 @@
-//! Phase 4 provider-aware request routing — Wave 0 integration harness.
+//! Phase 4 provider-aware request routing — integration harness + phase gate.
 //!
-//! **Scope (D-12 / D-13):** public APIs only (`resolve_model_list`, `resolve_credentials`,
-//! `sampling_config_for_model`, `inject_url_derived_headers`, catalog types). No shell
+//! **Contracts covered:**
+//! - xAI route (base + credential slot + session OAuth)
+//! - Codex route (ChatGPT backend, no XAI env leak)
+//! - provider override rebind
+//! - dual-token never_cross_slot
+//! - prepare/carrier/transform switch (Plan 04)
+//! - on-wire Authorization (mock HTTP, fake tokens)
+//! - local fail-closed (missing key, empty live resolver, whitespace, blank static)
+//! - proxy headers on xAI / off on Codex
+//! - Option provider attach policy (None never attaches xAI resolver)
+//! - empty Codex key construction (D-11) without panic
+//! - custom-host session OAuth denial
+//! - endpoints trust provenance
+//!
+//! **Scope (D-12 / D-13):** public APIs + SamplingClient live boundary. No shell
 //! `--lib` gates. Fake tokens only (`xai-fake-token` / `codex-fake-token`) — no live
 //! ChatGPT OAuth, no Phase 5 login UX, no Phase 6 missing-provider gate.
 //!
 //! Prefer `cargo test -p xai-grok-shell --test provider_routing` only.
 
 use chrono::{Duration, Utc};
+use futures_util::StreamExt;
 use indexmap::IndexMap;
 use serial_test::serial;
 use std::num::NonZeroU64;
+use std::sync::Arc;
 use xai_grok_shell::agent::config::{
     apply_prepared_sampling_to_chat_state_fields, inject_url_derived_headers,
     prepare_sampling_credentials, prepared_sampling_config_from_credentials,
@@ -25,11 +40,65 @@ use xai_grok_shell::auth::{
     read_provider_auth_store, select_provider_access_token, AuthMode, AuthStore, AuthStoreReadError,
     GrokAuth, PROVIDER_CODEX,
 };
-use xai_grok_shell::sampling::ApiBackend;
-use xai_grok_test_support::EnvGuard;
+use xai_grok_shell::sampling::{
+    ApiBackend, BearerResolver, Client, ConversationItem, ConversationRequest, SamplerConfig,
+    SamplingError,
+};
+use xai_grok_test_support::{EnvGuard, MockInferenceServer};
 
 const XAI_FAKE: &str = "xai-fake-token";
 const CODEX_FAKE: &str = "codex-fake-token";
+
+/// Test stub for empty / whitespace live bearer resolvers (cycle 2 fail-closed).
+#[derive(Debug)]
+struct StubBearerResolver(Option<&'static str>);
+
+impl BearerResolver for StubBearerResolver {
+    fn current_bearer(&self) -> Option<String> {
+        self.0.map(str::to_owned)
+    }
+}
+
+fn sampler_config_for_mock(
+    base_url: &str,
+    api_key: Option<&str>,
+    model: &str,
+    api_backend: ApiBackend,
+    extra_headers: IndexMap<String, String>,
+    bearer_resolver: Option<Arc<dyn BearerResolver>>,
+) -> SamplerConfig {
+    SamplerConfig {
+        api_key: api_key.map(str::to_owned),
+        base_url: base_url.to_owned(),
+        model: model.to_owned(),
+        max_completion_tokens: Some(64),
+        temperature: None,
+        top_p: None,
+        api_backend,
+        auth_scheme: Default::default(),
+        extra_headers,
+        context_window: 8192,
+        force_http1: false,
+        max_retries: Some(0),
+        stream_tool_calls: false,
+        idle_timeout_secs: None,
+        reasoning_effort: None,
+        origin_client: None,
+        client_identifier: None,
+        deployment_id: None,
+        user_id: None,
+        client_version: None,
+        attribution_callback: None,
+        bearer_resolver,
+        supports_backend_search: false,
+        compactions_remaining: None,
+        compaction_at_tokens: None,
+        doom_loop_recovery: None,
+        header_injector: None,
+    }
+}
+
+
 
 /// Deterministic endpoints for route assertions (avoid ambient env-only equality).
 fn deterministic_endpoints() -> EndpointsConfig {
@@ -1100,4 +1169,257 @@ fn sampling_config_api_backend_from_model() {
         "sampling_config_for_model must preserve entry api_backend Responses"
     );
     assert_eq!(cfg.model, entry.info.model);
+}
+
+// =============================================================================
+// Plan 05 — local fail-closed + on-wire Authorization (D-11 / D-12 / D-14)
+// =============================================================================
+
+/// D-11: missing static key and no resolver → Auth before any HTTP (mock count 0).
+#[tokio::test]
+async fn missing_credentials_fail_closed_no_http() {
+    let server = MockInferenceServer::start().await.expect("start mock");
+    server.set_response("should-not-be-reached");
+    let cfg = sampler_config_for_mock(
+        &server.url(),
+        None,
+        "test-model",
+        ApiBackend::ChatCompletions,
+        IndexMap::new(),
+        None,
+    );
+    let client = Client::new(cfg).expect("SamplerConfig without key may construct");
+    let result = client
+        .conversation_stream(ConversationRequest::from_items(vec![ConversationItem::user(
+            "hi",
+        )]))
+        .await;
+    match result {
+        Err(SamplingError::Auth(_)) => {}
+        Err(e) => panic!("expected local Auth fail-closed, got {e:?}"),
+        Ok(_) => panic!("expected local Auth fail-closed, got Ok(stream)"),
+    }
+    assert_eq!(
+        server.request_count(),
+        0,
+        "fail-closed must send zero HTTP requests"
+    );
+}
+
+/// Cycle 2 HIGH: resolver present but returns None → no unauthenticated HTTP.
+#[tokio::test]
+async fn empty_live_resolver_fail_closed_no_http() {
+    let server = MockInferenceServer::start().await.expect("start mock");
+    server.set_response("should-not-be-reached");
+    let cfg = sampler_config_for_mock(
+        &server.url(),
+        None,
+        "test-model",
+        ApiBackend::ChatCompletions,
+        IndexMap::new(),
+        Some(Arc::new(StubBearerResolver(None))),
+    );
+    let client = Client::new(cfg).expect("construct with empty live resolver");
+    let result = client
+        .conversation_stream(ConversationRequest::from_items(vec![ConversationItem::user(
+            "hi",
+        )]))
+        .await;
+    match result {
+        Err(SamplingError::Auth(_)) => {}
+        Err(e) => panic!("expected local Auth when resolver yields None, got {e:?}"),
+        Ok(_) => panic!("expected local Auth when resolver yields None, got Ok(stream)"),
+    }
+    assert_eq!(server.request_count(), 0);
+}
+
+/// Cycle 2 HIGH: resolver returns whitespace-only → no unauthenticated HTTP.
+#[tokio::test]
+async fn whitespace_live_resolver_fail_closed_no_http() {
+    let server = MockInferenceServer::start().await.expect("start mock");
+    server.set_response("should-not-be-reached");
+    let cfg = sampler_config_for_mock(
+        &server.url(),
+        None,
+        "test-model",
+        ApiBackend::ChatCompletions,
+        IndexMap::new(),
+        Some(Arc::new(StubBearerResolver(Some("   \t  ")))),
+    );
+    let client = Client::new(cfg).expect("construct with whitespace live resolver");
+    let result = client
+        .conversation_stream(ConversationRequest::from_items(vec![ConversationItem::user(
+            "hi",
+        )]))
+        .await;
+    match result {
+        Err(SamplingError::Auth(_)) => {}
+        Err(e) => panic!("expected local Auth when resolver yields whitespace, got {e:?}"),
+        Ok(_) => panic!("expected local Auth when resolver yields whitespace, got Ok(stream)"),
+    }
+    assert_eq!(server.request_count(), 0);
+}
+
+/// Cycle 2 HIGH: blank/whitespace static key + no usable resolver → Auth, zero HTTP.
+#[tokio::test]
+async fn blank_static_key_fail_closed_no_http() {
+    let server = MockInferenceServer::start().await.expect("start mock");
+    server.set_response("should-not-be-reached");
+
+    for blank in ["", "   ", "\t\n"] {
+        let cfg = sampler_config_for_mock(
+            &server.url(),
+            Some(blank),
+            "test-model",
+            ApiBackend::ChatCompletions,
+            IndexMap::new(),
+            None,
+        );
+        let client = Client::new(cfg).expect("blank static key may construct");
+        let result = client
+            .conversation_stream(ConversationRequest::from_items(vec![
+                ConversationItem::user("hi"),
+            ]))
+            .await;
+        match result {
+            Err(SamplingError::Auth(_)) => {}
+            Err(e) => panic!("blank static key {blank:?} must fail closed locally, got {e:?}"),
+            Ok(_) => panic!("blank static key {blank:?} must fail closed locally, got Ok(stream)"),
+        }
+    }
+    assert_eq!(
+        server.request_count(),
+        0,
+        "blank static keys must not hit mock"
+    );
+}
+
+/// D-12: xAI-built SamplerConfig sends Authorization Bearer xai-fake-token on the wire.
+#[tokio::test]
+async fn on_wire_authorization_xai_fake() {
+    let server = MockInferenceServer::start().await.expect("start mock");
+    server.set_response("OK");
+
+    let endpoints = deterministic_endpoints();
+    let entry = catalog_entry("grok-build");
+    let creds =
+        resolve_credentials_for_provider(&entry, &endpoints, Some(XAI_FAKE), Some(CODEX_FAKE));
+    assert_eq!(creds.api_key.as_deref(), Some(XAI_FAKE));
+
+    let mut cfg = sampling_config_for_model(&entry, creds, None, None, None, None);
+    // Point live traffic at mock while preserving production-built headers/token.
+    cfg.base_url = server.url();
+    // Mock is not cli-chat-proxy — drop proxy-only headers so Authorization is the auth under test.
+    cfg.extra_headers
+        .shift_remove("X-XAI-Token-Auth");
+    cfg.extra_headers
+        .shift_remove("x-authenticateresponse");
+
+    let client = Client::new(cfg).expect("xAI client with fake token");
+    let (mut stream, _) = client
+        .conversation_stream(ConversationRequest::from_items(vec![ConversationItem::user(
+            "hello xai",
+        )]))
+        .await
+        .expect("sample should succeed with xai-fake-token");
+    while stream.next().await.is_some() {}
+
+    let req = server
+        .requests()
+        .into_iter()
+        .find(|r| r.path.contains("chat/completions") || r.path.contains("responses"))
+        .expect("mock must record an inference request");
+    let expected = format!("Bearer {XAI_FAKE}");
+    assert_eq!(
+        req.header("authorization"),
+        Some(expected.as_str()),
+        "xAI path must send Authorization Bearer xai-fake-token"
+    );
+}
+
+/// D-12: Codex-built SamplerConfig sends codex-fake-token; never X-XAI-Token-Auth on non-proxy mock.
+#[tokio::test]
+async fn on_wire_authorization_codex_fake() {
+    let server = MockInferenceServer::start().await.expect("start mock");
+    server.set_response("OK");
+
+    let endpoints = deterministic_endpoints();
+    let entry = catalog_entry("gpt-5.6-sol");
+    let creds =
+        resolve_credentials_for_provider(&entry, &endpoints, Some(XAI_FAKE), Some(CODEX_FAKE));
+    assert_eq!(creds.api_key.as_deref(), Some(CODEX_FAKE));
+    assert_ne!(creds.api_key.as_deref(), Some(XAI_FAKE));
+
+    let mut cfg = sampling_config_for_model(&entry, creds, None, None, None, None);
+    cfg.base_url = server.url();
+    // Codex production path must not have injected X-XAI-Token-Auth.
+    assert!(
+        !cfg.extra_headers.contains_key("X-XAI-Token-Auth"),
+        "Codex sampling_config must not carry X-XAI-Token-Auth; headers={:?}",
+        cfg.extra_headers
+    );
+
+    let client = Client::new(cfg).expect("Codex client with fake token");
+    // gpt-5.6-sol is Responses backend.
+    let (mut stream, _, _) = client
+        .conversation_stream_responses(ConversationRequest::from_items(vec![
+            ConversationItem::user("hello codex"),
+        ]))
+        .await
+        .expect("sample should succeed with codex-fake-token");
+    while stream.next().await.is_some() {}
+
+    let req = server
+        .requests()
+        .into_iter()
+        .find(|r| r.path.contains("responses") || r.path.contains("chat/completions"))
+        .expect("mock must record an inference request");
+    let expected = format!("Bearer {CODEX_FAKE}");
+    assert_eq!(
+        req.header("authorization"),
+        Some(expected.as_str()),
+        "Codex path must send Authorization Bearer codex-fake-token"
+    );
+    assert!(
+        req.header("x-xai-token-auth").is_none(),
+        "Codex non-proxy mock must not receive X-XAI-Token-Auth"
+    );
+    // Dual-token isolation on the wire: never the xAI fixture.
+    let xai_bearer = format!("Bearer {XAI_FAKE}");
+    assert_ne!(
+        req.header("authorization"),
+        Some(xai_bearer.as_str()),
+        "Codex request must never carry xai-fake-token"
+    );
+}
+
+/// D-11 construction: resolve with empty Codex slot still builds SamplerConfig without panic.
+#[test]
+fn empty_codex_credentials_constructs_route_without_panic() {
+    let endpoints = deterministic_endpoints();
+    let entry = catalog_entry("gpt-5.6-sol");
+    let creds = resolve_credentials_for_provider(&entry, &endpoints, Some(XAI_FAKE), None);
+    assert!(creds.api_key.is_none());
+    let cfg = sampling_config_for_model(&entry, creds, None, None, None, None);
+    assert!(cfg.api_key.is_none());
+    // Live client may construct; sample is fail-closed (covered by missing_credentials_*).
+    let _client = Client::new(cfg).expect("empty Codex key construction must not panic");
+}
+
+/// D-14: invalid-header conversion arms must not log full api_key = %api_key.
+#[test]
+fn invalid_header_path_does_not_log_full_key() {
+    let client_src = include_str!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../xai-grok-sampler/src/client.rs"
+    ));
+    assert!(
+        !client_src.contains("api_key = %api_key"),
+        "SamplingClient invalid-header paths must not log full api_key (D-14)"
+    );
+    // Redacted diagnostics should still mention invalid api_key + length-style fields.
+    assert!(
+        client_src.contains("Invalid api_key"),
+        "invalid-header path should still log a redacted diagnostic"
+    );
 }

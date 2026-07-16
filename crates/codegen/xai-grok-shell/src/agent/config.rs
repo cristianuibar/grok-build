@@ -4796,8 +4796,9 @@ pub fn resolve_credentials_for_provider(
     tracing::debug!(
         model = %info.model,
         provider = %provider.as_str(),
+        credential_slot = route.credential_slot,
         base_url = %base_url,
-        has_api_key = api_key.is_some(),
+        has_api_key = api_key.as_ref().is_some_and(|k| !k.trim().is_empty()),
         session_oauth_allowed = route.session_oauth_allowed,
         auth_type = ?auth_type,
         "resolved credentials"
