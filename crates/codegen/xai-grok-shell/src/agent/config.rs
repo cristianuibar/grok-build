@@ -4488,8 +4488,11 @@ pub fn resolve_provider_route(
 ///
 /// Allowlist:
 /// - Host `chatgpt.com` / `www.chatgpt.com` with path prefix `/backend-api/codex`
-/// - Same host as the configured [`EndpointsConfig::resolve_codex_base_url`]
-///   (operator env/config override of the product Codex endpoint)
+/// - Same host **and path prefix** as the configured
+///   [`EndpointsConfig::resolve_codex_base_url`] (operator env/config override
+///   of the product Codex endpoint). Host-only match is insufficient — product
+///   session OAuth must not attach to arbitrary paths on the Codex host
+///   (e.g. `https://chatgpt.com/` without `/backend-api/codex`).
 ///
 /// Platform `api.openai.com` is intentionally **not** first-party for product
 /// session OAuth (D-15).
@@ -4510,7 +4513,13 @@ pub fn is_first_party_codex_url(url: &str, endpoints: &EndpointsConfig) -> bool 
         && let Some(cfg_host) = configured.host_str()
         && host.eq_ignore_ascii_case(cfg_host)
     {
-        return true;
+        let cfg_path = configured.path().trim_end_matches('/');
+        let req_path = parsed.path();
+        // Empty or root configured path: host match is enough (operator set a
+        // bare-host Codex endpoint). Non-empty path: require prefix alignment.
+        if cfg_path.is_empty() || cfg_path == "/" || req_path.starts_with(cfg_path) {
+            return true;
+        }
     }
     false
 }

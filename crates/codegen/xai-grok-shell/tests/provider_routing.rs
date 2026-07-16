@@ -27,7 +27,7 @@ use serial_test::serial;
 use std::num::NonZeroU64;
 use std::sync::Arc;
 use xai_grok_shell::agent::config::{
-    apply_prepared_sampling_to_chat_state_fields, inject_url_derived_headers,
+    apply_prepared_sampling_to_chat_state_fields, inject_url_derived_headers, is_first_party_codex_url,
     prepare_sampling_credentials, prepared_sampling_config_from_credentials,
     reconstruct_attach_policy_from_facts, resolve_credentials, resolve_credentials_for_provider,
     resolve_model_auth_facts, resolve_model_list, resolve_provider_route,
@@ -300,6 +300,34 @@ fn resolve_provider_route_first_party_codex_override_allows_oauth() {
         chatgpt.session_oauth_allowed,
         "chatgpt.com Codex backend host must allow session OAuth"
     );
+}
+
+/// Host-only match on chatgpt.com must not allow session OAuth without the
+/// Codex backend path (configured endpoint path alignment).
+#[test]
+fn chatgpt_root_without_codex_path_disallows_session_oauth() {
+    let endpoints = deterministic_endpoints();
+    assert_eq!(
+        endpoints.resolve_codex_base_url(),
+        CODEX_BASE_URL_DEFAULT,
+        "precondition: default Codex base is chatgpt.com/.../codex"
+    );
+    for url in [
+        "https://chatgpt.com/",
+        "https://chatgpt.com",
+        "https://chatgpt.com/backend-api/conversation",
+        "https://www.chatgpt.com/",
+    ] {
+        let route = resolve_provider_route(ModelProvider::Codex, &endpoints, Some(url));
+        assert!(
+            !route.session_oauth_allowed,
+            "path-less / non-Codex path {url} must set session_oauth_allowed=false"
+        );
+        assert!(
+            !is_first_party_codex_url(url, &endpoints),
+            "is_first_party_codex_url({url}) must be false"
+        );
+    }
 }
 
 /// Whitespace-only override falls through to provider default base.
