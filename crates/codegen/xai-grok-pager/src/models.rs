@@ -1,4 +1,4 @@
-//! `grok models` subcommand.
+//! `grok models` / `bum models` subcommand.
 
 use anyhow::Result;
 use tokio_util::sync::CancellationToken;
@@ -6,6 +6,19 @@ use xai_grok_shell::agent::config::Config as AgentConfig;
 use xai_grok_shell::cli_models::{AuthStatus, list_models};
 
 use crate::client_identity::{PAGER_CLIENT_TYPE, PAGER_CLIENT_VERSION};
+
+/// Format a single `bum models` list row per UI-SPEC:
+/// - current: `  * {id} ({name})`
+/// - other:   `  - {id} ({name})`
+///
+/// When `name` is empty, falls back to `id` inside the parenthetical so rows
+/// always keep the `id (name)` shape. No `(default)` text suffix — the star
+/// marker alone marks the current model; name carries the provider label.
+pub fn format_cli_model_row(is_current: bool, id: &str, name: &str) -> String {
+    let display_name = if name.is_empty() { id } else { name };
+    let marker = if is_current { "*" } else { "-" };
+    format!("  {marker} {id} ({display_name})")
+}
 
 pub async fn list_available_models(agent_config: &AgentConfig) -> Result<()> {
     match AuthStatus::resolve(agent_config) {
@@ -28,11 +41,8 @@ pub async fn list_available_models(agent_config: &AgentConfig) -> Result<()> {
     println!();
     println!("Available models:");
     for m in state.available_models {
-        if m.model_id == state.current_model_id {
-            println!("  * {} (default)", m.model_id.0);
-        } else {
-            println!("  - {}", m.model_id.0);
-        }
+        let is_current = m.model_id == state.current_model_id;
+        println!("{}", format_cli_model_row(is_current, &m.model_id.0, &m.name));
     }
 
     cancel.cancel();
