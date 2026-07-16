@@ -1,10 +1,11 @@
 ---
 phase: 5
 slug: codex-oauth-dual-auth-lifecycle
-status: draft
+status: approved
 shadcn_initialized: false
 preset: none
 created: 2026-07-16
+reviewed_at: 2026-07-16
 surface: terminal-tui
 ---
 
@@ -382,11 +383,11 @@ Applicable state considerations resolved: **8 covered, 0 backstop, 0 unresolved*
 
 ## Checker Sign-Off
 
-- [ ] Dimension 1 Copywriting: PASS
-- [ ] Dimension 2 Visuals: PASS
-- [ ] Dimension 3 Color: PASS
-- [ ] Dimension 4 Typography: PASS
-- [ ] Dimension 5 Spacing: PASS
-- [ ] Dimension 6 Registry Safety: PASS
+- [x] Dimension 1 Copywriting: PASS
+- [x] Dimension 2 Visuals: PASS
+- [x] Dimension 3 Color: PASS
+- [x] Dimension 4 Typography: PASS
+- [x] Dimension 5 Spacing: PASS
+- [x] Dimension 6 Registry Safety: PASS
 
-**Approval:** pending
+**Approval:** approved (gsd-ui-checker, 2026-07-16) — TUI/CLI cell-spacing pattern per Phase 3; no third-party registries.
