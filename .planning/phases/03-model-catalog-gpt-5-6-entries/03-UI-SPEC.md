@@ -195,7 +195,7 @@ Terminal monospaced — “size” is **role weight + Theme color**, not px. Exa
 | Selected / keyboard focus | bold primary + `bg_visual` (or embedded modal selected style) |
 | Mouse hover | `bg_hover` |
 | Current model in slash list | name + ` (current)` in display string |
-| Search / filter | existing fuzzy filter; no matches → empty list with empty-state copy (no crash) |
+| Search / filter | existing fuzzy filter; **no matches → generic picker empty list** (no crash). Distinct from **empty catalog** → slash returns no dropdown (`None`) — do not conflate the two states |
 
 ### Explicit non-goals (defer)
 
@@ -273,6 +273,7 @@ Applicable state considerations resolved: **8 covered, 0 backstop, 0 unresolved*
 5. No per-provider colors this phase
 6. **Settings names-only** (review cycle 1): DynamicEnum does not require per-row description plumbing this phase
 7. **Empty catalog authority** (review cycle 1): no-dropdown `None` for slash; empty-state copy N/A on that path
+8. **Fuzzy no-matches vs empty catalog** (review cycle 2): fuzzy filter with no matches → generic picker empty list; empty catalog → no dropdown (`None`)
 
 ---
 

@@ -12,7 +12,8 @@ updated: 2026-07-16
 
 > Per-phase validation contract for feedback sampling during execution.
 > Wave 0 uses **integration tests on public APIs** — do **not** repair the broken shell/pager `--lib` suites.
-> Review cycle 1: cargo verify hygiene + Task 1 sequencing + collision + override + required UAT.
+> Review cycle 1: cargo verify hygiene + Task 1 sequencing + collision + override.
+> Review cycle 2: remove-then-append collision order; automated settings DynamicEnum; optional advisory UAT.
 
 ---
 
@@ -23,7 +24,7 @@ updated: 2026-07-16
 | **Framework** | Cargo built-in `cargo test` (crate integration + models unit) |
 | **Config file** | none global — per-crate; `rust-toolchain.toml` (1.92.0) |
 | **Quick run command** | `cargo test -p xai-grok-shell --test model_catalog -- --nocapture` |
-| **Full suite command** | `cargo test -p xai-grok-models --lib && cargo test -p xai-grok-shell --test model_catalog -- --nocapture && cargo test -p xai-grok-pager --test format_cli_model_row -- --nocapture && cargo check -p xai-grok-shell && cargo check -p xai-grok-pager` |
+| **Full suite command** | `cargo test -p xai-grok-models --lib && cargo test -p xai-grok-shell --test model_catalog -- --nocapture && cargo test -p xai-grok-pager --test format_cli_model_row -- --nocapture && cargo test -p xai-grok-pager --test dynamic_enum_model_names -- --nocapture && cargo check -p xai-grok-shell && cargo check -p xai-grok-pager` |
 | **Estimated runtime** | ~30–120 seconds after first compile (integration binaries only) |
 
 ### Cargo verify hygiene (locked — review HIGH)
@@ -42,6 +43,7 @@ updated: 2026-07-16
 |---------|-----------|
 | `cargo test -p xai-grok-shell --test model_catalog …` | `cargo test -p xai-grok-shell --lib …` for Phase 3 gates |
 | `cargo test -p xai-grok-pager --test format_cli_model_row …` | `cargo test -p xai-grok-pager --lib …` for Phase 3 gates |
+| `cargo test -p xai-grok-pager --test dynamic_enum_model_names …` | Treating interactive UAT environment-blocker as phase pass |
 | `cargo test -p xai-grok-models --lib` | Fixing entire shell (~32) / pager (~169) lib-test compile errors |
 | `cargo check -p xai-grok-shell` / `cargo check -p xai-grok-pager` | Full workspace test as a phase gate |
 
@@ -60,6 +62,11 @@ updated: 2026-07-16
 
 - `xai_grok_pager::models::format_cli_model_row` (make `pub` in Plan 03)
 
+**Public API surface for settings DynamicEnum name proofs:**
+
+- `xai_grok_pager::settings::dynamic_enum_choices` (already `pub`)
+- `xai_grok_pager::settings::{DynamicEnumSource, PagerLocalSnapshot, OwnedEnumChoice}`
+
 **Wire strings in tests:** assert `"xai"` / `"codex"` literals via `ModelProvider::as_str()` — do **not** import private `PROVIDER_XAI` / `PROVIDER_CODEX` into integration tests.
 
 ---
@@ -68,7 +75,7 @@ updated: 2026-07-16
 
 - **After every task commit:** Run that task’s `<automated>` command (prefer `&&` chains — never `;` that masks failures)
 - **After every plan wave:** Run the full suite command above for crates touched in the wave
-- **Before `/gsd-verify-work`:** Full suite green + required manual `/model` + settings checkpoint (Plan 03 Task 4)
+- **Before `/gsd-verify-work`:** Full suite green (ACP + CLI + settings DynamicEnum + cargo checks). Plan 03 Task 4 interactive UAT is optional advisory only.
 - **Max feedback latency:** ~120 seconds preferred (per integration binary after warm compile)
 
 ---
@@ -85,13 +92,15 @@ updated: 2026-07-16
 | 03-01-03 | 01 | 1 | MOD-01 | — | default_model stays grok-build; models crate ok | unit | `cargo test -p xai-grok-models --lib && cargo check -p xai-grok-shell` | ✅ partial | ⬜ pending |
 | 03-02-01 | 02 | 2 | MOD-02 | T-03-05 | Prefetch survival RED tests | integration | `cargo test -p xai-grok-shell --test model_catalog codex_defaults_survive_prefetch -- --nocapture` | ❌ W0 | ⬜ pending |
 | 03-02-01 | 02 | 2 | MOD-02 | T-03-05b | Prefetch collision cannot rebind Codex default to xai | integration | `cargo test -p xai-grok-shell --test model_catalog prefetched_collision_cannot_rebind_codex_default_to_xai -- --nocapture` | ❌ W0 | ⬜ pending |
-| 03-02-02 | 02 | 2 | MOD-02 | T-03-05/06 | Union-append + collision authority; enterprise skip | integration | `cargo test -p xai-grok-shell --test model_catalog -- --nocapture` | ❌ after impl | ⬜ pending |
+| 03-02-01 | 02 | 2 | MOD-02 | T-03-05c | Collision order: remote first then Sol→Terra→Luna (remove-then-append) | integration | `cargo test -p xai-grok-shell --test model_catalog prefetched_codex_collision_order -- --nocapture` | ❌ W0 | ⬜ pending |
+| 03-02-02 | 02 | 2 | MOD-02 | T-03-05/06 | Remove-then-append + collision authority; enterprise skip | integration | `cargo test -p xai-grok-shell --test model_catalog -- --nocapture` | ❌ after impl | ⬜ pending |
 | 03-02-03 | 02 | 2 | MOD-01/02 | T-03-07 | GPT visible session + API-key; no Codex login gate | integration | `cargo test -p xai-grok-shell --test model_catalog gpt_visible -- --nocapture` | ❌ W0 | ⬜ pending |
 | 03-03-01 | 03 | 3 | MOD-01 | T-03-09 | to_acp_model_info meta.provider + name pass-through | integration | `cargo test -p xai-grok-shell --test model_catalog to_acp_model_info -- --nocapture` | ❌ W0 | ⬜ pending |
 | 03-03-01 | 03 | 3 | MOD-01/02 | — | Pure ACP/list name suffix projection | integration | `cargo test -p xai-grok-shell --test model_catalog acp_list_projection -- --nocapture` | ❌ W0 | ⬜ pending |
 | 03-03-02 | 03 | 3 | MOD-01/02 | T-03-08 | CLI `* id (name)` / `- id (name)` pure formatter | integration | `cargo test -p xai-grok-pager --test format_cli_model_row -- --nocapture && cargo check -p xai-grok-pager` | ❌ W0 | ⬜ pending |
+| 03-03-02 | 03 | 3 | MOD-01/02 | — | Settings DynamicEnum names via public dynamic_enum_choices | integration | `cargo test -p xai-grok-pager --test dynamic_enum_model_names -- --nocapture` | ❌ W0 | ⬜ pending |
 | 03-03-03 | 03 | 3 | MOD-01/02 | — | Phase gate automated sweep + UI-SPEC reconcile | integration + check | Full suite command | depends 01–03 | ⬜ pending |
-| 03-03-04 | 03 | 3 | MOD-01/02 | — | Required manual `/model` + settings names | human checkpoint | Plan 03 Task 4 | n/a | ⬜ pending |
+| 03-03-04 | 03 | 3 | MOD-01/02 | — | Optional advisory `/model` visual (not phase gate) | human optional | Plan 03 Task 4 | n/a | ⬜ pending |
 
 *Status: ⬜ pending · ✅ green · ❌ red · ⚠️ flaky*
 
@@ -105,6 +114,7 @@ Scaffold during **plan 03-01 Task 1** (not a separate 03-00 plan):
 - [ ] Prefer constructing prefetch fixtures via `ModelEntry::fallback` + public field mutation (or `ModelEntry::from_config_entry` + `ModelEntryConfig` literals) — **do not** depend on private `prefetch_model_entry` / `test_model_entry` helpers inside `config.rs`
 - [ ] Provider-field and UI-SPEC name asserts added in Plan 01 Task 2 after schema lands (still via integration binary)
 - [ ] `crates/codegen/xai-grok-pager/tests/format_cli_model_row.rs` — created in plan 03-03 when `format_cli_model_row` is made `pub` (Wave 0 for CLI only; not required before Plan 01)
+- [ ] `crates/codegen/xai-grok-pager/tests/dynamic_enum_model_names.rs` — created in plan 03-03 Task 2 (settings name projection; not required before Plan 01)
 - [ ] No new test framework install
 - [ ] **Do not** schedule repair of shell/pager `--lib` compile debt in this phase
 
@@ -125,24 +135,31 @@ Scaffold during **plan 03-01 Task 1** (not a separate 03-00 plan):
 | MOD-02 | Mixed list: Grok + GPT; order Grok then Sol→Terra→Luna (no prefetch) | integration | `cargo test -p xai-grok-shell --test model_catalog mixed_catalog_order -- --nocapture` | ❌ Wave 0 |
 | MOD-02 | Prefetched xAI-only map still includes GPT rows | integration | `cargo test -p xai-grok-shell --test model_catalog codex_defaults_survive_prefetch -- --nocapture` | ❌ Wave 0 |
 | MOD-02 | Prefetch collision cannot rebind gpt-5.6-* to xai | integration | `… prefetched_collision_cannot_rebind_codex_default_to_xai` | ❌ Wave 0 |
+| MOD-02 | Collision order: remote then Sol→Terra→Luna (remove-then-append) | integration | `… prefetched_codex_collision_order` | ❌ Wave 0 |
 | MOD-02 | Custom models endpoint does not inject GPT | integration | `… custom_endpoint_skips_codex_inject` in model_catalog | ❌ Wave 0 |
 | MOD-02 | Empty `Some(IndexMap::new())` still injects Codex when `!has_custom_endpoint` (Q1) | integration | `… empty_prefetch_still_gets_codex_defaults` | ❌ Wave 0 |
 | MOD-01/02 | GPT visible for session and API-key auth; not filtered by Codex credentials | integration | `cargo test -p xai-grok-shell --test model_catalog gpt_visible -- --nocapture` | ❌ Wave 0 |
 | Default | `default_model()` remains `grok-build` | unit | `cargo test -p xai-grok-models --lib` (+ assert in model_catalog) | ✅ partial |
 | CLI | `bum models` row format `*\|- id (name)` | integration | `cargo test -p xai-grok-pager --test format_cli_model_row -- --nocapture` | ❌ Wave 0 (Plan 03) |
-| Selector UAT | Interactive `/model` + settings names | human | Plan 03 Task 4 checkpoint | n/a |
+| Settings | DynamicEnum names include `(xAI)`/`(Codex)`; empty description OK | integration | `cargo test -p xai-grok-pager --test dynamic_enum_model_names -- --nocapture` | ❌ Wave 0 (Plan 03) |
+| Selector UAT | Interactive `/model` visual | human optional | Plan 03 Task 4 (advisory; not phase gate) | n/a |
 
 ---
 
-## Manual / Required Human Verifications
+## Manual / Human Verifications
 
 | Behavior | Requirement | Why Manual | Required? | Test Instructions |
 |----------|-------------|------------|-----------|-------------------|
-| Interactive slash `/model` picker rows show provider-suffixed names | MOD-01, MOD-02 | No public pure `build_model_items`; pure ACP projection is automated substitute | **Required** (Plan 03 Task 4) | Launch `bum`, open `/model`, confirm `Grok Build (xAI)` and GPT-5.6 Sol/Terra/Luna `(Codex)` in one flat list |
-| Settings DynamicEnum active catalog **names** | MOD-01, MOD-02 | Settings inherits names only (descriptions empty OK per UI-SPEC) | **Required** with `/model` checkpoint | Open settings Default model enum; confirm same names; empty descriptions OK |
+| Interactive slash `/model` picker rows show provider-suffixed names | MOD-01, MOD-02 | Visual polish only; ACP + settings automated cover name feed | **Optional advisory** (Plan 03 Task 4) | Launch `bum`, open `/model`, confirm `Grok Build (xAI)` and GPT-5.6 Sol/Terra/Luna `(Codex)` in one flat list |
+| Settings DynamicEnum active catalog **names** | MOD-01, MOD-02 | **Automated** via `dynamic_enum_choices` integration test; interactive optional | Automated required; human optional | Automated: `--test dynamic_enum_model_names`. Optional: open settings Default model enum |
 | Live remote prefetch against real xAI session | MOD-02 | Network/session not required for phase gate; merge proven offline | Optional | Login xAI, open picker, confirm GPT family still listed after remote models load |
 
-**Automated substitute for inherit surfaces (required in Plan 03 Task 1/3):** assert via `model_catalog` that resolved catalog / `to_acp_model_info` **display names include** the UI-SPEC substrings `(xAI)` and `(Codex)` for the shipped default rows (`acp_list_projection_*`). That proves the name feed slash/settings consume without structural picker changes. Manual checkpoint remains required for interactive confirmation.
+**Automated gate for inherit surfaces (required in Plan 03 Tasks 1–3):**
+1. `model_catalog` — resolved catalog / `to_acp_model_info` display names include `(xAI)` and `(Codex)` (`acp_list_projection_*`)
+2. `dynamic_enum_model_names` — public `dynamic_enum_choices(ActiveModelCatalog, …)` displays include those suffixes; empty model-row description OK
+3. `format_cli_model_row` — CLI `id (name)` rows
+
+Interactive Task 4 is advisory only. Environment inability to launch TUI is a documented skip — **not** a phase pass and **not** a phase fail when automated is green.
 
 ---
 
@@ -152,11 +169,12 @@ Scaffold during **plan 03-01 Task 1** (not a separate 03-00 plan):
 cargo test -p xai-grok-models --lib -- --nocapture
 cargo test -p xai-grok-shell --test model_catalog -- --nocapture
 cargo test -p xai-grok-pager --test format_cli_model_row -- --nocapture
+cargo test -p xai-grok-pager --test dynamic_enum_model_names -- --nocapture
 cargo check -p xai-grok-shell
 cargo check -p xai-grok-pager
 ```
 
-All five automated lines green **and** Plan 03 Task 4 human checkpoint approved before `/gsd-verify-work` for Phase 3. Do **not** require shell/pager `--lib` green.
+All six automated lines green before `/gsd-verify-work` for Phase 3. Plan 03 Task 4 interactive check is optional. Do **not** require shell/pager `--lib` green.
 
 ---
 
@@ -165,12 +183,12 @@ All five automated lines green **and** Plan 03 Task 4 human checkpoint approved 
 - [ ] All tasks have `<automated>` verify targeting integration tests or models `--lib` / `cargo check` (no shell/pager `--lib` gates)
 - [ ] No automated command uses bare `| tail` without pipefail; no multi-filter cargo invocations
 - [ ] Sampling continuity: no 3 consecutive tasks without automated verify
-- [ ] Wave 0 covers all MISSING references (`model_catalog.rs`; pager format test in Plan 03)
-- [ ] Wave 0 Task 1: `--list` succeeds; RED is behavior assert not compile-fail
+- [ ] Wave 0 covers all MISSING references (`model_catalog.rs`; pager format + dynamic_enum tests in Plan 03)
+- [ ] Wave 0 Task 1: `--list` succeeds; RED is behavior assert not compile-fail (observing catalog_includes_gpt56 RED before Task 2 is optional)
 - [ ] Verify commands use `&&` not `;`
 - [ ] No watch-mode flags
 - [ ] Feedback latency < 120s preferred after warm compile
-- [ ] Required manual `/model` + settings checkpoint completed (Plan 03 Task 4)
+- [ ] Automated settings + ACP + CLI projection green; interactive Task 4 optional only
 - [ ] `nyquist_compliant: true` set after validate-phase
 - [ ] `wave_0_complete: true` after Plan 01 Task 1 lands the compiling integration binary
 

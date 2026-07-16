@@ -166,17 +166,24 @@ if cfg.endpoints.has_custom_endpoint() {
 }
 ```
 
-**Insert after prefetch replace, before `config_models` loop** (RESEARCH sketch — only Codex rows, not all defaults):
+**Insert after prefetch replace, before `config_models` loop** (cycle 2: **remove-then-append** only Codex rows — not replace-in-place):
 ```rust
 // After: resolved = prefetched;
 // Before: for (key, model_override) in &cfg.config_models
 if !cfg.endpoints.has_custom_endpoint() {
-    for (key, entry) in default_model_entries(&cfg.endpoints) {
-        if entry.info.provider == ModelProvider::Codex && !resolved.contains_key(&key) {
-            resolved.insert(key, entry);
-        }
+    let codex_defaults: Vec<_> = default_model_entries(&cfg.endpoints)
+        .into_iter()
+        .filter(|(_, entry)| entry.info.provider == ModelProvider::Codex)
+        .collect();
+    for (key, _) in &codex_defaults {
+        resolved.shift_remove(key);
+    }
+    for (key, entry) in codex_defaults {
+        resolved.insert(key, entry);
     }
 }
+// Result: remote/xAI keys first, then Sol→Terra→Luna in JSON order even if
+// prefetched listed terra first or rebound a gpt-5.6-* id to xai.
 ```
 
 **Tests that encode current prune behavior** (must update, not delete enterprise intent) — `config.rs` ~10922-10979:

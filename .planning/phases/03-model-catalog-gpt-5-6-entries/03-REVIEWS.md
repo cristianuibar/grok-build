@@ -101,3 +101,18 @@ None.
 | HIGH | 0 |
 | MEDIUM actionable | 2 |
 
+---
+
+## Cycle 2 Replan Status (2026-07-16)
+
+Replanned in place (targeted only):
+
+| Concern | Resolution |
+|---------|------------|
+| MEDIUM 1 Collision ordering | `03-02`: remove-all bundled Codex keys then append Sol→Terra→Luna; test `prefetched_codex_collision_order_appends_sol_terra_luna_after_remote`; PATTERNS sketch updated |
+| MEDIUM 2 Selector UAT waiver | `03-03`: automated `--test dynamic_enum_model_names` via public `dynamic_enum_choices`; Task 4 → optional advisory (`gate=optional`); environment skip is not phase pass |
+| LOW Task 1 RED observe | `03-01` Task 1 done note: RED observe optional; gate remains `--list` + harness_smoke |
+| LOW Fuzzy vs empty catalog | `03-UI-SPEC` selection chrome one-liner; Task 3 UI-SPEC patch |
+
+`03-VALIDATION.md` full suite + phase gate updated for collision order filter + `dynamic_enum_model_names`.
+
