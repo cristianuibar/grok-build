@@ -751,7 +751,7 @@ fn agent_type_mismatch_with_effort_stashes_deferred_switch() {
         let agent = &app.agents[&new_aid];
         assert_eq!(
             agent.session.deferred_model_switch,
-            Some((model_id, effort)),
+            Some(crate::app::agent::DeferredModelSwitch::new(model_id, effort)),
             "effort override must be stashed for the shell via deferred_model_switch",
         );
     } else {
@@ -767,7 +767,7 @@ fn deferred_model_switch_still_works_for_cli_override() {
     let id = AgentId(0);
     assert_eq!(
         app.agents[&id].session.deferred_model_switch,
-        Some((cli_model, None)),
+        Some(crate::app::agent::DeferredModelSwitch::new(cli_model, None)),
         "CLI -m override must still populate deferred_model_switch",
     );
 }
@@ -1197,7 +1197,7 @@ fn deferred_switch_overwritten_by_second_switch() {
     );
     assert_eq!(
         app.agents[&id].session.deferred_model_switch,
-        Some((model_b, None))
+        Some(crate::app::agent::DeferredModelSwitch::new(model_b, None))
     );
 }
 #[test]

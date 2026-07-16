@@ -14,6 +14,38 @@ use std::time::{Duration, Instant, SystemTime};
 use xai_acp_lib::AcpAgentTx;
 use xai_grok_shell::extensions::notification::GoalClassifierVerdict;
 use xai_grok_shell::sampling::types::ReasoningEffort;
+
+/// Stashed model switch applied once the session is ready, or after a
+/// missing-provider login recovery (Phase 6).
+///
+/// Replaces the former `(ModelId, Option<ReasoningEffort>)` tuple so settings
+/// paths can preserve `persist_default` and missing-provider gates can carry
+/// `required_provider` through QuestionView → Login now (Plans 02/03).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DeferredModelSwitch {
+    pub model_id: acp::ModelId,
+    pub effort: Option<ReasoningEffort>,
+    /// Provider wire id (`xai` | `codex`) that must become usable before apply.
+    /// `Some` when stashed from MissingProvider open / Login; `None` for CLI
+    /// `-m` and other pre-session deferrals.
+    pub required_provider: Option<String>,
+    /// When true, a successful switch also persists `default_model` and shows
+    /// the settings success toast (set_default_model / `/model` path).
+    pub persist_default: bool,
+}
+
+impl DeferredModelSwitch {
+    /// Session-only / CLI-style deferral (no provider gate, no default persist).
+    pub fn new(model_id: acp::ModelId, effort: Option<ReasoningEffort>) -> Self {
+        Self {
+            model_id,
+            effort,
+            required_provider: None,
+            persist_default: false,
+        }
+    }
+}
+
 /// Unique local identifier for an agent.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct AgentId(pub usize);
@@ -694,8 +726,9 @@ pub struct AgentSession {
     /// shell side via `ReconnectState::user_selected_model`; the pager still
     /// applies live remote switches and updates this field to match.
     pub user_model_preference: Option<acp::ModelId>,
-    /// `/model X [effort]` issued before the session was ready, applied on SessionCreated.
-    pub deferred_model_switch: Option<(acp::ModelId, Option<ReasoningEffort>)>,
+    /// `/model X [effort]` issued before the session was ready, applied on
+    /// SessionCreated — or a missing-provider gate-open stash awaiting login.
+    pub deferred_model_switch: Option<DeferredModelSwitch>,
     /// Central bg task state, keyed by task_id.
     pub bg_tasks: BTreeMap<String, BgTaskState>,
     /// Correlation map: tool_call_id → task_id.

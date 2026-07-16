@@ -584,6 +584,7 @@ fn switch_model_complete_success_updates_model_and_pushes_message() {
             effort: None,
             result: Ok(()),
             prev_model_id: None,
+            persist_default: false,
         }),
         &mut app,
     );
@@ -628,6 +629,7 @@ fn switch_model_complete_skips_message_and_persist_when_unchanged() {
             effort: None,
             result: Ok(()),
             prev_model_id: None,
+            persist_default: false,
         }),
         &mut app,
     );
@@ -682,6 +684,7 @@ fn switch_model_complete_persists_resolved_effort_from_catalog_meta() {
             effort: None, // user typed `/model Blackbox 4.7` with no effort
             result: Ok(()),
             prev_model_id: None,
+            persist_default: false,
         }),
         &mut app,
     );
@@ -748,6 +751,7 @@ fn switch_to_non_reasoning_model_clears_persisted_effort() {
             effort: None,
             result: Ok(()),
             prev_model_id: None,
+            persist_default: false,
         }),
         &mut app,
     );
@@ -792,6 +796,7 @@ fn switch_model_complete_failure_pushes_error_and_clears_pending() {
             effort: None,
             result: Err(SwitchModelError::Other("model not found".into())),
             prev_model_id: None,
+            persist_default: false,
         }),
         &mut app,
     );
@@ -835,6 +840,7 @@ fn switch_model_incompatible_agent_shows_question_modal() {
                 prev_model_id: None,
             }),
             prev_model_id: None,
+            persist_default: false,
         }),
         &mut app,
     );
@@ -898,6 +904,7 @@ fn incompatible_agent_rollback_restores_previous_model() {
                 prev_model_id: Some(prev_model.clone()),
             }),
             prev_model_id: Some(prev_model.clone()),
+            persist_default: false,
         }),
         &mut app,
     );
@@ -944,6 +951,7 @@ fn incompatible_agent_closes_active_modal() {
                 prev_model_id: None,
             }),
             prev_model_id: None,
+            persist_default: false,
         }),
         &mut app,
     );
@@ -990,6 +998,7 @@ fn same_agent_type_switch_no_modal() {
             effort: None,
             result: Ok(()),
             prev_model_id: None,
+            persist_default: false,
         }),
         &mut app,
     );
@@ -1033,6 +1042,7 @@ fn switch_model_pending_lifecycle() {
             effort: None,
             result: Ok(()),
             prev_model_id: None,
+            persist_default: false,
         }),
         &mut app,
     );
@@ -1066,6 +1076,439 @@ fn no_deferred_switch_means_no_extra_effect() {
             .any(|e| matches!(e, Effect::SwitchModel { .. }))
     );
     assert!(!app.agents[&id].session.model_switch_pending);
+}
+
+// ── Phase 6 MissingProvider gate (06-02) ──────────────────────────────
+
+fn p6_missing_provider_error(
+    provider: &str,
+    model: &str,
+) -> xai_grok_shell::agent::config::ModelSwitchMissingProviderError {
+    use xai_grok_shell::agent::config::{ModelProvider, ModelSwitchMissingProviderError};
+    let p = match provider {
+        "codex" => ModelProvider::Codex,
+        _ => ModelProvider::Xai,
+    };
+    ModelSwitchMissingProviderError::new(p, model)
+}
+
+#[test]
+fn p6_switch_model_complete_missing_provider_opens_question_view() {
+    let mut app = test_app_with_agent();
+    let id = AgentId(0);
+    let model_id = acp::ModelId::new(std::sync::Arc::from("gpt-5.6-sol"));
+    let agent = app.agents.get_mut(&id).unwrap();
+    agent.session.models.available.insert(
+        model_id.clone(),
+        acp::ModelInfo::new(model_id.clone(), "GPT-5.6 Sol (Codex)".to_string()),
+    );
+    agent.session.model_switch_pending = true;
+
+    let err = p6_missing_provider_error("codex", "gpt-5.6-sol");
+    let effects = dispatch(
+        Action::TaskComplete(TaskResult::SwitchModelComplete {
+            agent_id: id,
+            model_id: model_id.clone(),
+            effort: None,
+            result: Err(SwitchModelError::MissingProvider {
+                error: err,
+                prev_model_id: None,
+            }),
+            prev_model_id: None,
+            persist_default: false,
+        }),
+        &mut app,
+    );
+
+    assert!(effects.is_empty());
+    assert!(!app.agents[&id].session.model_switch_pending);
+    let qv = app.agents[&id]
+        .question_view
+        .as_ref()
+        .expect("MissingProvider must open QuestionView");
+    assert!(matches!(
+        qv.local_kind,
+        Some(crate::views::question_view::LocalQuestionKind::MissingProviderLogin { .. })
+    ));
+    let q = &qv.questions[0];
+    assert_eq!(
+        q.question,
+        "Sign in to Codex to use GPT-5.6 Sol (Codex)."
+    );
+    assert_eq!(q.options[0].label, "Login now");
+    assert!(
+        q.options[0]
+            .description
+            .contains("bum login --provider codex"),
+        "CLI fallback must be in Login now description: {}",
+        q.options[0].description
+    );
+    assert_eq!(q.options[1].label, "Keep current model");
+}
+
+#[test]
+fn p6_missing_provider_does_not_set_current_to_target() {
+    let mut app = test_app_with_agent();
+    let id = AgentId(0);
+    let prev = acp::ModelId::new(std::sync::Arc::from("grok-build"));
+    let target = acp::ModelId::new(std::sync::Arc::from("gpt-5.6-sol"));
+    let agent = app.agents.get_mut(&id).unwrap();
+    agent.session.models.available.insert(
+        prev.clone(),
+        acp::ModelInfo::new(prev.clone(), "Grok Build".to_string()),
+    );
+    agent.session.models.available.insert(
+        target.clone(),
+        acp::ModelInfo::new(target.clone(), "GPT-5.6 Sol (Codex)".to_string()),
+    );
+    agent.session.models.set_current(prev.clone(), None);
+    agent.session.model_switch_pending = true;
+
+    dispatch(
+        Action::TaskComplete(TaskResult::SwitchModelComplete {
+            agent_id: id,
+            model_id: target,
+            effort: None,
+            result: Err(SwitchModelError::MissingProvider {
+                error: p6_missing_provider_error("codex", "gpt-5.6-sol"),
+                prev_model_id: Some(prev.clone()),
+            }),
+            prev_model_id: Some(prev.clone()),
+            persist_default: false,
+        }),
+        &mut app,
+    );
+
+    assert_eq!(
+        app.agents[&id].session.models.current,
+        Some(prev),
+        "models.current must stay on previous model",
+    );
+}
+
+#[test]
+fn p6_missing_provider_not_incompatible_agent_kind() {
+    let mut app = test_app_with_agent();
+    let id = AgentId(0);
+    let model_id = acp::ModelId::new(std::sync::Arc::from("gpt-5.6-sol"));
+    app.agents
+        .get_mut(&id)
+        .unwrap()
+        .session
+        .model_switch_pending = true;
+
+    dispatch(
+        Action::TaskComplete(TaskResult::SwitchModelComplete {
+            agent_id: id,
+            model_id,
+            effort: None,
+            result: Err(SwitchModelError::MissingProvider {
+                error: p6_missing_provider_error("codex", "gpt-5.6-sol"),
+                prev_model_id: None,
+            }),
+            prev_model_id: None,
+            persist_default: false,
+        }),
+        &mut app,
+    );
+
+    let kind = app.agents[&id]
+        .question_view
+        .as_ref()
+        .and_then(|qv| qv.local_kind.clone())
+        .expect("question open");
+    assert!(
+        matches!(
+            kind,
+            crate::views::question_view::LocalQuestionKind::MissingProviderLogin { .. }
+        ),
+        "must be MissingProviderLogin, not AgentTypeMismatch: {kind:?}"
+    );
+    assert!(!matches!(
+        kind,
+        crate::views::question_view::LocalQuestionKind::AgentTypeMismatch { .. }
+    ));
+}
+
+#[test]
+fn p6_missing_provider_malformed_provider_maps_to_other() {
+    // Effects map_err should produce Other for malformed provider; unit-test
+    // the complete handler defensive path + that we do not open MissingProviderLogin.
+    let mut app = test_app_with_agent();
+    let id = AgentId(0);
+    let model_id = acp::ModelId::new(std::sync::Arc::from("weird-model"));
+    app.agents
+        .get_mut(&id)
+        .unwrap()
+        .session
+        .model_switch_pending = true;
+
+    let mut err = p6_missing_provider_error("codex", "weird-model");
+    err.provider = "openai".into(); // malformed for pager parse
+
+    // Simulate effects mapping: malformed → Other (not MissingProvider).
+    dispatch(
+        Action::TaskComplete(TaskResult::SwitchModelComplete {
+            agent_id: id,
+            model_id,
+            effort: None,
+            result: Err(SwitchModelError::Other(err.user_message())),
+            prev_model_id: None,
+            persist_default: false,
+        }),
+        &mut app,
+    );
+
+    assert!(
+        app.agents[&id].question_view.is_none(),
+        "malformed provider must not open MissingProviderLogin"
+    );
+    assert!(app.agents[&id].session.deferred_model_switch.is_none());
+    assert!(!app.agents[&id].session.model_switch_pending);
+}
+
+#[test]
+fn p6_missing_provider_session_only_switch_stashes_deferred_persist_default_false() {
+    let mut app = test_app_with_agent();
+    let id = AgentId(0);
+    let model_id = acp::ModelId::new(std::sync::Arc::from("gpt-5.6-sol"));
+    app.agents
+        .get_mut(&id)
+        .unwrap()
+        .session
+        .models
+        .available
+        .insert(
+            model_id.clone(),
+            acp::ModelInfo::new(model_id.clone(), "GPT-5.6 Sol (Codex)".to_string()),
+        );
+    app.agents
+        .get_mut(&id)
+        .unwrap()
+        .session
+        .model_switch_pending = true;
+
+    dispatch(
+        Action::TaskComplete(TaskResult::SwitchModelComplete {
+            agent_id: id,
+            model_id: model_id.clone(),
+            effort: None,
+            result: Err(SwitchModelError::MissingProvider {
+                error: p6_missing_provider_error("codex", "gpt-5.6-sol"),
+                prev_model_id: None,
+            }),
+            prev_model_id: None,
+            persist_default: false,
+        }),
+        &mut app,
+    );
+
+    let deferred = app.agents[&id]
+        .session
+        .deferred_model_switch
+        .as_ref()
+        .expect("gate-open stash");
+    assert_eq!(deferred.model_id, model_id);
+    assert_eq!(deferred.required_provider.as_deref(), Some("codex"));
+    assert!(!deferred.persist_default);
+}
+
+#[test]
+fn p6_missing_provider_live_session_settings_stashes_deferred_persist_default() {
+    let mut app = test_app_with_agent();
+    let id = AgentId(0);
+    let prev = acp::ModelId::new(std::sync::Arc::from("grok-build"));
+    let target = acp::ModelId::new(std::sync::Arc::from("gpt-5.6-sol"));
+    let agent = app.agents.get_mut(&id).unwrap();
+    agent.session.models.available.insert(
+        prev.clone(),
+        acp::ModelInfo::new(prev.clone(), "Grok Build (xAI)".to_string()),
+    );
+    agent.session.models.available.insert(
+        target.clone(),
+        acp::ModelInfo::new(target.clone(), "GPT-5.6 Sol (Codex)".to_string()),
+    );
+    agent.session.models.set_current(prev.clone(), None);
+    app.models.available.insert(
+        prev.clone(),
+        acp::ModelInfo::new(prev.clone(), "Grok Build (xAI)".to_string()),
+    );
+    app.models.set_current(prev.clone(), None);
+
+    // set_default_model → SwitchModel only (transactional)
+    let effects = dispatch(Action::SetDefaultModel(target.clone()), &mut app);
+    assert_eq!(effects.len(), 1);
+    assert!(matches!(
+        &effects[0],
+        Effect::SwitchModel {
+            persist_default: true,
+            model_id: mid,
+            ..
+        } if mid == &target
+    ));
+    assert_eq!(app.agents[&id].session.models.current, Some(prev.clone()));
+    assert!(
+        !effects
+            .iter()
+            .any(|e| matches!(e, Effect::PersistSetting { key: "default_model", .. })),
+        "no PersistSetting before Ok"
+    );
+
+    // Shell rejects MissingProvider with persist_default true
+    let complete_effects = dispatch(
+        Action::TaskComplete(TaskResult::SwitchModelComplete {
+            agent_id: id,
+            model_id: target.clone(),
+            effort: None,
+            result: Err(SwitchModelError::MissingProvider {
+                error: p6_missing_provider_error("codex", "gpt-5.6-sol"),
+                prev_model_id: Some(prev.clone()),
+            }),
+            prev_model_id: Some(prev.clone()),
+            persist_default: true,
+        }),
+        &mut app,
+    );
+    assert!(
+        !complete_effects
+            .iter()
+            .any(|e| matches!(e, Effect::PersistSetting { key: "default_model", .. }))
+    );
+    assert_eq!(app.agents[&id].session.models.current, Some(prev));
+    let deferred = app.agents[&id]
+        .session
+        .deferred_model_switch
+        .as_ref()
+        .expect("gate-open deferred");
+    assert!(deferred.persist_default);
+    assert_eq!(deferred.model_id, target);
+    assert_eq!(deferred.required_provider.as_deref(), Some("codex"));
+    assert!(matches!(
+        app.agents[&id]
+            .question_view
+            .as_ref()
+            .and_then(|q| q.local_kind.as_ref()),
+        Some(crate::views::question_view::LocalQuestionKind::MissingProviderLogin { .. })
+    ));
+}
+
+#[test]
+fn p6_keep_current_clears_question_and_stays_on_prev_model() {
+    let mut app = test_app_with_agent();
+    let id = AgentId(0);
+    let prev = acp::ModelId::new(std::sync::Arc::from("grok-build"));
+    let target = acp::ModelId::new(std::sync::Arc::from("gpt-5.6-sol"));
+    let agent = app.agents.get_mut(&id).unwrap();
+    agent.session.models.available.insert(
+        prev.clone(),
+        acp::ModelInfo::new(prev.clone(), "Grok Build".to_string()),
+    );
+    agent.session.models.available.insert(
+        target.clone(),
+        acp::ModelInfo::new(target.clone(), "GPT-5.6 Sol (Codex)".to_string()),
+    );
+    agent.session.models.set_current(prev.clone(), None);
+    agent.session.model_switch_pending = true;
+
+    dispatch(
+        Action::TaskComplete(TaskResult::SwitchModelComplete {
+            agent_id: id,
+            model_id: target.clone(),
+            effort: None,
+            result: Err(SwitchModelError::MissingProvider {
+                error: p6_missing_provider_error("codex", "gpt-5.6-sol"),
+                prev_model_id: Some(prev.clone()),
+            }),
+            prev_model_id: Some(prev.clone()),
+            persist_default: false,
+        }),
+        &mut app,
+    );
+    assert!(app.agents[&id].session.deferred_model_switch.is_some());
+    assert!(app.agents[&id].question_view.is_some());
+
+    let effects = dispatch(
+        Action::MissingProviderLoginAnswered {
+            login: false,
+            model_id: target,
+            effort: None,
+            provider: "codex".into(),
+        },
+        &mut app,
+    );
+
+    assert!(effects.is_empty(), "Keep current must not SwitchModel");
+    assert!(
+        !effects
+            .iter()
+            .any(|e| matches!(e, Effect::PersistSetting { .. }))
+    );
+    assert!(app.agents[&id].question_view.is_none());
+    assert!(app.agents[&id].session.deferred_model_switch.is_none());
+    assert_eq!(app.agents[&id].session.models.current, Some(prev));
+}
+
+#[test]
+fn p6_keep_current_after_settings_missing_provider_zero_persist() {
+    let mut app = test_app_with_agent();
+    let id = AgentId(0);
+    let prev = acp::ModelId::new(std::sync::Arc::from("grok-build"));
+    let target = acp::ModelId::new(std::sync::Arc::from("gpt-5.6-sol"));
+    let agent = app.agents.get_mut(&id).unwrap();
+    agent.session.models.available.insert(
+        prev.clone(),
+        acp::ModelInfo::new(prev.clone(), "Grok Build".to_string()),
+    );
+    agent.session.models.available.insert(
+        target.clone(),
+        acp::ModelInfo::new(target.clone(), "GPT-5.6 Sol (Codex)".to_string()),
+    );
+    agent.session.models.set_current(prev.clone(), None);
+
+    dispatch(Action::SetDefaultModel(target.clone()), &mut app);
+    dispatch(
+        Action::TaskComplete(TaskResult::SwitchModelComplete {
+            agent_id: id,
+            model_id: target.clone(),
+            effort: None,
+            result: Err(SwitchModelError::MissingProvider {
+                error: p6_missing_provider_error("codex", "gpt-5.6-sol"),
+                prev_model_id: Some(prev.clone()),
+            }),
+            prev_model_id: Some(prev.clone()),
+            persist_default: true,
+        }),
+        &mut app,
+    );
+    assert!(
+        app.agents[&id]
+            .session
+            .deferred_model_switch
+            .as_ref()
+            .is_some_and(|d| d.persist_default)
+    );
+
+    let effects = dispatch(
+        Action::MissingProviderLoginAnswered {
+            login: false,
+            model_id: target.clone(),
+            effort: None,
+            provider: "codex".into(),
+        },
+        &mut app,
+    );
+    assert!(
+        !effects
+            .iter()
+            .any(|e| matches!(e, Effect::PersistSetting { key: "default_model", .. })),
+        "Keep current must yield zero default_model PersistSetting"
+    );
+    assert!(app.agents[&id].session.deferred_model_switch.is_none());
+    assert_eq!(app.agents[&id].session.models.current, Some(prev));
+    assert_ne!(
+        app.agents[&id].session.models.current.as_ref(),
+        Some(&target)
+    );
 }
 
 #[test]

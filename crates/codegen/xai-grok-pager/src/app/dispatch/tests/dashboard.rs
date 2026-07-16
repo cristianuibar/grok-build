@@ -991,9 +991,9 @@ fn dashboard_confirm_worktree_applies_pending_model_and_plan() {
     let agent = &app.agents[&wt_id];
     assert_eq!(
         agent.session.deferred_model_switch,
-        Some((
+        Some(crate::app::agent::DeferredModelSwitch::new(
             model_id,
-            Some(xai_grok_shell::sampling::types::ReasoningEffort::High)
+            Some(xai_grok_shell::sampling::types::ReasoningEffort::High),
         )),
         "effort must be stashed for the shell",
     );
@@ -2162,9 +2162,9 @@ fn dashboard_dispatch_applies_pending_model_and_plan() {
     let agent = &app.agents[&new_id];
     assert_eq!(
         agent.session.deferred_model_switch,
-        Some((
+        Some(crate::app::agent::DeferredModelSwitch::new(
             model_id,
-            Some(xai_grok_shell::sampling::types::ReasoningEffort::High)
+            Some(xai_grok_shell::sampling::types::ReasoningEffort::High),
         )),
         "effort must be stashed for the shell"
     );
@@ -2205,9 +2205,9 @@ fn dashboard_new_agent_button_applies_pending_model_and_plan() {
     let agent = &app.agents[&new_id];
     assert_eq!(
         agent.session.deferred_model_switch,
-        Some((
+        Some(crate::app::agent::DeferredModelSwitch::new(
             model_id,
-            Some(xai_grok_shell::sampling::types::ReasoningEffort::High)
+            Some(xai_grok_shell::sampling::types::ReasoningEffort::High),
         )),
         "effort must be stashed for the shell"
     );

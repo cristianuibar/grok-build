@@ -39,7 +39,7 @@ fn effort_only_resolves_canonical_token() {
     assert_eq!(
         out,
         DeferredSwitchOutcome {
-            switch: Some((models.current.clone().unwrap(), Some(ReasoningEffort::High))),
+            switch: Some(crate::app::agent::DeferredModelSwitch::new(models.current.clone().unwrap(), Some(ReasoningEffort::High))),
             effort_error: None,
         }
     );
@@ -52,9 +52,9 @@ fn effort_only_resolves_remapped_menu_id() {
     assert_eq!(
         out,
         DeferredSwitchOutcome {
-            switch: Some((
+            switch: Some(crate::app::agent::DeferredModelSwitch::new(
                 models.current.clone().unwrap(),
-                Some(ReasoningEffort::Xhigh)
+                Some(ReasoningEffort::Xhigh),
             )),
             effort_error: None,
         }
@@ -120,15 +120,14 @@ fn effort_only_errors_on_unknown_token() {
 fn stashed_model_switch_prefers_explicit_stash() {
     let models = models_with_current(true);
     let other = acp::ModelId::new(Arc::from("other-model"));
-    let out = take_deferred_model_switch(
-        Some((other.clone(), Some(ReasoningEffort::Low))),
+    let out = take_deferred_model_switch(Some(crate::app::agent::DeferredModelSwitch::new(other.clone(), Some(ReasoningEffort::Low))),
         &models,
         Some("high"),
     );
     assert_eq!(
         out,
         DeferredSwitchOutcome {
-            switch: Some((other, Some(ReasoningEffort::Low))),
+            switch: Some(crate::app::agent::DeferredModelSwitch::new(other, Some(ReasoningEffort::Low))),
             effort_error: None,
         }
     );
@@ -138,11 +137,11 @@ fn stashed_model_switch_prefers_explicit_stash() {
 fn stashed_model_re_resolves_remap_when_effort_missing() {
     let models = models_with_current(true);
     let current = models.current.clone().unwrap();
-    let out = take_deferred_model_switch(Some((current.clone(), None)), &models, Some("deep"));
+    let out = take_deferred_model_switch(Some(crate::app::agent::DeferredModelSwitch::new(current.clone(), None)), &models, Some("deep"));
     assert_eq!(
         out,
         DeferredSwitchOutcome {
-            switch: Some((current, Some(ReasoningEffort::Xhigh))),
+            switch: Some(crate::app::agent::DeferredModelSwitch::new(current, Some(ReasoningEffort::Xhigh))),
             effort_error: None,
         }
     );
@@ -152,11 +151,11 @@ fn stashed_model_re_resolves_remap_when_effort_missing() {
 fn stashed_model_keeps_model_when_token_unresolvable() {
     let models = models_with_current(true);
     let current = models.current.clone().unwrap();
-    let out = take_deferred_model_switch(Some((current.clone(), None)), &models, Some("bogus"));
+    let out = take_deferred_model_switch(Some(crate::app::agent::DeferredModelSwitch::new(current.clone(), None)), &models, Some("bogus"));
     assert_eq!(
         out,
         DeferredSwitchOutcome {
-            switch: Some((current, None)),
+            switch: Some(crate::app::agent::DeferredModelSwitch::new(current, None)),
             effort_error: Some(EffortTokenError::UnknownToken {
                 token: "bogus".into(),
                 offered: vec!["deep".into(), "high".into()],
@@ -172,11 +171,11 @@ fn stashed_model_keeps_model_when_unsupported() {
     let mut models = models_with_current(true);
     let (plain, plain_info) = model_with_support("plain-model", false);
     models.available.insert(plain.clone(), plain_info);
-    let out = take_deferred_model_switch(Some((plain.clone(), None)), &models, Some("high"));
+    let out = take_deferred_model_switch(Some(crate::app::agent::DeferredModelSwitch::new(plain.clone(), None)), &models, Some("high"));
     assert_eq!(
         out,
         DeferredSwitchOutcome {
-            switch: Some((plain, None)),
+            switch: Some(crate::app::agent::DeferredModelSwitch::new(plain, None)),
             effort_error: Some(EffortTokenError::Unsupported),
         }
     );
@@ -189,9 +188,9 @@ fn effort_only_accepts_max_as_xhigh() {
     assert_eq!(
         out,
         DeferredSwitchOutcome {
-            switch: Some((
+            switch: Some(crate::app::agent::DeferredModelSwitch::new(
                 models.current.clone().unwrap(),
-                Some(ReasoningEffort::Xhigh)
+                Some(ReasoningEffort::Xhigh),
             )),
             effort_error: None,
         }

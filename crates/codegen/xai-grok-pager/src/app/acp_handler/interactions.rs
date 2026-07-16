@@ -83,6 +83,7 @@ pub(crate) fn handle_ask_user_question(
                 LocalQuestionKind::CreditLimitUpsell { .. } => "credit-limit upsell",
                 LocalQuestionKind::FreeUsageUpsell { .. } => "SuperGrok upsell",
                 LocalQuestionKind::AgentTypeMismatch { .. } => "model switch",
+                LocalQuestionKind::MissingProviderLogin { .. } => "model switch",
                 LocalQuestionKind::ProjectSelect { .. } => "project select",
             };
             agent.scrollback.push_block(RenderBlock::system(format!(

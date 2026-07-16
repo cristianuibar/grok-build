@@ -803,7 +803,8 @@ pub(crate) fn dispatch(action: Action, app: &mut AppView) -> Vec<Effect> {
                 return vec![];
             };
             let Some(session_id) = agent.session.session_id.clone() else {
-                agent.session.deferred_model_switch = Some((model_id, effort));
+                agent.session.deferred_model_switch =
+                    Some(crate::app::agent::DeferredModelSwitch::new(model_id, effort));
                 return vec![];
             };
             agent.session.model_switch_pending = true;
@@ -813,6 +814,7 @@ pub(crate) fn dispatch(action: Action, app: &mut AppView) -> Vec<Effect> {
                 model_id,
                 effort,
                 prev_model_id: None,
+                persist_default: false,
             }]
         }
         Action::AnnouncementsHide => {
@@ -1093,6 +1095,14 @@ pub(crate) fn dispatch(action: Action, app: &mut AppView) -> Vec<Effect> {
             model_id,
             effort,
         } => dispatch_agent_type_mismatch_answered(app, start_new, model_id, effort),
+        Action::MissingProviderLoginAnswered {
+            login,
+            model_id,
+            effort,
+            provider,
+        } => crate::app::dispatch::session::lifecycle::dispatch_missing_provider_login_answered(
+            app, login, model_id, effort, provider,
+        ),
         Action::PersistMemoryFullscreen(fs) => {
             vec![Effect::PersistMemoryFullscreen { fullscreen: fs }]
         }

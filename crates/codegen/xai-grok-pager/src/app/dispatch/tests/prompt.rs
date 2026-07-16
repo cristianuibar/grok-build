@@ -1944,6 +1944,7 @@ fn switch_model_holds_prompt_until_complete() {
             effort: None,
             result: Ok(()),
             prev_model_id: None,
+            persist_default: false,
         }),
         &mut app,
     );

@@ -1038,6 +1038,14 @@ impl AgentView {
     /// main prompt. Also clears any stashed (tab-hidden) question view.
     fn dismiss_question_view(&mut self) {
         if let Some(qv) = self.question_view.take() {
+            // Cancel/dismiss of missing-provider gate clears the gate-open
+            // deferred stash (same zero-persist contract as Keep current).
+            if matches!(
+                qv.local_kind,
+                Some(crate::views::question_view::LocalQuestionKind::MissingProviderLogin { .. })
+            ) {
+                self.session.deferred_model_switch = None;
+            }
             self.turn_paused_duration += qv.opened_at.elapsed();
             self.prompt.restore(qv.stashed_prompt);
         }

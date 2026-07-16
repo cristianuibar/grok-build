@@ -1648,6 +1648,20 @@ fn translate_local_submit(
                 effort,
             })
         }
+        LocalQuestionKind::MissingProviderLogin {
+            model_id,
+            effort,
+            provider,
+        } => {
+            // Option 0 = Login now, option 1 = Keep current model.
+            let login = *idx == 0;
+            InputOutcome::Action(Action::MissingProviderLoginAnswered {
+                login,
+                model_id: model_id.clone(),
+                effort,
+                provider: provider.clone(),
+            })
+        }
         LocalQuestionKind::ProjectSelect { .. } => unreachable!(),
     }
 }

@@ -974,14 +974,15 @@ pub(in crate::app::dispatch) fn handle_session_loaded(
             agent_id,
             silent: true,
         });
-        if let Some((model_id, effort)) = deferred {
+        if let Some(deferred) = deferred {
             agent.session.model_switch_pending = true;
             effects.push(Effect::SwitchModel {
                 agent_id,
                 session_id: hydrate_sid.clone(),
-                model_id,
-                effort,
+                model_id: deferred.model_id,
+                effort: deferred.effort,
                 prev_model_id: None,
+                persist_default: deferred.persist_default,
             });
         }
         if std::mem::take(&mut agent.pending_extensions_fetch) && agent.extensions_modal.is_some() {

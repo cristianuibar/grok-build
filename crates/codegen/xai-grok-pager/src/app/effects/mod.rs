@@ -1604,6 +1604,7 @@ pub(crate) fn execute(
             model_id,
             effort,
             prev_model_id,
+            persist_default,
         } => {
             let tx = acp_tx.clone();
             tasks
@@ -1629,10 +1630,29 @@ pub(crate) fn execute(
                         .await
                         .map(|_| ())
                         .map_err(|e| {
-                            use xai_grok_shell::agent::config::ModelSwitchIncompatibleAgentError;
-                            if let Some(typed) = ModelSwitchIncompatibleAgentError::from_acp_error(
-                                &e,
-                            ) {
+                            use crate::app::actions::parse_provider_wire_id;
+                            use xai_grok_shell::agent::config::{
+                                ModelSwitchIncompatibleAgentError,
+                                ModelSwitchMissingProviderError,
+                            };
+                            // MissingProvider first (D-07), then IncompatibleAgent, else Other.
+                            if let Some(typed) =
+                                ModelSwitchMissingProviderError::from_acp_error(&e)
+                            {
+                                // Reject malformed provider wire ids → Other (review LOW).
+                                if parse_provider_wire_id(&typed.provider).is_none() {
+                                    SwitchModelError::Other(sanitize_user_error(
+                                        &typed.user_message(),
+                                    ))
+                                } else {
+                                    SwitchModelError::MissingProvider {
+                                        error: typed,
+                                        prev_model_id: prev_model_id.clone(),
+                                    }
+                                }
+                            } else if let Some(typed) =
+                                ModelSwitchIncompatibleAgentError::from_acp_error(&e)
+                            {
                                 SwitchModelError::IncompatibleAgent {
                                     error: typed,
                                     prev_model_id: prev_model_id.clone(),
@@ -1647,6 +1667,7 @@ pub(crate) fn execute(
                         effort,
                         result,
                         prev_model_id,
+                        persist_default,
                     }
                 });
         }

@@ -260,8 +260,8 @@ fn set_default_model_allowed_when_agent_chat_kind() {
     );
     assert!(app.agents[&id].session.model_switch_pending);
 }
-/// `/model <name>` dispatches `SetDefaultModel` which routes
-/// through both `PersistSetting` and `SwitchModel`.
+/// `/model <name>` dispatches `SetDefaultModel` which is transactional:
+/// only `SwitchModel { persist_default: true }` until Ok (D-05).
 #[test]
 fn slash_model_valid_dispatches_set_default_model_with_switch_and_persist() {
     let mut app = test_app_with_agent();
@@ -277,30 +277,30 @@ fn slash_model_valid_dispatches_set_default_model_with_switch_and_persist() {
             model_id.clone(),
             acp::ModelInfo::new(model_id.clone(), "Grok 4.5".to_string()),
         );
+    let prev = app.agents[&id].session.models.current.clone();
     let effects = dispatch(Action::SendPrompt("/model Grok 4.5".into()), &mut app);
     assert_eq!(
         effects.len(),
-        2,
-        "expected PersistSetting + SwitchModel effects, got {effects:?}",
+        1,
+        "transactional: only SwitchModel until Ok, got {effects:?}",
     );
     assert!(
         matches!(
             &effects[0],
-            Effect::PersistSetting {
-                key: "default_model",
+            Effect::SwitchModel {
+                model_id: mid,
+                persist_default: true,
                 ..
-            }
+            } if mid == &model_id
         ),
-        "first effect must be PersistSetting(default_model), got {:?}",
+        "expected SwitchModel(persist_default=true), got {:?}",
         effects[0],
     );
-    assert!(
-        matches!(& effects[1], Effect::SwitchModel { model_id : mid, .. } if mid == &
-        model_id),
-        "second effect must be SwitchModel(<resolved id>), got {:?}",
-        effects[1],
-    );
     assert!(app.agents[&id].session.model_switch_pending);
+    assert_eq!(
+        app.agents[&id].session.models.current, prev,
+        "must not optimistically mutate models.current",
+    );
 }
 #[test]
 fn model_switch_pending_resets_correctly_across_success_and_failure() {
@@ -323,6 +323,7 @@ fn model_switch_pending_resets_correctly_across_success_and_failure() {
             effort: None,
             result: Ok(()),
             prev_model_id: None,
+            persist_default: false,
         }),
         &mut app,
     );
@@ -342,6 +343,7 @@ fn model_switch_pending_resets_correctly_across_success_and_failure() {
             effort: None,
             result: Err(SwitchModelError::Other("network error".into())),
             prev_model_id: None,
+            persist_default: false,
         }),
         &mut app,
     );
@@ -930,12 +932,9 @@ fn clear_default_model_persists_but_keeps_live_current() {
         "clear_default_model must NOT mutate live agent.session.models.current",
     );
 }
-/// `Action::SetDefaultModel(<known id>)` resolves the
-/// id against the live catalog, mutates current, and emits both
-/// PersistSetting + SwitchModel effects. This is the
-/// dispatch-level analog of the slash-command's
-/// `slash_model_valid_dispatches_set_default_model_with_switch_and_persist`
-/// test.
+/// `Action::SetDefaultModel(<known id>)` is transactional (D-05): emits
+/// only `SwitchModel { persist_default: true }` and does not mutate
+/// current until `SwitchModelComplete(Ok)`.
 #[test]
 fn set_default_model_resolves_known_name() {
     use agent_client_protocol as acp;
@@ -951,15 +950,208 @@ fn set_default_model_resolves_known_name() {
         .models
         .available
         .insert(id.clone(), info);
+    let prev = app.agents[&agent_id].session.models.current.clone();
     let effects = dispatch(Action::SetDefaultModel(id.clone()), &mut app);
-    assert_eq!(effects.len(), 2);
+    assert_eq!(effects.len(), 1);
     assert!(
-        matches!(& effects[0], Effect::PersistSetting { key : "default_model", value :
-        crate ::settings::SettingValue::String(s), .. } if s == "grok-4.5")
+        matches!(
+            &effects[0],
+            Effect::SwitchModel {
+                model_id: mid,
+                persist_default: true,
+                ..
+            } if mid == &id
+        )
     );
-    assert!(matches!(& effects[1], Effect::SwitchModel { model_id : mid, .. } if mid == & id));
-    assert_eq!(app.agents[&agent_id].session.models.current, Some(id));
+    assert_eq!(
+        app.agents[&agent_id].session.models.current, prev,
+        "transactional: current unchanged until Ok",
+    );
 }
+/// Transactional D-05: set_default_model does not change models.current
+/// or app.models before SwitchModelComplete.
+#[test]
+fn p6_transactional_default_model_no_optimistic_current() {
+    use agent_client_protocol as acp;
+    use std::sync::Arc;
+    let mut app = test_app_with_agent();
+    let agent_id = AgentId(0);
+    let prev = acp::ModelId::new(Arc::from("prev-model"));
+    let next = acp::ModelId::new(Arc::from("next-model"));
+    let agent = app.agents.get_mut(&agent_id).unwrap();
+    agent.session.models.available.insert(
+        prev.clone(),
+        acp::ModelInfo::new(prev.clone(), "Prev".to_string()),
+    );
+    agent.session.models.available.insert(
+        next.clone(),
+        acp::ModelInfo::new(next.clone(), "Next".to_string()),
+    );
+    agent.session.models.set_current(prev.clone(), None);
+    app.models.available.insert(
+        prev.clone(),
+        acp::ModelInfo::new(prev.clone(), "Prev".to_string()),
+    );
+    app.models.available.insert(
+        next.clone(),
+        acp::ModelInfo::new(next.clone(), "Next".to_string()),
+    );
+    app.models.set_current(prev.clone(), None);
+
+    let _ = dispatch(Action::SetDefaultModel(next), &mut app);
+    assert_eq!(app.agents[&agent_id].session.models.current, Some(prev.clone()));
+    assert_eq!(app.models.current, Some(prev));
+}
+
+/// Transactional D-05: no PersistSetting(default_model) until Ok.
+#[test]
+fn p6_transactional_default_model_no_persist_before_ok() {
+    use agent_client_protocol as acp;
+    use std::sync::Arc;
+    let mut app = test_app_with_agent();
+    let agent_id = AgentId(0);
+    let prev = acp::ModelId::new(Arc::from("prev-model"));
+    let next = acp::ModelId::new(Arc::from("next-model"));
+    let agent = app.agents.get_mut(&agent_id).unwrap();
+    agent.session.models.available.insert(
+        prev.clone(),
+        acp::ModelInfo::new(prev.clone(), "Prev".to_string()),
+    );
+    agent.session.models.available.insert(
+        next.clone(),
+        acp::ModelInfo::new(next.clone(), "Next".to_string()),
+    );
+    agent.session.models.set_current(prev.clone(), None);
+
+    let effects = dispatch(Action::SetDefaultModel(next.clone()), &mut app);
+    assert!(
+        !effects
+            .iter()
+            .any(|e| matches!(e, Effect::PersistSetting { key: "default_model", .. }))
+    );
+
+    let complete = dispatch(
+        Action::TaskComplete(TaskResult::SwitchModelComplete {
+            agent_id,
+            model_id: next.clone(),
+            effort: None,
+            result: Err(SwitchModelError::MissingProvider {
+                error: xai_grok_shell::agent::config::ModelSwitchMissingProviderError::new(
+                    xai_grok_shell::agent::config::ModelProvider::Codex,
+                    "next-model",
+                ),
+                prev_model_id: Some(prev.clone()),
+            }),
+            prev_model_id: Some(prev),
+            persist_default: true,
+        }),
+        &mut app,
+    );
+    assert!(
+        !complete
+            .iter()
+            .any(|e| matches!(e, Effect::PersistSetting { key: "default_model", .. })),
+        "MissingProvider must yield zero default_model PersistSetting for rejected id"
+    );
+}
+
+/// Transactional D-05: Ok with persist_default applies set_current + PersistSetting + toast.
+#[test]
+fn p6_transactional_default_model_persists_only_on_ok() {
+    use agent_client_protocol as acp;
+    use std::sync::Arc;
+    let mut app = test_app_with_agent();
+    let agent_id = AgentId(0);
+    let prev = acp::ModelId::new(Arc::from("prev-model"));
+    let next = acp::ModelId::new(Arc::from("next-model"));
+    let agent = app.agents.get_mut(&agent_id).unwrap();
+    agent.session.models.available.insert(
+        prev.clone(),
+        acp::ModelInfo::new(prev.clone(), "Prev".to_string()),
+    );
+    agent.session.models.available.insert(
+        next.clone(),
+        acp::ModelInfo::new(next.clone(), "Next".to_string()),
+    );
+    agent.session.models.set_current(prev.clone(), None);
+    app.models.available.insert(
+        next.clone(),
+        acp::ModelInfo::new(next.clone(), "Next".to_string()),
+    );
+    agent.session.model_switch_pending = true;
+
+    let effects = dispatch(
+        Action::TaskComplete(TaskResult::SwitchModelComplete {
+            agent_id,
+            model_id: next.clone(),
+            effort: None,
+            result: Ok(()),
+            prev_model_id: Some(prev),
+            persist_default: true,
+        }),
+        &mut app,
+    );
+    assert_eq!(app.agents[&agent_id].session.models.current, Some(next.clone()));
+    assert_eq!(app.models.current, Some(next.clone()));
+    assert!(
+        effects.iter().any(|e| matches!(
+            e,
+            Effect::PersistSetting {
+                key: "default_model",
+                value: crate::settings::SettingValue::String(s),
+                ..
+            } if s == "next-model"
+        )),
+        "Ok+persist_default must PersistSetting default_model, got {effects:?}"
+    );
+    let toast = app.agents[&agent_id]
+        .toast
+        .as_ref()
+        .map(|(t, _)| t.as_str())
+        .unwrap_or("");
+    assert!(
+        toast.contains("Default model") && toast.contains("Next"),
+        "success toast must name the model, got {toast:?}"
+    );
+}
+
+/// No-session set_default_model stashes deferred with persist_default true.
+#[test]
+fn p6_transactional_default_no_session_stashes_persist_default() {
+    use agent_client_protocol as acp;
+    use std::sync::Arc;
+    let mut app = test_app_with_agent();
+    let agent_id = AgentId(0);
+    let next = acp::ModelId::new(Arc::from("next-model"));
+    let agent = app.agents.get_mut(&agent_id).unwrap();
+    agent.session.session_id = None;
+    agent.session.models.available.insert(
+        next.clone(),
+        acp::ModelInfo::new(next.clone(), "Next".to_string()),
+    );
+    let prev = agent.session.models.current.clone();
+
+    let effects = dispatch(Action::SetDefaultModel(next.clone()), &mut app);
+    assert!(
+        effects.is_empty(),
+        "no session → no SwitchModel yet, got {effects:?}"
+    );
+    assert_eq!(app.agents[&agent_id].session.models.current, prev);
+    let deferred = app.agents[&agent_id]
+        .session
+        .deferred_model_switch
+        .as_ref()
+        .expect("must stash deferred");
+    assert_eq!(deferred.model_id, next);
+    assert!(deferred.persist_default);
+    assert!(deferred.required_provider.is_none());
+    assert!(
+        !effects
+            .iter()
+            .any(|e| matches!(e, Effect::PersistSetting { .. }))
+    );
+}
+
 /// Re-dispatching the same model
 /// id is idempotent — no PersistSetting, no SwitchModel, no
 /// reasoning_effort reset.

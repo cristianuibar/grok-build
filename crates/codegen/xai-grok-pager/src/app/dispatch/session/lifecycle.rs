@@ -4,8 +4,8 @@ use super::load::dispatch_load_session;
 use super::modal::remove_agent_and_cleanup;
 use crate::acp::model_state::{EffortTokenError, ModelState};
 use crate::acp::tracker::AcpUpdateTracker;
-use crate::app::actions::{Action, Effect, SwitchModelError};
-use crate::app::agent::{AgentCommand, AgentId, AgentSession, AgentState};
+use crate::app::actions::{Action, Effect, SwitchModelError, parse_provider_wire_id};
+use crate::app::agent::{AgentCommand, AgentId, AgentSession, AgentState, DeferredModelSwitch};
 use crate::app::agent_view::{ActivePane, AgentView, McpInitProgress};
 use crate::app::app_view::{ActiveView, AppView, TrustState};
 use crate::app::dispatch::ctx::{
@@ -30,23 +30,23 @@ use xai_grok_shell::sampling::types::ReasoningEffort;
 /// model override.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct DeferredSwitchOutcome {
-    pub switch: Option<(acp::ModelId, Option<ReasoningEffort>)>,
+    pub switch: Option<DeferredModelSwitch>,
     pub effort_error: Option<EffortTokenError>,
 }
 /// Resolve the stashed `-m` switch and/or `cli_effort_token` against the session
 /// catalog via [`ModelState::resolve_effort_for_model`] (same gate-first policy
 /// as `/effort` and headless).
 pub(crate) fn take_deferred_model_switch(
-    stashed: Option<(acp::ModelId, Option<ReasoningEffort>)>,
+    stashed: Option<DeferredModelSwitch>,
     models: &ModelState,
     cli_effort_token: Option<&str>,
 ) -> DeferredSwitchOutcome {
-    if let Some((model_id, mut effort)) = stashed {
+    if let Some(mut deferred) = stashed {
         let effort_error = match cli_effort_token {
-            Some(token) if effort.is_none() => {
-                match models.resolve_effort_for_model(&model_id, token) {
+            Some(token) if deferred.effort.is_none() => {
+                match models.resolve_effort_for_model(&deferred.model_id, token) {
                     Ok(resolved) => {
-                        effort = Some(resolved);
+                        deferred.effort = Some(resolved);
                         None
                     }
                     Err(err) => Some(err),
@@ -55,7 +55,7 @@ pub(crate) fn take_deferred_model_switch(
             _ => None,
         };
         return DeferredSwitchOutcome {
-            switch: Some((model_id, effort)),
+            switch: Some(deferred),
             effort_error,
         };
     }
@@ -77,7 +77,7 @@ pub(crate) fn take_deferred_model_switch(
             effort_error: None,
         },
         Ok(effort) => DeferredSwitchOutcome {
-            switch: Some((current, Some(effort))),
+            switch: Some(DeferredModelSwitch::new(current, Some(effort))),
             effort_error: None,
         },
         Err(err) => DeferredSwitchOutcome {
@@ -91,7 +91,7 @@ pub(crate) fn take_deferred_model_switch(
 pub(crate) fn apply_deferred_model_switch(
     agent: &mut AgentView,
     cli_effort_token: Option<&str>,
-) -> Option<(acp::ModelId, Option<ReasoningEffort>)> {
+) -> Option<DeferredModelSwitch> {
     let stashed = agent.session.deferred_model_switch.take();
     let outcome = take_deferred_model_switch(stashed, &agent.session.models, cli_effort_token);
     apply_deferred_switch_outcome(agent, outcome)
@@ -100,7 +100,7 @@ pub(crate) fn apply_deferred_model_switch(
 pub(crate) fn apply_deferred_switch_outcome(
     agent: &mut AgentView,
     outcome: DeferredSwitchOutcome,
-) -> Option<(acp::ModelId, Option<ReasoningEffort>)> {
+) -> Option<DeferredModelSwitch> {
     if let Some(err) = outcome.effort_error {
         let msg = format!("--effort/--reasoning-effort: {}", err.message());
         tracing::warn!("{msg}");
@@ -258,6 +258,75 @@ pub(in crate::app::dispatch) fn open_agent_type_mismatch_question(
     agent.prompt.set_text("");
     vec![]
 }
+
+/// Open a local QuestionView for missing-provider model switch (UI-SPEC D-08).
+/// Options: Login now / Keep current model. CLI fallback always in option-1
+/// description. Provider must already be a validated wire id (`xai`|`codex`).
+pub(in crate::app::dispatch) fn open_missing_provider_login_question(
+    app: &mut AppView,
+    model_id: acp::ModelId,
+    effort: Option<xai_grok_shell::sampling::types::ReasoningEffort>,
+    provider: &str,
+    model_name: &str,
+) -> Vec<Effect> {
+    use crate::views::question_view::{LocalQuestionKind, QuestionViewState};
+    use xai_grok_shell::agent::config::ModelProvider;
+    use xai_grok_tools::implementations::grok_build::ask_user_question::{
+        Question, QuestionOption,
+    };
+    let ActiveView::Agent(id) = app.active_view else {
+        return vec![];
+    };
+    let Some(agent) = app.agents.get_mut(&id) else {
+        return vec![];
+    };
+    if agent.question_view.is_some() {
+        app.show_toast("Finish answering the current question first");
+        return vec![];
+    }
+    let provider_label = match provider {
+        "codex" => ModelProvider::Codex.display_label(),
+        _ => ModelProvider::Xai.display_label(),
+    };
+    let question = Question {
+        question: format!("Sign in to {provider_label} to use {model_name}."),
+        id: None,
+        options: vec![
+            QuestionOption {
+                label: "Login now".into(),
+                description: format!(
+                    "Run login for {provider_label} (CLI: bum login --provider {provider})"
+                ),
+                preview: None,
+                id: None,
+            },
+            QuestionOption {
+                label: "Keep current model".into(),
+                description: "Dismiss and stay on the active model".into(),
+                preview: None,
+                id: None,
+            },
+        ],
+        multi_select: Some(false),
+    };
+    let agent = app.agents.get_mut(&id).expect("agent present (re-borrow)");
+    let stashed = agent.prompt.stash();
+    let state = QuestionViewState::new(
+        format!("missing-provider-login-{}", uuid::Uuid::new_v4()),
+        vec![question],
+        stashed,
+    )
+    .with_local_kind(LocalQuestionKind::MissingProviderLogin {
+        model_id,
+        effort,
+        provider: provider.to_owned(),
+    })
+    .with_no_freeform();
+    agent.question_view = Some(state);
+    agent.prompt.set_text("");
+    vec![]
+}
+
 /// Core new-session logic: create a placeholder agent, push the
 /// `/dashboard` tip, and return the `CreateSession` effect.
 ///
@@ -862,13 +931,14 @@ pub(in crate::app::dispatch) fn handle_session_created(
             agent_id,
             silent: true,
         });
-        if let Some((model_id, effort)) = deferred {
+        if let Some(deferred) = deferred {
             effects.push(Effect::SwitchModel {
                 agent_id,
                 session_id: session_id_clone.clone(),
-                model_id,
-                effort,
+                model_id: deferred.model_id,
+                effort: deferred.effort,
                 prev_model_id: None,
+                persist_default: deferred.persist_default,
             });
         }
         if let Some(mode) = deferred_mode {
@@ -952,13 +1022,14 @@ pub(in crate::app::dispatch) fn handle_worktree_session_created(
             agent_id,
             silent: true,
         });
-        if let Some((model_id, effort)) = deferred {
+        if let Some(deferred) = deferred {
             effects.push(Effect::SwitchModel {
                 agent_id,
                 session_id: session_id_clone.clone(),
-                model_id,
-                effort,
+                model_id: deferred.model_id,
+                effort: deferred.effort,
                 prev_model_id: None,
+                persist_default: deferred.persist_default,
             });
         }
         if let Some(mode) = deferred_mode {
@@ -1040,11 +1111,23 @@ pub(in crate::app::dispatch) fn handle_switch_model_complete(
     effort: Option<ReasoningEffort>,
     result: Result<(), SwitchModelError>,
     prev_model_id: Option<acp::ModelId>,
+    persist_default: bool,
 ) -> Vec<Effect> {
-    if let Some(agent) = app.agents.get_mut(&agent_id) {
+    use crate::app::dispatch::settings::setters::set_default_model_inner;
+
+    {
+        let Some(agent) = app.agents.get_mut(&agent_id) else {
+            return vec![];
+        };
         agent.session.model_switch_pending = false;
-        let mut effects = match result {
-            Ok(()) => {
+    }
+
+    match result {
+        Ok(()) => {
+            let (display_name, prev_model, prev_effort, resolved_effort, unchanged) = {
+                let Some(agent) = app.agents.get_mut(&agent_id) else {
+                    return vec![];
+                };
                 agent.session.user_model_preference = Some(model_id.clone());
                 let display_name = agent
                     .session
@@ -1059,6 +1142,42 @@ pub(in crate::app::dispatch) fn handle_switch_model_complete(
                 let resolved_effort = agent.session.models.reasoning_effort;
                 let unchanged =
                     prev_model.as_ref() == Some(&model_id) && prev_effort == resolved_effort;
+                (display_name, prev_model, prev_effort, resolved_effort, unchanged)
+            };
+            let _ = prev_effort; // used only for unchanged
+
+            let mut effects = Vec::new();
+            if persist_default {
+                // Settings / `/model` path: mirror app.models, persist
+                // default_model, success toast — only on Ok (D-05).
+                let prev_id_str = prev_model
+                    .as_ref()
+                    .map(|id| id.0.to_string())
+                    .unwrap_or_default();
+                let _ = set_default_model_inner(app, &model_id);
+                // set_default_model_inner resets effort via set_current(_, None);
+                // re-apply the effort from this complete event.
+                if let Some(agent) = app.agents.get_mut(&agent_id) {
+                    agent.session.models.set_current(model_id.clone(), effort);
+                }
+                if !xai_grok_shell::agent::chat_modes::process_chat_mode_enabled() {
+                    effects.push(Effect::PersistSetting {
+                        key: "default_model",
+                        value: crate::settings::SettingValue::String(model_id.0.to_string()),
+                        rollback_value: crate::settings::SettingValue::String(prev_id_str),
+                    });
+                }
+                let toast_name = app
+                    .agents
+                    .get(&agent_id)
+                    .map(|a| a.session.models.display_name_for(&model_id))
+                    .unwrap_or_else(|| display_name.clone());
+                app.show_toast(&crate::app::dispatch::settings::setters::save_default_model_toast(
+                    &toast_name,
+                ));
+            }
+
+            if let Some(agent) = app.agents.get_mut(&agent_id) {
                 if !unchanged {
                     let msg = if let Some(eff) = resolved_effort {
                         format!("Switched to {display_name} ({eff} effort)")
@@ -1066,37 +1185,88 @@ pub(in crate::app::dispatch) fn handle_switch_model_complete(
                         format!("Switched to {display_name}")
                     };
                     agent.scrollback.push_block(RenderBlock::system(msg));
-                }
-                if unchanged {
-                    vec![]
-                } else {
-                    vec![Effect::PersistPreferredModel {
+                    effects.push(Effect::PersistPreferredModel {
                         model_id: model_id.clone(),
                         reasoning_effort: resolved_effort,
-                    }]
+                    });
                 }
+                effects.extend(maybe_drain_queue(agent));
             }
-            Err(SwitchModelError::IncompatibleAgent { .. }) => {
+            effects
+        }
+        Err(SwitchModelError::IncompatibleAgent { .. }) => {
+            let display_name = {
+                let Some(agent) = app.agents.get_mut(&agent_id) else {
+                    return vec![];
+                };
                 if let Some(ref prev) = prev_model_id {
                     agent.session.models.set_current(prev.clone(), None);
                 }
                 agent.active_modal = None;
+                agent.session.models.display_name_for(&model_id)
+            };
+            open_agent_type_mismatch_question(app, model_id, effort, &display_name)
+        }
+        Err(SwitchModelError::MissingProvider {
+            error,
+            prev_model_id: err_prev,
+        }) => {
+            let (provider, display_name) = {
+                let Some(agent) = app.agents.get_mut(&agent_id) else {
+                    return vec![];
+                };
+                // Never leave current on the blocked target (transactional).
+                let restore = err_prev.or(prev_model_id);
+                if let Some(ref prev) = restore
+                    && agent.session.models.current.as_ref() == Some(&model_id)
+                {
+                    agent.session.models.set_current(prev.clone(), None);
+                }
+                agent.active_modal = None;
+                let Some(provider) = parse_provider_wire_id(&error.provider) else {
+                    // Malformed should already be Other in effects; defensive.
+                    agent.scrollback.push_block(RenderBlock::system(format!(
+                        "Couldn't switch model: {}",
+                        error.user_message()
+                    )));
+                    let mut effects = vec![];
+                    effects.extend(maybe_drain_queue(agent));
+                    return effects;
+                };
+                // Gate-open stash: full DeferredModelSwitch so Login now (Plan 03)
+                // reuses persist_default (cycle 3 MEDIUM handoff).
+                agent.session.deferred_model_switch = Some(DeferredModelSwitch {
+                    model_id: model_id.clone(),
+                    effort,
+                    required_provider: Some(provider.to_owned()),
+                    persist_default,
+                });
                 let display_name = agent.session.models.display_name_for(&model_id);
-                return open_agent_type_mismatch_question(app, model_id, effort, &display_name);
-            }
-            Err(SwitchModelError::Other(msg)) => {
+                (provider, display_name)
+            };
+            open_missing_provider_login_question(
+                app,
+                model_id,
+                effort,
+                provider,
+                &display_name,
+            )
+        }
+        Err(SwitchModelError::Other(msg)) => {
+            if let Some(agent) = app.agents.get_mut(&agent_id) {
                 agent
                     .scrollback
                     .push_block(RenderBlock::system(format!("Couldn't switch model: {msg}")));
+                let mut effects = vec![];
+                effects.extend(maybe_drain_queue(agent));
+                effects
+            } else {
                 vec![]
             }
-        };
-        effects.extend(maybe_drain_queue(agent));
-        effects
-    } else {
-        vec![]
+        }
     }
 }
+
 pub(in crate::app::dispatch) fn dispatch_agent_type_mismatch_answered(
     app: &mut AppView,
     start_new: bool,
@@ -1110,11 +1280,44 @@ pub(in crate::app::dispatch) fn dispatch_agent_type_mismatch_answered(
         {
             agent.session.models.set_current(model_id.clone(), effort);
             if effort.is_some() {
-                agent.session.deferred_model_switch = Some((model_id, effort));
+                agent.session.deferred_model_switch =
+                    Some(DeferredModelSwitch::new(model_id, effort));
             }
         }
         effects
     } else {
         vec![]
     }
+}
+
+/// Handle MissingProviderLogin QuestionView answer.
+///
+/// `login: false` (Keep current): clear question + deferred stash, zero persist.
+/// `login: true` (Login now): leave deferred stash intact for Plan 03 recovery;
+/// do **not** apply the unusable target model.
+pub(in crate::app::dispatch) fn dispatch_missing_provider_login_answered(
+    app: &mut AppView,
+    login: bool,
+    _model_id: acp::ModelId,
+    _effort: Option<ReasoningEffort>,
+    _provider: String,
+) -> Vec<Effect> {
+    let ActiveView::Agent(id) = app.active_view else {
+        return vec![];
+    };
+    let Some(agent) = app.agents.get_mut(&id) else {
+        return vec![];
+    };
+    if let Some(qv) = agent.question_view.take() {
+        agent.prompt.restore(qv.stashed_prompt);
+    }
+    if login {
+        // Plan 03: consume gate-open deferred (preserve persist_default) and
+        // start provider-scoped recovery. This plan must not apply the model.
+        // Leave deferred stash intact for Plan 03.
+    } else {
+        // Keep current model: clear gate-open deferred, zero persist/toast.
+        agent.session.deferred_model_switch = None;
+    }
+    vec![]
 }

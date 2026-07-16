@@ -25,8 +25,27 @@ pub enum SwitchModelError {
         /// declines to start a new session.
         prev_model_id: Option<acp::ModelId>,
     },
+    /// Target model needs credentials for a provider that has no usable
+    /// token. Deserialized from `ModelSwitchMissingProviderError` — sibling
+    /// of [`Self::IncompatibleAgent`], never folded into Other (D-07).
+    MissingProvider {
+        error: xai_grok_shell::agent::config::ModelSwitchMissingProviderError,
+        /// Model that was current before the switch attempt (for safety
+        /// restore if anything optimistically mutated).
+        prev_model_id: Option<acp::ModelId>,
+    },
     /// Any other failure (network, auth, server error, etc.).
     Other(String),
+}
+
+/// Parse a provider wire id from ACP error data. Accepts only `xai` and
+/// `codex` (case-sensitive, matching [`ModelProvider::as_str`]).
+pub(crate) fn parse_provider_wire_id(provider: &str) -> Option<&'static str> {
+    match provider {
+        "xai" => Some("xai"),
+        "codex" => Some("codex"),
+        _ => None,
+    }
 }
 /// Synchronous, side-effect-free user intent.
 ///
@@ -727,6 +746,17 @@ pub enum Action {
         start_new: bool,
         model_id: acp::ModelId,
         effort: Option<ReasoningEffort>,
+    },
+    /// Answer from the missing-provider login QuestionView. Shown when the
+    /// shell rejects a model switch because the target provider has no
+    /// usable credentials (MOD-06). `login: true` is Login now (Plan 03
+    /// recovery body); `login: false` is Keep current model (dismiss).
+    MissingProviderLoginAnswered {
+        login: bool,
+        model_id: acp::ModelId,
+        effort: Option<ReasoningEffort>,
+        /// Validated wire id (`xai` | `codex`).
+        provider: String,
     },
     /// User selected a project directory from the project picker.
     ProjectSelected {
@@ -1499,6 +1529,11 @@ pub enum Effect {
         /// (no optimistic update). Threaded through to
         /// `SwitchModelComplete` so `IncompatibleAgent` can roll back.
         prev_model_id: Option<acp::ModelId>,
+        /// When true, `SwitchModelComplete(Ok)` also persists
+        /// `default_model`, mirrors `app.models`, and shows the settings
+        /// success toast. Set by `set_default_model` / `/model`; false for
+        /// session-only `Action::SwitchModel` (D-05 transactional path).
+        persist_default: bool,
     },
     /// Fetch changelog from CDN (both markdown + structured JSON).
     /// Runs off the render path via `spawn_blocking`. Result is cached
@@ -2257,6 +2292,9 @@ pub enum TaskResult {
         /// Forwarded from `Effect::SwitchModel.prev_model_id` for
         /// rollback on `IncompatibleAgent`.
         prev_model_id: Option<acp::ModelId>,
+        /// Forwarded from `Effect::SwitchModel.persist_default` so Ok applies
+        /// default persistence only when the settings path requested it.
+        persist_default: bool,
     },
     /// Changelog fetched from CDN (both formats).
     ChangelogFetched {

@@ -127,6 +127,16 @@ pub enum LocalQuestionKind {
         model_id: agent_client_protocol::ModelId,
         effort: Option<xai_grok_shell::sampling::types::ReasoningEffort>,
     },
+    /// Modal shown when the shell rejects a model switch because the
+    /// target provider has no usable credentials (MOD-06 / D-03).
+    /// Options: Login now / Keep current model. Provider is a validated
+    /// wire id (`xai` | `codex`). `persist_default` lives on the gate-open
+    /// `DeferredModelSwitch` stash, not on this kind.
+    MissingProviderLogin {
+        model_id: agent_client_protocol::ModelId,
+        effort: Option<xai_grok_shell::sampling::types::ReasoningEffort>,
+        provider: String,
+    },
 }
 
 // ── State ──────────────────────────────────────────────────────────────

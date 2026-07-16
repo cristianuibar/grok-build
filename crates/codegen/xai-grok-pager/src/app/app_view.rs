@@ -1351,11 +1351,11 @@ impl AppView {
     /// remapped menu id could resolve differently.
     pub fn deferred_model_switch_from_cli(
         &self,
-    ) -> Option<(
-        acp::ModelId,
-        Option<xai_grok_shell::sampling::types::ReasoningEffort>,
-    )> {
-        Some((self.cli_model_override.clone()?, None))
+    ) -> Option<crate::app::agent::DeferredModelSwitch> {
+        Some(crate::app::agent::DeferredModelSwitch::new(
+            self.cli_model_override.clone()?,
+            None,
+        ))
     }
     /// Voice capture is armed: the in-prompt dictation overlay can show and
     /// Ctrl+Space can start capture.

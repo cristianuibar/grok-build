@@ -1514,7 +1514,9 @@ pub(super) fn apply_pending_dispatch_config(
         // deferred switch when an explicit effort must be pushed. Setting it
         // (or clearing to `None`) also overrides any CLI `-m` default so the
         // dashboard's `/model` choice wins.
-        agent.session.deferred_model_switch = m.effort.map(|e| (m.id.clone(), Some(e)));
+        agent.session.deferred_model_switch = m.effort.map(|e| {
+            crate::app::agent::DeferredModelSwitch::new(m.id.clone(), Some(e))
+        });
     }
     match pending_mode {
         DashboardDispatchMode::Normal => {
