@@ -1,18 +1,22 @@
 ---
 phase: 4
 reviewers: [codex]
-reviewed_at: 2026-07-16T12:55:45Z
+reviewed_at: 2026-07-16T13:07:42Z
+cycle: 2
 plans_reviewed:
   - 04-01-PLAN.md
   - 04-02-PLAN.md
   - 04-03-PLAN.md
   - 04-04-PLAN.md
   - 04-05-PLAN.md
+plans_commit: 1b9196d
 ---
-
 # Cross-AI Plan Review — Phase 4
 
-## Codex Review
+## Codex Review — Cycle 1
+
+> Historical audit trail. Plans at cycle-1 review time (pre-replan `1b9196d`). Do not treat as current residual list.
+
 
 # Phase 4 Plan Review
 
@@ -214,7 +218,7 @@ At minimum, I recommend revising the plan set to add these four acceptance requi
 With those changes, the architecture would be credible and the overall risk would drop to **MEDIUM**.
 ---
 
-## Consensus Summary
+## Consensus Summary — Cycle 1
 
 Single external reviewer (Codex). Consensus below is therefore that reviewer’s grounded findings (not multi-model agreement). Weight is high because findings cite concrete `file:line` evidence against the current tree.
 
@@ -253,6 +257,169 @@ Before execute-phase, plans should add acceptance requirements for:
 4. Provider identity carried or catalog-resolved during reconstruction; ban URL heuristics and arbitrary first-scope selection.
 
 With those, Codex estimates overall risk drops HIGH → MEDIUM.
+
+### Next step
+
+```text
+/gsd:plan-phase 4 --reviews
+```
+
+
+---
+
+# Cycle 2 Codex re-review
+
+Date: 2026-07-16  
+Plans: post-replan commit `1b9196d` (cycle-1 HIGHs absorbed into PLAN.md)  
+Reviewer: Codex (source-grounded)
+
+# Phase 4 Plan Review — Convergence Cycle 2
+
+## Summary
+
+The revised plans are substantially stronger and correctly target the major production seams: catalog stamping, dual-slot credentials, model preparation, session reconstruction, HTTP authorization, and secret-safe logging. However, convergence is not complete. Seven of the thirteen cycle-1 HIGH findings are fully resolved at the plan level; six are only partially resolved. Five distinct HIGH-risk design gaps remain, primarily around testing the real switch path, representing an unknown provider safely, preserving endpoint trust provenance, carrying credential metadata through `SetSessionModel`, and handling an empty live bearer resolver.
+
+Reviewed against clean `HEAD 1b9196d`.
+
+## Strengths
+
+- Plan 02 now makes `resolve_provider_route` an explicit production authority and Plan 03 requires `default_models()` to call it. This directly addresses the current provider-blind stamping at [config.rs](/home/cristian/bum/grok-build/crates/codegen/xai-grok-shell/src/agent/config.rs:3460), where every model currently inherits the xAI inference URL and `xai_api_base_url`.
+
+- Provider rebinding is now covered. The current override order changes `base_url` before `provider` and never renormalizes it at [config.rs](/home/cristian/bum/grok-build/crates/codegen/xai-grok-shell/src/agent/config.rs:3689). Plan 03 adds an explicit provider-only rebind test and production action.
+
+- The dual-key credential API and both-present `never_cross_slot` test are meaningful improvements. They directly target current callers that unconditionally supply the xAI `AuthManager` token in [models.rs](/home/cristian/bum/grok-build/crates/codegen/xai-grok-shell/src/agent/models.rs:949) and [agent_ops.rs](/home/cristian/bum/grok-build/crates/codegen/xai-grok-shell/src/agent/mvp_agent/agent_ops.rs:1092).
+
+- Plan 04 correctly rejects arbitrary `BTreeMap` ordering for Codex credential selection. Provider slots are scope maps at [model.rs](/home/cristian/bum/grok-build/crates/codegen/xai-grok-shell/src/auth/model.rs:25), while the existing `lookup_auth` intentionally selects a requested scope and rejects legacy web login at [model.rs](/home/cristian/bum/grok-build/crates/codegen/xai-grok-shell/src/auth/model.rs:314).
+
+- Reconstruction is now explicitly in scope. This is necessary because the current resolver always reads the xAI `AuthManager` at [sampler_turn.rs](/home/cristian/bum/grok-build/crates/codegen/xai-grok-shell/src/session/acp_session_impl/sampler_turn.rs:251) and attaches it whenever the existing gate is active at [sampler_turn.rs](/home/cristian/bum/grok-build/crates/codegen/xai-grok-shell/src/session/acp_session_impl/sampler_turn.rs:339).
+
+- Plan 05 adds genuine on-wire authorization tests using an established harness. The repository already demonstrates exact `Authorization` inspection at [test_sampling_client.rs](/home/cristian/bum/grok-build/crates/codegen/xai-grok-shell/tests/test_sampling_client.rs:1077).
+
+- The full-key log leak is now explicitly fixed. Both unsafe logging sites are real: [client.rs](/home/cristian/bum/grok-build/crates/codegen/xai-grok-sampler/src/client.rs:408) and [client.rs](/home/cristian/bum/grok-build/crates/codegen/xai-grok-sampler/src/client.rs:422).
+
+- Scope boundaries are well maintained: no Codex OAuth lifecycle, login modal, or Phase 6 provider gate is introduced.
+
+## Cycle-1 HIGH Status
+
+| Prior HIGH | Status | Assessment |
+|---|---|---|
+| 1. Switch test bypasses production path | **PARTIALLY RESOLVED** | The new helper simulates the transition, but still explicitly runs “without full ACP session” in [04-04-PLAN.md](/home/cristian/bum/grok-build/.planning/phases/04-provider-aware-request-routing/04-04-PLAN.md:118). |
+| 2. `never_cross_slot` does not prove isolation | **FULLY RESOLVED** | Plan 03 requires both tokens simultaneously through the new dual-key API. |
+| 3. Resolver may remain test-only | **FULLY RESOLVED** | Plans 03–04 mandate production calls, especially catalog stamping. |
+| 4. Custom URL may receive provider OAuth | **PARTIALLY RESOLVED** | Host policy exists, but endpoint/override provenance is not represented reliably in the proposed credential API. |
+| 5. Single-key wrapper remains unsafe | **FULLY RESOLVED** | Production dual-slot builders must use the dual-key API; remaining callers are inventoried. |
+| 6. Provider rebinding leaves stale base URL | **FULLY RESOLVED** | Plan 03 adds renormalization and tests. |
+| 7. Tests skip real prepare/reconstruct | **PARTIALLY RESOLVED** | Shared helpers are better, but the planned switch test remains a simulation rather than the actual handler/reconstruct path. |
+| 8. Reconstruction provider identity is discretionary | **PARTIALLY RESOLVED** | Catalog provider is selected, but the proposed type cannot safely represent unknown. |
+| 9. First token from provider map is arbitrary | **FULLY RESOLVED** | Deterministic mode/expiry selection and adversarial fixtures are specified. |
+| 10. Model-switch credential metadata is xAI-biased | **PARTIALLY RESOLVED** | The plan identifies the file but does not define how `auth_type` travels with the prepared config. |
+| 11. Missing credentials fail only after remote 401 | **PARTIALLY RESOLVED** | No-key/no-resolver is handled, but a present resolver returning no token remains untested and potentially unauthenticated. |
+| 12. No on-wire Authorization assertion | **FULLY RESOLVED** | Plan 05 adds exact wire-header tests and zero-request checks. |
+| 13. Full secret logged on invalid header | **FULLY RESOLVED** | Sampler client is now modified and the full-key fields are removed. |
+
+## Concerns
+
+- **HIGH — unknown provider cannot be represented by the proposed `ModelAuthFacts.provider`.** Plan 04 requires `provider: ModelProvider`, then says an unknown catalog lookup must fail closed ([04-04-PLAN.md](/home/cristian/bum/grok-build/.planning/phases/04-provider-aware-request-routing/04-04-PLAN.md:264)). But `ModelProvider` has only `Xai` and `Codex`, with `Xai` as its default at [config.rs](/home/cristian/bum/grok-build/crates/codegen/xai-grok-shell/src/agent/config.rs:3367). The proposed helper also accepts a non-optional `ModelProvider` ([04-04-PLAN.md](/home/cristian/bum/grok-build/.planning/phases/04-provider-aware-request-routing/04-04-PLAN.md:115)). An absent model can therefore accidentally collapse to xAI and attach its live resolver.
+
+- **HIGH — the switch test still does not exercise the actual switch pipeline.** The plan’s helper explicitly simulates chat-state writes without the ACP session. In production, `SetSessionModel` carries only `SamplerConfig` at [commands.rs](/home/cristian/bum/grok-build/crates/codegen/xai-grok-shell/src/session/commands.rs:161), the handler writes fields separately at [model_switch.rs](/home/cristian/bum/grok-build/crates/codegen/xai-grok-shell/src/session/acp_session_impl/model_switch.rs:48), and reconstruction later rebuilds the full client at [sampler_turn.rs](/home/cristian/bum/grok-build/crates/codegen/xai-grok-shell/src/session/acp_session_impl/sampler_turn.rs:256). A parallel orchestration helper can still pass while one of these production transfers is wrong.
+
+- **HIGH — provider-correct `auth_type` has no defined carrier.** Plan 04 says to derive it from the prepared `sampling_config.api_key` or “credentials already returned” ([04-04-PLAN.md](/home/cristian/bum/grok-build/.planning/phases/04-provider-aware-request-routing/04-04-PLAN.md:214)). But `SamplerConfig` stores the key and auth scheme, not whether it came from a session or BYOK, while `SetSessionModel` carries no separate `ResolvedCredentials`. The current handler consequently re-resolves metadata with the xAI token at [model_switch.rs](/home/cristian/bum/grok-build/crates/codegen/xai-grok-shell/src/session/acp_session_impl/model_switch.rs:61). The plan needs an explicit data-flow change, not “prefer” wording.
+
+- **HIGH — first-party OAuth eligibility loses endpoint provenance.** The proposed `resolve_credentials_for_provider` receives only `ModelEntry` and two keys, then ambiguously suggests reconstructing endpoints or comparing stamped URLs ([04-03-PLAN.md](/home/cristian/bum/grok-build/.planning/phases/04-provider-aware-request-routing/04-03-PLAN.md:190), [04-03-PLAN.md](/home/cristian/bum/grok-build/.planning/phases/04-provider-aware-request-routing/04-03-PLAN.md:193)). `ModelEntry` currently stores only the resolved `base_url`; it does not record whether that URL came from a trusted provider endpoint or a model override. This can either reject a legitimate configured Codex endpoint or attach OAuth to an override misclassified as trusted.
+
+- **HIGH — fail-closed does not cover a resolver that exists but returns no bearer.** The current request code silently leaves existing headers unchanged when `current_bearer()` returns `None` at [client.rs](/home/cristian/bum/grok-build/crates/codegen/xai-grok-sampler/src/client.rs:550). Plan 05’s required test only covers `api_key=None` and `bearer_resolver=None` ([04-05-PLAN.md](/home/cristian/bum/grok-build/.planning/phases/04-provider-aware-request-routing/04-05-PLAN.md:169)). A stale or empty resolver can therefore still send an unauthenticated request.
+
+- **MEDIUM — provider-store read errors are collapsed into absence.** Plan 04 proposes `read_provider_auth_store(...) -> Option<AuthStore>` ([04-04-PLAN.md](/home/cristian/bum/grok-build/.planning/phases/04-provider-aware-request-routing/04-04-PLAN.md:200)), while the underlying parser returns `io::Result` at [storage.rs](/home/cristian/bum/grok-build/crates/codegen/xai-grok-shell/src/auth/storage.rs:95). Missing file, malformed JSON, unsupported version, and an empty provider slot should remain distinguishable for diagnostics, even though each fails closed.
+
+## Suggestions
+
+- Change `ModelAuthFacts.provider` to `Option<ModelProvider>` and make resolver attachment require `provider == Some(ModelProvider::Xai)`. Test empty, absent, and config-load-failure cases.
+
+- Carry prepared credential provenance explicitly through model switching. For example, add `auth_type` to `SetSessionModel`, or return a `PreparedSamplingConfig { sampler_config, auth_type, provider }` consumed directly by the session handler.
+
+- Factor the exact production transformations into shared functions that production calls:
+
+  - `SamplerConfig + auth_type -> chat-state SamplingConfig/Credentials`
+  - `chat-state state + ModelAuthFacts -> reconstructed SamplerConfig`
+
+  Then test those exact functions in sequence. Avoid a separate `next_sample_after_model_switch` simulation containing duplicate field-copy logic.
+
+- Pass the effective `EndpointsConfig` into `resolve_credentials_for_provider`, or persist an explicit route/trust classification on the resolved model entry. Do not infer override provenance by comparing URL strings against a fresh default configuration.
+
+- At the HTTP boundary, resolve the live bearer before sending. If neither a nonblank static key nor a nonblank resolved bearer exists, return local `SamplingError::Auth`. Add tests for:
+
+  - resolver present but returns `None`
+  - resolver returns whitespace
+  - static key blank plus empty resolver
+  - zero mock-server requests in all three cases
+
+- Return `Result<Option<AuthStore>>` from provider-store loading and log a redacted diagnostic for parse/version/I/O failures.
+
+## Risk Assessment
+
+**Overall risk: HIGH.**
+
+The revised plans close most structural problems and are much closer to executable convergence. The remaining gaps are concentrated in the most security-sensitive seam: determining whether an xAI OAuth bearer may be attached, carrying credential provenance across model switching, and proving the actual next-turn path. Until those mechanisms are made explicit, the implementation could satisfy the planned helper tests while still attaching xAI credentials to an unknown route or sending an unauthenticated request when a live resolver is empty.
+
+---
+
+## Consensus Summary — Cycle 2
+
+Single external reviewer (Codex). Weight is high: findings cite concrete `file:line` evidence against the current tree and against plan text at `1b9196d`.
+
+### Progress vs cycle 1
+
+| Bucket | Count | Notes |
+|--------|-------|-------|
+| Cycle-1 HIGHs FULLY RESOLVED | 7 | never_cross_slot dual-key; resolver production authority; single-key dual-slot discipline; provider rebind URL renormalization; deterministic Codex token selection; on-wire Authorization tests; full-key log leak fix |
+| Cycle-1 HIGHs PARTIALLY RESOLVED | 6 | switch/prepare path still simulated; custom-URL OAuth provenance; unknown provider typing; auth_type carrier; empty live-resolver fail-closed |
+| Net residual HIGH (cycle 2) | **5** | See below — partials re-expressed as explicit residual design gaps |
+| Actionable MEDIUM still open | **1** | Provider-store read errors collapsed to `Option` |
+
+### Agreed Strengths (cycle 2)
+
+- Production authority for `resolve_provider_route` + catalog stamping call sites.
+- Dual-key credentials + both-present `never_cross_slot`.
+- Deterministic Codex scope selection (not BTreeMap first entry).
+- On-wire Authorization + zero-request fail-closed tests planned.
+- Sampler full-key logging fix in scope.
+- Scope discipline (no Phase 5/6 OAuth UX).
+
+### Residual HIGH concerns (must replan)
+
+1. **Unknown provider typing** — `ModelAuthFacts.provider: ModelProvider` cannot represent unknown; `Xai` default can attach live resolver incorrectly.
+2. **Switch test still simulates** — `next_sample_after_model_switch` without production field-transfer functions can green while `SetSessionModel` / reconstruct stay wrong.
+3. **`auth_type` carrier undefined** — model_switch still re-resolves with xAI token unless prepared provenance is carried explicitly.
+4. **OAuth host trust provenance** — `resolve_credentials_for_provider(ModelEntry, keys)` lacks `EndpointsConfig` / trust classification; URL string compare is brittle.
+5. **Empty live resolver** — preflight only covers `api_key=None && bearer_resolver=None`; present resolver returning `None`/whitespace can still send unauthenticated HTTP.
+
+### Residual actionable non-HIGH
+
+1. **MEDIUM — provider-store errors as absence** — use `Result<Option<AuthStore>>` (or equivalent) and redacted diagnostics for parse/version/I/O vs missing file.
+
+### Divergent Views
+
+N/A — only Codex ran (`--codex` only).
+
+### Recommended plan revisions
+
+1. `ModelAuthFacts.provider: Option<ModelProvider>`; attach xAI resolver only when `Some(Xai)`.
+2. Factor production transforms (`SamplerConfig+auth_type → chat-state`; `chat-state+facts → reconstruct`) and test those exact functions; drop duplicate simulation logic.
+3. Explicit `auth_type` (and provider) carrier on `SetSessionModel` or `PreparedSamplingConfig`.
+4. Pass effective `EndpointsConfig` or persist route/trust on model entry into credential resolution.
+5. Preflight: require nonblank static key **or** nonblank resolved bearer before HTTP; test resolver-None, whitespace, blank+empty.
+6. Distinguish auth-store load failures diagnostically.
+
+### Cycle 2 status
+
+| Severity | Unresolved count |
+|----------|------------------|
+| HIGH | 5 |
+| MEDIUM actionable | 1 |
+| LOW actionable | 0 |
+
+**Converged:** no  
+**Overall residual risk:** HIGH (security-sensitive seams still underspecified)
 
 ### Next step
 
