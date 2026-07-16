@@ -2,7 +2,7 @@
 phase: 5
 reviewers: [codex]
 reviewed_at: 2026-07-16T16:34:11Z
-cycle: 1
+cycle: 2
 plans_reviewed:
   - 05-01-PLAN.md
   - 05-02-PLAN.md
@@ -10,7 +10,7 @@ plans_reviewed:
   - 05-04-PLAN.md
   - 05-05-PLAN.md
   - 05-06-PLAN.md
-plans_commit: 73bdb21
+plans_commit: f861084
 ---
 # Cross-AI Plan Review — Phase 5
 
@@ -274,3 +274,101 @@ Final recommendation: revise Plans 05-01, 05-02, 05-03, and 05-04 locally, but r
 
 - unresolved HIGH: 8+ (AUTH-05 path, refresh lock, BUM_HOME OnceLock, pub(crate) integration visibility, xAI post-login on Codex, expiry JWT, logout nonblocking lock, mid-session snapshot)
 - actionable non-HIGH: several MEDIUM items folded into replan
+
+## Codex Review — Cycle 2
+
+> Source: Codex gpt-5.6-sol/high (2026-07-16). Overall risk still HIGH (3 residual).
+
+# Cycle 2 verdict
+
+Overall risk: **HIGH**.
+
+Most cycle-1 concerns are now addressed in the plan text, including the correct reconstruct-time hook and lock-held refresh design. However, three HIGH execution risks remain in AUTH-05, plus one actionable MEDIUM.
+
+## Remaining findings
+
+### HIGH — Codex OAuth can override BYOK credentials and leak the bearer to custom endpoints
+
+Plan 05 invokes `ensure_fresh_codex_auth` for every model whose catalog provider is Codex, then unconditionally replaces `api_key` with the OAuth bearer ([05-05-PLAN.md:113](/home/cristian/bum/grok-build/.planning/phases/05-codex-oauth-dual-auth-lifecycle/05-05-PLAN.md:113), [05-05-PLAN.md:212](/home/cristian/bum/grok-build/.planning/phases/05-codex-oauth-dual-auth-lifecycle/05-05-PLAN.md:212)).
+
+That violates the existing routing contract:
+
+- Model-owned credentials take priority over session OAuth ([config.rs:4781](/home/cristian/bum/grok-build/crates/codegen/xai-grok-shell/src/agent/config.rs:4781)).
+- Provider OAuth may attach only when `session_oauth_allowed` is true ([config.rs:4427](/home/cristian/bum/grok-build/crates/codegen/xai-grok-shell/src/agent/config.rs:4427), [config.rs:4475](/home/cristian/bum/grok-build/crates/codegen/xai-grok-shell/src/agent/config.rs:4475)).
+- A custom Codex endpoint without its own credential deliberately receives no session OAuth ([config.rs:4838](/home/cristian/bum/grok-build/crates/codegen/xai-grok-shell/src/agent/config.rs:4838)).
+
+The plan gates only `ChatGPT-Account-ID`, not the bearer itself. Require the reconstruct override only when the prepared credential is `AuthType::SessionToken` and the endpoint passes the existing Codex OAuth allowlist. Preserve `creds.api_key` for BYOK.
+
+Add tests for:
+
+- `codex_byok_key_not_overridden`
+- `codex_oauth_bearer_absent_on_custom_endpoint`
+- zero IdP refresh calls for BYOK/custom Codex routes
+
+### HIGH — Permanent failure may deadlock by reacquiring `auth.json.lock`
+
+The plan correctly keeps the file lock across IdP refresh and persistence ([05-05-PLAN.md:114](/home/cristian/bum/grok-build/.planning/phases/05-codex-oauth-dual-auth-lifecycle/05-05-PLAN.md:114)), but then mandates permanent-failure cleanup “via `clear_provider_slot`” ([05-05-PLAN.md:119](/home/cristian/bum/grok-build/.planning/phases/05-codex-oauth-dual-auth-lifecycle/05-05-PLAN.md:119)).
+
+Plan 02 defines `clear_provider_slot` as the public acquiring operation, while only mutation has a guard-held variant ([05-02-PLAN.md:109](/home/cristian/bum/grok-build/.planning/phases/05-codex-oauth-dual-auth-lifecycle/05-02-PLAN.md:109)). Existing acquiring mutations take the blocking lock internally ([storage.rs:419](/home/cristian/bum/grok-build/crates/codegen/xai-grok-shell/src/auth/storage.rs:419), [storage.rs:481](/home/cristian/bum/grok-build/crates/codegen/xai-grok-shell/src/auth/storage.rs:481)). Calling that while `ensure_fresh` already holds the lock can block indefinitely.
+
+Add `clear_provider_slot_with_lock`, or clear Codex through `mutate_provider_store_or_prune_with_lock` using the existing guard. The current guard-held pattern explicitly avoids reacquisition ([storage.rs:428](/home/cristian/bum/grok-build/crates/codegen/xai-grok-shell/src/auth/storage.rs:428)).
+
+### HIGH — The integration-only gate still cannot prove the actual reconstruct hook
+
+Validation requires an integration test to exercise production reconstruction ([05-VALIDATION.md:15](/home/cristian/bum/grok-build/.planning/phases/05-codex-oauth-dual-auth-lifecycle/05-VALIDATION.md:15), [05-VALIDATION.md:110](/home/cristian/bum/grok-build/.planning/phases/05-codex-oauth-dual-auth-lifecycle/05-VALIDATION.md:110)), while forbidding the shell library-test gate.
+
+But the source surface is private:
+
+- `reconstruct_full_config` is `pub(super)` ([sampler_turn.rs:231](/home/cristian/bum/grok-build/crates/codegen/xai-grok-shell/src/session/acp_session_impl/sampler_turn.rs:231)).
+- `SessionActor` is `pub(crate)` ([acp_session.rs:564](/home/cristian/bum/grok-build/crates/codegen/xai-grok-shell/src/session/acp_session.rs:564)).
+- Its module is also `pub(crate)` ([session/mod.rs:297](/home/cristian/bum/grok-build/crates/codegen/xai-grok-shell/src/session/mod.rs:297)).
+
+Existing tests that directly call reconstruction are internal library tests ([auth_error_no_retry_tests.rs:667](/home/cristian/bum/grok-build/crates/codegen/xai-grok-shell/src/session/acp_session_tests/auth_error_no_retry_tests.rs:667)). As written, the integration test can test public `ensure_fresh_codex_auth`, but not prove that `reconstruct_full_config` actually invokes it.
+
+The plan must name a concrete executable seam: either a headless request test that observes the outgoing bearer, a narrowly feature-gated test driver, or a runnable internal actor test. Otherwise the prior “green ensure helper, missing production wiring” failure remains possible.
+
+### MEDIUM — Refresh-token and identity preservation are unspecified
+
+The refresh test assumes the endpoint returns a new refresh token ([05-05-PLAN.md:157](/home/cristian/bum/grok-build/.planning/phases/05-codex-oauth-dual-auth-lifecycle/05-05-PLAN.md:157)). OAuth refresh responses may omit it. The existing OIDC implementation preserves identity/account metadata and retains the old refresh token when rotation is absent ([oidc/refresh.rs:189](/home/cristian/bum/grok-build/crates/codegen/xai-grok-shell/src/auth/oidc/refresh.rs:189), [oidc/refresh.rs:208](/home/cristian/bum/grok-build/crates/codegen/xai-grok-shell/src/auth/oidc/refresh.rs:208)).
+
+Require the Codex exchange to preserve:
+
+- old refresh token when no replacement is returned;
+- `organization_id`/ChatGPT account id;
+- email, issuer, and client id.
+
+Add a mock response omitting `refresh_token` and account claims.
+
+## Production hooks verified
+
+The revised hook selection is correct:
+
+- Each sampler turn calls `prepare_sampler_for_turn` ([sampler_turn.rs:858](/home/cristian/bum/grok-build/crates/codegen/xai-grok-shell/src/session/acp_session_impl/sampler_turn.rs:858)).
+- That rebuilds configuration through `reconstruct_full_config` ([sampler_turn.rs:561](/home/cristian/bum/grok-build/crates/codegen/xai-grok-shell/src/session/acp_session_impl/sampler_turn.rs:561)).
+- Reconstruction currently consumes the stale chat-state `creds.api_key` ([sampler_turn.rs:256](/home/cristian/bum/grok-build/crates/codegen/xai-grok-shell/src/session/acp_session_impl/sampler_turn.rs:256), [sampler_turn.rs:318](/home/cristian/bum/grok-build/crates/codegen/xai-grok-shell/src/session/acp_session_impl/sampler_turn.rs:318)).
+
+The xAI rotation-safe reference also matches the revised plan:
+
+- in-process lock: [manager.rs:1596](/home/cristian/bum/grok-build/crates/codegen/xai-grok-shell/src/auth/manager.rs:1596)
+- file lock retained across refresh: [manager.rs:1618](/home/cristian/bum/grok-build/crates/codegen/xai-grok-shell/src/auth/manager.rs:1618)
+- live-lock revalidation immediately before IdP: [manager.rs:1642](/home/cristian/bum/grok-build/crates/codegen/xai-grok-shell/src/auth/manager.rs:1642)
+- IdP call and guarded outcome application: [manager.rs:1687](/home/cristian/bum/grok-build/crates/codegen/xai-grok-shell/src/auth/manager.rs:1687)
+- guard-held persistence without reacquisition: [manager.rs:1821](/home/cristian/bum/grok-build/crates/codegen/xai-grok-shell/src/auth/manager.rs:1821)
+
+## Resolved from prior cycle
+
+Explicitly resolved in the revised text:
+
+- Wrong prepare-time production hook
+- Refresh-token rotation lock span and sibling adoption
+- Cache invalidation as the primary freshness mechanism
+- `BUM_HOME`/`OnceLock` fixture hygiene
+- Public storage/status APIs for integration tests
+- Codex entering xAI `post_login_sync`
+- Missing `expires_in` handling
+- Nonblocking `remove_scope` as logout authority
+- Concurrent single-IdP-spend coverage
+
+Not fully resolved: the reconstruct gate is named, but its integration-test execution path remains unavailable.
+
+Recommendation: revise Plan 05 around the three HIGH findings before execution. AUTH-02 through AUTH-04 otherwise look execution-ready.
