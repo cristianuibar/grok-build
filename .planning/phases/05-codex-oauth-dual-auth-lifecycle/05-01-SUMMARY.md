@@ -119,7 +119,7 @@ status: complete
 1. **Task 1: Wave 0 auth_codex_lifecycle smoke + AUTH-02..05 RED** - `d5e0a44` (test)
 2. **Task 2: Clap parse scaffolds + pager-bin compile** - `9e5c33b` (feat)
 
-**Plan metadata:** (pending final docs commit)
+**Plan metadata:** `76b1163` (docs: complete plan)
 
 ## Files Created/Modified
 
