@@ -26,6 +26,7 @@ use xai_grok_shell::agent::config::{
     sampling_config_for_model, Config, EndpointsConfig, ModelEntry, ModelProvider,
     CLI_CHAT_PROXY_BASE_URL_DEFAULT, XAI_API_BASE_URL_DEFAULT,
 };
+use xai_grok_shell::sampling::ApiBackend;
 
 /// Locked Codex/ChatGPT backend default (Plan 02 exports `CODEX_BASE_URL_DEFAULT`).
 const CODEX_BASE_URL_DEFAULT: &str = "https://chatgpt.com/backend-api/codex";
@@ -173,44 +174,56 @@ fn no_proxy_headers_on_codex() {
     );
 }
 
-/// Dual-token isolation (D-09 / T-04-02).
+/// Dual-token isolation (D-09 / T-04-02 / 04-REVIEWS HIGH).
 ///
-/// Final GREEN (Plan 03): `resolve_credentials_for_provider(model, endpoints,
-/// Some(xai-fake), Some(codex-fake))` returns only the provider-correct key —
-/// Codex never receives xai-fake; xAI never receives codex-fake.
+/// Final GREEN (Plan 03): public dual-key API
+/// `resolve_credentials_for_provider(model, endpoints, Some(xai_key), Some(codex_key))`
+/// with **both** tokens present returns only the provider-correct key:
+/// - Codex model → `codex-fake-token` only (never `xai-fake-token`)
+/// - xAI model → `xai-fake-token` only (never `codex-fake-token`)
 ///
-/// Wave 0: both tokens always in scope; assert intentional RED that dual-key
-/// API is not ready yet (do not leave as two independent single-key resolves
-/// that each only see one token — that cannot detect cross-slot bugs).
+/// Wave 0/Task 2: both tokens always in locals; prove today's single-key API is a
+/// cross-slot defect vector (Codex accepts xAI key); fail until dual-key lands.
+/// Do **not** reduce this to two independent single-key resolves that each only
+/// see one token — that cannot detect cross-slot bugs.
 #[test]
 fn never_cross_slot() {
+    // Both tokens present simultaneously — dual-token fixture (required).
     let xai_key = XAI_FAKE;
     let codex_key = CODEX_FAKE;
-    // Both tokens present simultaneously — required dual-token fixture.
-    let _both_present = (xai_key, codex_key);
+    let dual_map = [( "xai", xai_key ), ( "codex", codex_key )];
+    assert_eq!(dual_map.len(), 2, "dual-token fixture must hold both slots");
+    assert_ne!(xai_key, codex_key);
 
     let xai_entry = catalog_entry("grok-build");
     let codex_entry = catalog_entry("gpt-5.6-sol");
     assert_eq!(xai_entry.info.provider.as_str(), "xai");
     assert_eq!(codex_entry.info.provider.as_str(), "codex");
 
-    // Today's single-key API is a defect vector: feeding the wrong slot key
-    // is accepted because resolve_credentials is provider-blind.
-    let wrongly_fed = resolve_credentials(&codex_entry, Some(xai_key));
+    // Documented defect: single-key resolve_credentials is provider-blind.
+    // When the wrong slot key is offered for a Codex model, it is accepted today.
+    let codex_with_xai_key = resolve_credentials(&codex_entry, Some(xai_key));
     assert_eq!(
-        wrongly_fed.api_key.as_deref(),
+        codex_with_xai_key.api_key.as_deref(),
         Some(xai_key),
-        "precondition: current single-key API accepts xAI key for Codex model \
-         (cross-slot defect Plan 03 must close)"
+        "precondition: current single-key API wrongly accepts xAI key for Codex model"
+    );
+    let xai_with_codex_key = resolve_credentials(&xai_entry, Some(codex_key));
+    assert_eq!(
+        xai_with_codex_key.api_key.as_deref(),
+        Some(codex_key),
+        "precondition: current single-key API wrongly accepts Codex key for xAI model"
     );
 
-    // Plan 03 GREEN target: dual-key selection with both tokens present.
+    // Plan 03 GREEN: dual-key API with both Some(...) never returns the wrong slot.
+    // Until that symbol is public, keep compiling via intentional RED scaffold.
     let dual_key_api_ready = false;
     assert!(
         dual_key_api_ready,
         "Plan 03: resolve_credentials_for_provider dual-token isolation — \
-         with both tokens present (xai={xai_key}, codex={codex_key}), \
-         Codex model must yield only {codex_key} and xAI model only {xai_key}"
+         both tokens present (xai={xai_key}, codex={codex_key}): \
+         dual_key(codex, both) == {codex_key} only AND dual_key(xai, both) == {xai_key} only \
+         (Codex must not receive xai-fake; xAI must not receive codex-fake)"
     );
 }
 
@@ -264,4 +277,54 @@ fn sampling_config_for_model_differs_by_model() {
     );
     assert_eq!(xai_cfg.api_key.as_deref(), Some(XAI_FAKE));
     assert_eq!(codex_cfg.api_key.as_deref(), Some(CODEX_FAKE));
+}
+
+/// MOD-04 regression: cli-chat-proxy bases still get X-XAI-Token-Auth headers.
+#[test]
+fn xai_proxy_headers_still_apply() {
+    let endpoints = deterministic_endpoints();
+    let proxy = endpoints.proxy_url();
+    assert_eq!(
+        proxy, CLI_CHAT_PROXY_BASE_URL_DEFAULT,
+        "deterministic endpoints must pin cli-chat-proxy default"
+    );
+
+    let mut headers = IndexMap::new();
+    inject_url_derived_headers(&mut headers, None, &proxy);
+    assert_eq!(
+        headers.get("X-XAI-Token-Auth").map(String::as_str),
+        Some("xai-grok-cli"),
+        "proxy base must insert X-XAI-Token-Auth; headers={headers:?}"
+    );
+    assert_eq!(
+        headers.get("x-authenticateresponse").map(String::as_str),
+        Some("authenticate-response"),
+        "proxy base must insert x-authenticateresponse; headers={headers:?}"
+    );
+}
+
+/// D-08: gpt-5.6-sol sampling config preserves model-entry api_backend (responses).
+#[test]
+fn sampling_config_api_backend_from_model() {
+    let entry = catalog_entry("gpt-5.6-sol");
+    assert_eq!(
+        entry.info.api_backend,
+        ApiBackend::Responses,
+        "gpt-5.6-sol catalog api_backend must be responses (D-08)"
+    );
+
+    let cfg = sampling_config_for_model(
+        &entry,
+        resolve_credentials(&entry, Some(CODEX_FAKE)),
+        None,
+        None,
+        None,
+        None,
+    );
+    assert_eq!(
+        cfg.api_backend,
+        ApiBackend::Responses,
+        "sampling_config_for_model must preserve entry api_backend Responses"
+    );
+    assert_eq!(cfg.model, entry.info.model);
 }
