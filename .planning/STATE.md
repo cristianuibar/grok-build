@@ -4,14 +4,14 @@ milestone: v1.0
 milestone_name: milestone
 current_phase: 6
 current_phase_name: Mid-session switch & missing-provider gate
-current_plan: Not started
-status: planning
+current_plan: 2
+status: in_progress
 stopped_at: Completed 06-01-PLAN.md
 last_updated: "2026-07-16T22:31:35.744Z"
 last_activity: 2026-07-16
-last_activity_desc: Phase 5 complete, transitioned to Phase 6
+last_activity_desc: Completed 06-01 missing-provider shell gate
 progress:
-  total_phases: 6
+  total_phases: 9
   completed_phases: 5
   total_plans: 29
   completed_plans: 24
@@ -24,25 +24,26 @@ progress:
 See: .planning/PROJECT.md (updated 2026-07-16)
 
 **Core value:** One CLI (`bum`) can log into both xAI and Codex and freely switch between Grok and GPT-5.6 models in a real coding session — including cross-provider subagent orchestration.
-**Current focus:** Phase 6 — Mid-session switch & missing-provider gate (ready to plan)
+**Current focus:** Phase 6 — Mid-session switch & missing-provider gate (plan 06-01 complete; next 06-02)
 
 ## Current Position
 
 Phase: 6 of 9 (Mid-session switch & missing-provider gate)
-Plan: Not started
-Status: Ready to plan
-Last activity: 2026-07-16 — Phase 5 complete, transitioned to Phase 6
-Current Plan: Not started
-Total Plans in Phase: TBD
+Plan: 2 of 6
+Status: In progress
+Last activity: 2026-07-16 — Completed 06-01 missing-provider shell gate
+Current Plan: 2
+Total Plans in Phase: 6
 
-Progress: [████████░░] 83% (5/9 phases)
+Progress: [████████░░] 83% (24/29 plans)
 
 ## Performance Metrics
 
 **Velocity:**
 
-- Total plans completed: 23 (phases 1–5)
+- Total plans completed: 24 (phases 1–5 + 06-01)
 - Phase 5: 6 plans (Wave 0 RED → storage → OAuth → logout/status → refresh → gate)
+- Phase 6: 1/6 plans (shell missing-provider gate)
 
 **By Phase:**
 
@@ -53,6 +54,7 @@ Progress: [████████░░] 83% (5/9 phases)
 | 03 | 3/3 | complete |
 | 04 | 5/5 | complete |
 | 05 | 6/6 | complete — AUTH-02..05 |
+| 06 | 1/6 | 06-01 shell gate complete |
 
 ---
 **Per-Plan Metrics:**
@@ -63,7 +65,7 @@ Progress: [████████░░] 83% (5/9 phases)
 
 ## Decisions
 
-- [Phase ?]: Missing-provider gate lives in model_switch::apply (catalog provider, store_usable/credential_usable, BYOK skip)
+- [Phase 6]: Missing-provider gate lives in model_switch::apply (catalog provider, store_usable/credential_usable, BYOK skip)
 
 ## Session
 
