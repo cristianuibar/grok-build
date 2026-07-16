@@ -80,13 +80,13 @@ Plans:
   2. Model selector lists Grok/xAI models alongside GPT models in one mixed list (not a global provider mode that filters the session)
   3. Every catalog entry carries an explicit provider binding usable by later routing
 
-**Plans:** 2/3 plans executed
+**Plans:** 3/3 plans executed
 
 Plans:
 
 - [x] 03-01-PLAN.md — Wave 0 compiling harness + ModelProvider schema/override chain + embedded mixed catalog
 - [x] 03-02-PLAN.md — Prefetch Codex union-append + collision authority + dual-auth visibility
-- [ ] 03-03-PLAN.md — ACP meta.provider + CLI format_cli_model_row + required /model UAT
+- [x] 03-03-PLAN.md — ACP meta.provider + CLI format_cli_model_row + required /model UAT
 
 **UI hint**: yes
 
@@ -191,7 +191,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 →
 |-------|----------------|--------|-----------|
 | 1. Product identity & isolated home | 5/5 | In Progress|  |
 | 2. Multi-slot credentials & xAI OAuth | 0/4 | Not started | - |
-| 3. Model catalog & GPT-5.6 entries | 2/3 | In Progress|  |
+| 3. Model catalog & GPT-5.6 entries | 3/3 | In Progress|  |
 | 4. Provider-aware request routing | 0/TBD | Not started | - |
 | 5. Codex OAuth & dual auth lifecycle | 0/TBD | Not started | - |
 | 6. Mid-session switch & missing-provider gate | 0/TBD | Not started | - |

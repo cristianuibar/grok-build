@@ -5,15 +5,15 @@ milestone_name: milestone
 current_phase: 3
 current_phase_name: Model catalog & GPT-5.6 entries
 status: in_progress
-stopped_at: Completed 03-02-PLAN.md
-last_updated: "2026-07-16T10:25:37.223Z"
+stopped_at: Completed 03-03-PLAN.md
+last_updated: "2026-07-16T11:03:59.748Z"
 last_activity: 2026-07-16
-last_activity_desc: Phase 3 plan 02 prefetch Codex remove-then-append + visibility
+last_activity_desc: Phase 3 plan 02 prefetch Codex remove-then-append + dual-auth visibility
 progress:
   total_phases: 3
-  completed_phases: 2
+  completed_phases: 3
   total_plans: 12
-  completed_plans: 11
+  completed_plans: 12
 ---
 
 # Project State
@@ -32,7 +32,7 @@ Plan: 3 of 3 (next: 03-03-PLAN.md)
 Status: In progress — 03-02 complete
 Last activity: 2026-07-16 — Phase 3 plan 02 prefetch Codex remove-then-append + dual-auth visibility
 
-Progress: [█████████░] 92%
+Progress: [██████████] 100%
 
 ## Performance Metrics
 
@@ -65,6 +65,7 @@ Progress: [█████████░] 92%
 | Phase 01 P05 | 20min | 3 tasks | 16 files |
 | Phase 03 P01 | 11min | 3 tasks | 9 files |
 | Phase 03 P02 | 3min | 3 tasks | 2 files |
+| Phase 03 P03 | 36min | 4 tasks | 6 files |
 
 ## Accumulated Context
 
@@ -99,6 +100,9 @@ Recent decisions affecting current work:
 - [Phase ?]: Prefetch collision uses remove-then-append of ModelProvider::Codex rows (Sol→Terra→Luna after remote), not replace-in-place
 - [Phase ?]: Empty Some(prefetched) still injects bundled Codex when !has_custom_endpoint (Q1)
 - [Phase ?]: GPT catalog visibility independent of Codex login; available_models only uses visible_for_auth
+- [Phase ?]: ACP meta.provider always inserted from trusted ModelInfo.provider (xai|codex)
+- [Phase ?]: CLI format_cli_model_row: star/dash id (name); no (default) suffix
+- [Phase ?]: Interactive /model UAT optional advisory; automated ACP+CLI+settings is MOD-01/02 gate
 
 ### Pending Todos
 
@@ -121,7 +125,7 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-07-16T10:25:37.213Z
-Stopped at: Completed 03-02-PLAN.md
+Last session: 2026-07-16T11:03:59.740Z
+Stopped at: Completed 03-03-PLAN.md
 Resume file: None
 Next: continue Phase 1 remaining plans (01-04, 01-05)
