@@ -67,3 +67,37 @@ The plans have a sound architecture and stay within Phase 3’s catalog boundary
 ## Cycle 1 Replan Status (2026-07-16)
 
 Replanned in place: `03-01`/`03-02`/`03-03` PLAN.md + `03-VALIDATION.md` + `03-UI-SPEC.md`. All HIGH + actionable MEDIUM incorporated into executable plan contracts (see planner return).
+
+---
+
+## Codex Review — Cycle 2
+
+### Summary
+Prior HIGH fully resolved. No HIGH remain. Two MEDIUM: collision ordering vs D-11; selector UAT waiver.
+
+### HIGH Concerns
+None.
+
+### MEDIUM Concerns (actionable)
+1. **Collision ordering:** Replace-in-place can put Terra before xAI. Policy should remove all bundled Codex keys then append in JSON order (Sol→Terra→Luna after remote/xAI).
+2. **Selector UAT waiver:** Task 4 allows environment blocker to pass via ACP-only. Need pure pager projection test (`dynamic_enum_choices` / exported seam) OR truly blocking UAT without waive-as-pass.
+
+### LOW
+- Task 1 RED not observed in automated (only --list + smoke)
+- Fuzzy-empty vs empty-catalog UI-SPEC clarity
+
+### Resolution of Prior Cycle
+- HIGH false-green cargo: RESOLVED
+- HIGH Task 1 contradiction: RESOLVED
+- MEDIUM collision policy (provider authority): RESOLVED (ordering separate)
+- MEDIUM override parse: RESOLVED
+- MEDIUM settings descriptions: RESOLVED
+- MEDIUM selector coverage: PARTIAL
+- MEDIUM cargo check: RESOLVED
+
+### Cycle 2 Status
+| Severity | Unresolved |
+|----------|------------|
+| HIGH | 0 |
+| MEDIUM actionable | 2 |
+
