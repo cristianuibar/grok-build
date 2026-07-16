@@ -459,10 +459,20 @@ fn prefetched_codex_collision_order_appends_sol_terra_luna_after_remote() {
 }
 
 /// D-12: GPT visible for session auth and API-key auth; no Codex credential gate.
+/// grok-build (supported_in_api false) remains session-only as today.
 #[test]
 fn gpt_visible_session_and_api_key() {
     let cfg = Config::default();
     let catalog = resolve_model_list(&cfg, None);
+
+    assert!(
+        catalog.contains_key("grok-build"),
+        "default catalog must include grok-build for session-only contrast"
+    );
+    assert!(
+        !catalog["grok-build"].info.supported_in_api,
+        "grok-build must remain supported_in_api=false (session-only)"
+    );
 
     let session = available_models(&catalog, true);
     let api_key = available_models(&catalog, false);
@@ -481,7 +491,21 @@ fn gpt_visible_session_and_api_key() {
             api_key.keys().map(|k| k.0.as_ref()).collect::<Vec<_>>()
         );
     }
+
+    let grok_session = session.keys().any(|k| k.0.as_ref() == "grok-build");
+    let grok_api = api_key.keys().any(|k| k.0.as_ref() == "grok-build");
+    assert!(
+        grok_session,
+        "session auth must still list grok-build; keys={:?}",
+        session.keys().map(|k| k.0.as_ref()).collect::<Vec<_>>()
+    );
+    assert!(
+        !grok_api,
+        "API-key auth must hide grok-build (supported_in_api false); keys={:?}",
+        api_key.keys().map(|k| k.0.as_ref()).collect::<Vec<_>>()
+    );
     // Pure catalog functions only — no AuthManager / providers.codex involvement.
+    // available_models filters only via visible_for_auth (xAI session vs API-key).
 }
 
 /// Mixed flat list: prefetched remote + Codex append; GPT after prefetched when missing.
