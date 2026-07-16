@@ -15,7 +15,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 
 - [x] **Phase 1: Product identity & isolated home** - Ship `bum` binary and `~/.bum` home cutover
 - [x] **Phase 2: Multi-slot credentials & xAI OAuth** - Provider-scoped auth store with working xAI login under bum
-- [ ] **Phase 3: Model catalog & GPT-5.6 entries** - Provider-tagged catalog with Grok + GPT-5.6 family in one list
+- [x] **Phase 3: Model catalog & GPT-5.6 entries** - Provider-tagged catalog with Grok + GPT-5.6 family in one list (completed 2026-07-16)
 - [ ] **Phase 4: Provider-aware request routing** - Model → backend + credentials (Grok vs Codex paths)
 - [ ] **Phase 5: Codex OAuth & dual auth lifecycle** - ChatGPT login/logout/status + independent refresh
 - [ ] **Phase 6: Mid-session switch & missing-provider gate** - Switch anytime; fail closed with login prompt
@@ -80,7 +80,7 @@ Plans:
   2. Model selector lists Grok/xAI models alongside GPT models in one mixed list (not a global provider mode that filters the session)
   3. Every catalog entry carries an explicit provider binding usable by later routing
 
-**Plans:** 3/3 plans executed
+**Plans:** 3/3 plans complete
 
 Plans:
 
@@ -191,7 +191,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 →
 |-------|----------------|--------|-----------|
 | 1. Product identity & isolated home | 5/5 | In Progress|  |
 | 2. Multi-slot credentials & xAI OAuth | 0/4 | Not started | - |
-| 3. Model catalog & GPT-5.6 entries | 3/3 | In Progress|  |
+| 3. Model catalog & GPT-5.6 entries | 3/3 | Complete    | 2026-07-16 |
 | 4. Provider-aware request routing | 0/TBD | Not started | - |
 | 5. Codex OAuth & dual auth lifecycle | 0/TBD | Not started | - |
 | 6. Mid-session switch & missing-provider gate | 0/TBD | Not started | - |
