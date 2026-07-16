@@ -24,8 +24,9 @@ use indexmap::IndexMap;
 use serial_test::serial;
 use xai_grok_shell::agent::config::{
     inject_url_derived_headers, resolve_credentials, resolve_model_list,
-    sampling_config_for_model, Config, EndpointsConfig, ModelEntry, ModelProvider,
-    CLI_CHAT_PROXY_BASE_URL_DEFAULT, CODEX_BASE_URL_DEFAULT, XAI_API_BASE_URL_DEFAULT,
+    resolve_provider_route, sampling_config_for_model, Config, EndpointsConfig, ModelEntry,
+    ModelProvider, CLI_CHAT_PROXY_BASE_URL_DEFAULT, CODEX_BASE_URL_DEFAULT,
+    XAI_API_BASE_URL_DEFAULT,
 };
 use xai_grok_shell::sampling::ApiBackend;
 use xai_grok_test_support::EnvGuard;
@@ -115,6 +116,137 @@ fn resolve_codex_base_url_env_override() {
         override_url,
         "resolve_codex_base_url must return GROK_CODEX_BASE_URL value"
     );
+}
+
+/// D-01/D-05/D-09: Xai provider → inference base + slot xai + session OAuth allowed.
+#[test]
+fn resolve_provider_route_xai_default() {
+    let endpoints = deterministic_endpoints();
+    let route = resolve_provider_route(ModelProvider::Xai, &endpoints, None);
+    assert_eq!(route.base_url, endpoints.resolve_inference_base_url());
+    assert_eq!(route.credential_slot, "xai");
+    assert_eq!(route.provider, ModelProvider::Xai);
+    assert!(
+        route.session_oauth_allowed,
+        "stock xAI/proxy base must allow session OAuth"
+    );
+}
+
+/// D-01/D-06/D-09: Codex provider → Codex base + slot codex + session OAuth allowed.
+#[test]
+fn resolve_provider_route_codex_default() {
+    let endpoints = deterministic_endpoints();
+    let route = resolve_provider_route(ModelProvider::Codex, &endpoints, None);
+    assert_eq!(route.base_url, endpoints.resolve_codex_base_url());
+    assert_eq!(route.base_url, CODEX_BASE_URL_DEFAULT);
+    assert_eq!(route.credential_slot, "codex");
+    assert_eq!(route.provider, ModelProvider::Codex);
+    assert!(
+        route.session_oauth_allowed,
+        "stock Codex/ChatGPT base must allow session OAuth"
+    );
+}
+
+/// D-04 + D-09: non-empty override wins for base_url; credential_slot still matches provider.
+#[test]
+fn resolve_provider_route_override_wins() {
+    let endpoints = deterministic_endpoints();
+    let override_url = "https://byok.example/v1";
+    let codex = resolve_provider_route(
+        ModelProvider::Codex,
+        &endpoints,
+        Some(override_url),
+    );
+    assert_eq!(codex.base_url, override_url);
+    assert_eq!(codex.credential_slot, "codex");
+    assert_eq!(codex.provider, ModelProvider::Codex);
+
+    let xai = resolve_provider_route(ModelProvider::Xai, &endpoints, Some(override_url));
+    assert_eq!(xai.base_url, override_url);
+    assert_eq!(xai.credential_slot, "xai");
+    assert_eq!(xai.provider, ModelProvider::Xai);
+}
+
+/// Review HIGH: custom Codex host must not allow session OAuth bearer.
+#[test]
+fn resolve_provider_route_custom_host_disallows_session_oauth() {
+    let endpoints = deterministic_endpoints();
+    let route = resolve_provider_route(
+        ModelProvider::Codex,
+        &endpoints,
+        Some("https://byok.example/v1"),
+    );
+    assert_eq!(route.base_url, "https://byok.example/v1");
+    assert_eq!(route.credential_slot, "codex");
+    assert!(
+        !route.session_oauth_allowed,
+        "non–first-party Codex override must set session_oauth_allowed=false"
+    );
+}
+
+/// Cycle-3 MEDIUM: provider Xai + custom models_base_url / override → no session OAuth.
+#[test]
+fn resolve_provider_route_xai_custom_models_base_disallows_session_oauth() {
+    let endpoints = deterministic_endpoints();
+    let via_override = resolve_provider_route(
+        ModelProvider::Xai,
+        &endpoints,
+        Some("https://byok.example/v1"),
+    );
+    assert_eq!(via_override.base_url, "https://byok.example/v1");
+    assert_eq!(via_override.credential_slot, "xai");
+    assert!(
+        !via_override.session_oauth_allowed,
+        "Xai + non–first-party override must set session_oauth_allowed=false"
+    );
+
+    let with_models_base = EndpointsConfig {
+        models_base_url: Some("https://byok.example/v1".to_owned()),
+        ..deterministic_endpoints()
+    };
+    let via_models_base =
+        resolve_provider_route(ModelProvider::Xai, &with_models_base, None);
+    assert_eq!(via_models_base.base_url, "https://byok.example/v1");
+    assert!(
+        !via_models_base.session_oauth_allowed,
+        "Xai + custom models_base_url (inference base) must set session_oauth_allowed=false"
+    );
+}
+
+/// First-party Codex override (equal to resolve_codex_base_url / chatgpt host) allows OAuth.
+#[test]
+fn resolve_provider_route_first_party_codex_override_allows_oauth() {
+    let endpoints = deterministic_endpoints();
+    let stock = endpoints.resolve_codex_base_url();
+    let route = resolve_provider_route(ModelProvider::Codex, &endpoints, Some(&stock));
+    assert_eq!(route.base_url, stock);
+    assert!(
+        route.session_oauth_allowed,
+        "override equal to resolve_codex_base_url must allow session OAuth"
+    );
+
+    let chatgpt = resolve_provider_route(
+        ModelProvider::Codex,
+        &endpoints,
+        Some("https://chatgpt.com/backend-api/codex"),
+    );
+    assert!(
+        chatgpt.session_oauth_allowed,
+        "chatgpt.com Codex backend host must allow session OAuth"
+    );
+}
+
+/// Whitespace-only override falls through to provider default base.
+#[test]
+fn resolve_provider_route_blank_override_ignored() {
+    let endpoints = deterministic_endpoints();
+    let xai = resolve_provider_route(ModelProvider::Xai, &endpoints, Some("  \t  "));
+    assert_eq!(xai.base_url, endpoints.resolve_inference_base_url());
+    assert!(xai.session_oauth_allowed);
+
+    let codex = resolve_provider_route(ModelProvider::Codex, &endpoints, Some("   "));
+    assert_eq!(codex.base_url, endpoints.resolve_codex_base_url());
+    assert!(codex.session_oauth_allowed);
 }
 
 fn catalog_entry(id: &str) -> ModelEntry {

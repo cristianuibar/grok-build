@@ -4394,6 +4394,106 @@ pub(crate) fn first_own_credential(
         .map(str::to_owned)
         .or_else(|| env_key.and_then(EnvKeys::resolve_value))
 }
+/// Resolved base URL, credential slot, and session-OAuth host policy for a catalog provider.
+///
+/// **Production authority** for provider-default `base_url` selection and whether
+/// provider session OAuth may attach to the final host. Catalog stamping,
+/// credential resolve, and prepare/reconstruct helpers must call
+/// [`resolve_provider_route`] rather than re-implementing provider base tables.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ProviderRoute {
+    /// Final base URL after applying optional model override (D-04).
+    pub base_url: String,
+    /// Auth slot wire id (`"xai"` / `"codex"`) — follows [`ModelProvider`], not host.
+    pub credential_slot: &'static str,
+    /// Catalog provider that selected this route.
+    pub provider: ModelProvider,
+    /// When `false`, production credential resolve must not attach provider
+    /// session OAuth bearer to this host (BYOK / non–first-party). Own/model
+    /// credential is required or the sample fails closed.
+    pub session_oauth_allowed: bool,
+}
+
+/// Pure provider route: base URL + credential slot + session OAuth host policy.
+///
+/// # Production authority
+///
+/// This is the single authority for default base URL selection by
+/// [`ModelProvider`]. Callers that stamp catalog defaults, re-normalize base
+/// after provider rebind, gate session OAuth attachment, or prepare sampling
+/// configs **must** use this function — do not re-implement parallel if/else
+/// base tables.
+///
+/// # Rules
+///
+/// - **Credential slot** always follows `provider` (D-09), even when a custom
+///   `model_base_url_override` wins for the URL (D-04).
+/// - **Empty/whitespace override** falls through to the provider default base
+///   (`resolve_inference_base_url` for xAI, `resolve_codex_base_url` for Codex).
+/// - **`session_oauth_allowed`** is derived from the **final** `base_url` only:
+///   true for first-party hosts of that provider, false for custom BYOK hosts
+///   (including `provider=Xai` + non–first-party `models_base_url` / override).
+/// - Does **not** select `api_backend` (model-entry driven, D-08).
+pub fn resolve_provider_route(
+    provider: ModelProvider,
+    endpoints: &EndpointsConfig,
+    model_base_url_override: Option<&str>,
+) -> ProviderRoute {
+    let credential_slot = match provider {
+        ModelProvider::Xai => crate::auth::PROVIDER_XAI,
+        ModelProvider::Codex => crate::auth::PROVIDER_CODEX,
+    };
+    let base_url = model_base_url_override
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(str::to_owned)
+        .unwrap_or_else(|| match provider {
+            ModelProvider::Xai => endpoints.resolve_inference_base_url(),
+            ModelProvider::Codex => endpoints.resolve_codex_base_url(),
+        });
+    let session_oauth_allowed = match provider {
+        ModelProvider::Xai => crate::util::is_first_party_xai_url(&base_url),
+        ModelProvider::Codex => is_first_party_codex_url(&base_url, endpoints),
+    };
+    ProviderRoute {
+        base_url,
+        credential_slot,
+        provider,
+        session_oauth_allowed,
+    }
+}
+
+/// First-party Codex OAuth hosts for product session tokens.
+///
+/// Allowlist:
+/// - Host `chatgpt.com` / `www.chatgpt.com` with path prefix `/backend-api/codex`
+/// - Same host as the configured [`EndpointsConfig::resolve_codex_base_url`]
+///   (operator env/config override of the product Codex endpoint)
+///
+/// Platform `api.openai.com` is intentionally **not** first-party for product
+/// session OAuth (D-15).
+pub fn is_first_party_codex_url(url: &str, endpoints: &EndpointsConfig) -> bool {
+    let Ok(parsed) = reqwest::Url::parse(url) else {
+        return false;
+    };
+    let Some(host) = parsed.host_str() else {
+        return false;
+    };
+    let host_l = host.to_ascii_lowercase();
+    if (host_l == "chatgpt.com" || host_l == "www.chatgpt.com")
+        && parsed.path().starts_with("/backend-api/codex")
+    {
+        return true;
+    }
+    if let Ok(configured) = reqwest::Url::parse(&endpoints.resolve_codex_base_url())
+        && let Some(cfg_host) = configured.host_str()
+        && host.eq_ignore_ascii_case(cfg_host)
+    {
+        return true;
+    }
+    false
+}
+
 /// Resolve credentials for a model.
 /// Priority: model api_key/env_key > session token > XAI_API_KEY.
 ///
