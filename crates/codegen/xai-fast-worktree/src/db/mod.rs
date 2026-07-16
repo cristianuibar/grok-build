@@ -201,10 +201,10 @@ impl WorktreeDb {
         })
     }
 
-    /// Open the default DB at `~/.grok/worktrees.db`.
+    /// Open the default DB at `~/.bum/worktrees.db`.
     ///
-    /// Discovers grok home via `$GROK_HOME`, falling back to the canonicalized
-    /// `$HOME/.grok` (matching `xai_grok_config::grok_home`).
+    /// Discovers product home via `$BUM_HOME`, falling back to the canonicalized
+    /// user-home `.bum` (matching `xai_grok_config::grok_home` / `resolve_product_home`).
     /// Path is resolved fresh each call (~1µs env var read) to support
     /// test overrides. Each call opens its own connection — callers in hot
     /// paths should cache the `WorktreeDb` instance.
@@ -337,19 +337,37 @@ pub fn now_epoch_secs() -> i64 {
         .as_secs() as i64
 }
 
+/// Product-home resolver twin of `xai_grok_config::resolve_product_home` /
+/// `grok_home`.
+///
+/// **Semantic lockstep with config SoT** (deliberately no crate dep this phase —
+/// `xai-fast-worktree` must stay a leaf; shared types would reverse the dep graph):
+/// - Override env: non-empty `BUM_HOME` via [`std::env::var_os`] (not UTF-8-only
+///   `var`). Empty `OsString` is treated as absent.
+/// - Default segment: `.bum` under the user home.
+/// - User home: [`std::env::home_dir`] (same deprecated path as config SoT) so
+///   Linux/macOS/Windows defaults match; falls back to `$HOME` only for a
+///   clearer error when neither resolves.
+///
+/// Dunce-canonicalize of the user home matches `default_grok_home` so worktree
+/// paths share the same physical product tree as trust/hooks when home is
+/// symlinked.
 pub fn resolve_grok_home() -> Result<PathBuf> {
-    if let Ok(v) = std::env::var("GROK_HOME") {
+    if let Some(v) = std::env::var_os("BUM_HOME")
+        && !v.is_empty()
+    {
         return Ok(PathBuf::from(v));
     }
-    let home = PathBuf::from(std::env::var("HOME").context("neither $GROK_HOME nor $HOME is set")?);
-    // Canonicalize the home dir so worktree paths share the same physical .grok
-    // tree as trust/hooks even when it is symlinked. The dunce canonicalization
-    // must stay in sync with xai_grok_config::default_grok_home();
-    // home resolution deliberately differs ($HOME here vs std::env::home_dir()).
-    Ok(dunce::canonicalize(&home).unwrap_or(home).join(".grok"))
+    #[allow(deprecated)]
+    let user_home = std::env::home_dir().or_else(|| std::env::var_os("HOME").map(PathBuf::from));
+    let home = user_home.context("neither $BUM_HOME nor a user home directory is set")?;
+    // Canonicalize so worktree paths share the same physical .bum tree as
+    // trust/hooks even when the home dir is symlinked. Dunce keeps Windows
+    // paths non-verbatim (sync with xai_grok_config::default_grok_home).
+    Ok(dunce::canonicalize(&home).unwrap_or(home).join(".bum"))
 }
 
-/// Serializes tests that mutate the process-global `GROK_HOME` env var so they
+/// Serializes tests that mutate the process-global `BUM_HOME` env var so they
 /// don't clobber each other under `cargo test`, where tests share one process
 /// (nextest isolates per-process, but the suite must also pass under `cargo test`).
 #[cfg(test)]
@@ -358,16 +376,16 @@ static GROK_HOME_ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 /// Test-only isolation for code that resolves the DB via `open_default()`.
 ///
 /// Holds [`GROK_HOME_ENV_LOCK`] (serializing concurrent setters), points
-/// `GROK_HOME` at a fresh private tmp dir, and restores the prior value on drop.
+/// `BUM_HOME` at a fresh private tmp dir, and restores the prior value on drop.
 /// Use instead of hand-rolling the lock + restore guard + tmp dir per test.
 ///
-/// `Drop` restores `GROK_HOME` before `_lock` releases, so the env is correct
+/// `Drop` restores `BUM_HOME` before `_lock` releases, so the env is correct
 /// before another waiting setter proceeds.
 #[cfg(test)]
 pub(crate) struct GrokHomeFixture {
     _lock: std::sync::MutexGuard<'static, ()>,
     prev: Option<std::ffi::OsString>,
-    /// The isolated grok home; pass to `WorktreeDb::open` to read the same DB
+    /// The isolated product home; pass to `WorktreeDb::open` to read the same DB
     /// `open_default()` writes to.
     pub home: PathBuf,
     _tmp: tempfile::TempDir,
@@ -378,16 +396,16 @@ impl GrokHomeFixture {
     pub(crate) fn new() -> Self {
         let lock = GROK_HOME_ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         let tmp = tempfile::TempDir::new().unwrap();
-        let home = tmp.path().join("grok-home");
+        let home = tmp.path().join("bum-home");
         std::fs::create_dir_all(&home).unwrap();
         // Warm up the DB (journal-mode conversion + schema) before exposing it
-        // via GROK_HOME, sparing the test hot loop set_journal_mode's retry
+        // via BUM_HOME, sparing the test hot loop set_journal_mode's retry
         // sleeps. This open has exclusive access (nothing reaches the path
-        // until GROK_HOME points here); set_journal_mode's retry is the actual
+        // until BUM_HOME points here); set_journal_mode's retry is the actual
         // race fix.
         let _ = WorktreeDb::open(&home);
-        let prev = std::env::var_os("GROK_HOME");
-        unsafe { std::env::set_var("GROK_HOME", &home) };
+        let prev = std::env::var_os("BUM_HOME");
+        unsafe { std::env::set_var("BUM_HOME", &home) };
         Self {
             _lock: lock,
             prev,
@@ -402,8 +420,8 @@ impl Drop for GrokHomeFixture {
     fn drop(&mut self) {
         unsafe {
             match self.prev.take() {
-                Some(p) => std::env::set_var("GROK_HOME", p),
-                None => std::env::remove_var("GROK_HOME"),
+                Some(p) => std::env::set_var("BUM_HOME", p),
+                None => std::env::remove_var("BUM_HOME"),
             }
         }
     }

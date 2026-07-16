@@ -688,3 +688,92 @@ fn journal_conversion_respects_deadline_under_contention() {
     let db = WorktreeDb::open_at_with_journal_mode(&path, JournalMode::Truncate).unwrap();
     assert_eq!(journal_mode(&db), "truncate");
 }
+
+// ── resolve_grok_home twin (BUM_HOME / .bum lockstep with config SoT) ─────
+
+#[test]
+fn resolve_grok_home_override_via_bum_home() {
+    let _fx_lock = super::GROK_HOME_ENV_LOCK
+        .lock()
+        .unwrap_or_else(|e| e.into_inner());
+    let tmp = tempfile::TempDir::new().unwrap();
+    let override_home = tmp.path().join("custom-bum");
+    std::fs::create_dir_all(&override_home).unwrap();
+    let prev = std::env::var_os("BUM_HOME");
+    unsafe { std::env::set_var("BUM_HOME", &override_home) };
+    let resolved = resolve_grok_home().unwrap();
+    assert_eq!(resolved, override_home);
+    unsafe {
+        match prev {
+            Some(p) => std::env::set_var("BUM_HOME", p),
+            None => std::env::remove_var("BUM_HOME"),
+        }
+    }
+}
+
+#[test]
+fn resolve_grok_home_empty_bum_home_falls_through_to_default_bum() {
+    let _fx_lock = super::GROK_HOME_ENV_LOCK
+        .lock()
+        .unwrap_or_else(|e| e.into_inner());
+    let prev = std::env::var_os("BUM_HOME");
+    // Empty override must not produce an empty PathBuf — fall through to .bum.
+    unsafe { std::env::set_var("BUM_HOME", "") };
+    let resolved = resolve_grok_home().unwrap();
+    assert!(
+        resolved.ends_with(".bum"),
+        "empty BUM_HOME must default to user-home/.bum, got {}",
+        resolved.display()
+    );
+    assert!(
+        !resolved.as_os_str().is_empty(),
+        "must not produce empty PathBuf from empty BUM_HOME"
+    );
+    unsafe {
+        match prev {
+            Some(p) => std::env::set_var("BUM_HOME", p),
+            None => std::env::remove_var("BUM_HOME"),
+        }
+    }
+}
+
+#[test]
+fn resolve_grok_home_fixture_sets_bum_home() {
+    let fx = GrokHomeFixture::new();
+    let resolved = resolve_grok_home().unwrap();
+    assert_eq!(resolved, fx.home);
+    assert!(
+        fx.home.ends_with("bum-home"),
+        "fixture dir name should be bum-home, got {}",
+        fx.home.display()
+    );
+    // open_default must land on the fixture home.
+    let db = WorktreeDb::open_default().unwrap();
+    drop(db);
+}
+
+#[cfg(unix)]
+#[test]
+fn resolve_grok_home_accepts_non_unicode_bum_home() {
+    use std::os::unix::ffi::OsStringExt;
+    let _fx_lock = super::GROK_HOME_ENV_LOCK
+        .lock()
+        .unwrap_or_else(|e| e.into_inner());
+    let tmp = tempfile::TempDir::new().unwrap();
+    // Non-UTF8 path segment: valid on Unix, rejected by env::var().
+    let mut bytes = tmp.path().as_os_str().as_encoded_bytes().to_vec();
+    bytes.push(b'/');
+    bytes.extend_from_slice(b"bum-\xFF-home");
+    let non_utf8 = std::ffi::OsString::from_vec(bytes);
+    std::fs::create_dir_all(std::path::Path::new(&non_utf8)).unwrap();
+    let prev = std::env::var_os("BUM_HOME");
+    unsafe { std::env::set_var("BUM_HOME", &non_utf8) };
+    let resolved = resolve_grok_home().unwrap();
+    assert_eq!(resolved.as_os_str(), non_utf8.as_os_str());
+    unsafe {
+        match prev {
+            Some(p) => std::env::set_var("BUM_HOME", p),
+            None => std::env::remove_var("BUM_HOME"),
+        }
+    }
+}
