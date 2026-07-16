@@ -88,38 +88,38 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| ID-01 | TBD | Pending |
-| ID-02 | TBD | Pending |
-| ID-03 | TBD | Pending |
-| AUTH-01 | TBD | Pending |
-| AUTH-02 | TBD | Pending |
-| AUTH-03 | TBD | Pending |
-| AUTH-04 | TBD | Pending |
-| AUTH-05 | TBD | Pending |
-| MOD-01 | TBD | Pending |
-| MOD-02 | TBD | Pending |
-| MOD-03 | TBD | Pending |
-| MOD-04 | TBD | Pending |
-| MOD-05 | TBD | Pending |
-| MOD-06 | TBD | Pending |
-| AGENT-01 | TBD | Pending |
-| AGENT-02 | TBD | Pending |
-| AGENT-03 | TBD | Pending |
-| AGENT-04 | TBD | Pending |
-| AGENT-05 | TBD | Pending |
-| AGENT-06 | TBD | Pending |
-| OPS-01 | TBD | Pending |
-| OPS-02 | TBD | Pending |
-| OPS-03 | TBD | Pending |
-| OPS-04 | TBD | Pending |
-| OPS-05 | TBD | Pending |
-| OPS-06 | TBD | Pending |
+| ID-01 | Phase 1 | Pending |
+| ID-02 | Phase 8 | Pending |
+| ID-03 | Phase 1 | Pending |
+| AUTH-01 | Phase 2 | Pending |
+| AUTH-02 | Phase 5 | Pending |
+| AUTH-03 | Phase 5 | Pending |
+| AUTH-04 | Phase 5 | Pending |
+| AUTH-05 | Phase 5 | Pending |
+| MOD-01 | Phase 3 | Pending |
+| MOD-02 | Phase 3 | Pending |
+| MOD-03 | Phase 6 | Pending |
+| MOD-04 | Phase 4 | Pending |
+| MOD-05 | Phase 4 | Pending |
+| MOD-06 | Phase 6 | Pending |
+| AGENT-01 | Phase 7 | Pending |
+| AGENT-02 | Phase 7 | Pending |
+| AGENT-03 | Phase 7 | Pending |
+| AGENT-04 | Phase 7 | Pending |
+| AGENT-05 | Phase 7 | Pending |
+| AGENT-06 | Phase 7 | Pending |
+| OPS-01 | Phase 8 | Pending |
+| OPS-02 | Phase 8 | Pending |
+| OPS-03 | Phase 9 | Pending |
+| OPS-04 | Phase 9 | Pending |
+| OPS-05 | Phase 9 | Pending |
+| OPS-06 | Phase 9 | Pending |
 
 **Coverage:**
 - v1 requirements: 26 total
-- Mapped to phases: 0
-- Unmapped: 26 (filled by roadmap)
+- Mapped to phases: 26
+- Unmapped: 0
 
 ---
 *Requirements defined: 2026-07-16*
-*Last updated: 2026-07-16 after multi-agent cross-provider addition*
+*Last updated: 2026-07-16 after roadmap creation (traceability filled)*
