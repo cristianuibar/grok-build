@@ -6,7 +6,7 @@ nyquist_compliant: false
 wave_0_complete: false
 created: 2026-07-16
 updated: 2026-07-16
-replan_source: 05-REVIEWS.md cycle 2
+replan_source: 05-REVIEWS.md cycle 3
 ---
 
 # Phase 5 — Validation Strategy
@@ -15,10 +15,12 @@ replan_source: 05-REVIEWS.md cycle 2
 > Wave 0 uses **integration tests on public APIs** — do **not** repair the broken full shell `--lib` suite.
 > Prove AUTH-02..05 with **fake tokens + mock IdP only** — no live ChatGPT / Codex OAuth required for CI gates.
 >
-> **AUTH-05 depth (review cycle 1 + cycle 2 residual):**
-> - Pure `CodexRefresher` isolation + lock-held `ensure_fresh_codex_auth`
+> **AUTH-05 depth (review cycle 1 + cycle 2 residual + cycle 3):**
+> - Pure data-only `CodexRefresher` / identity preserve (Plan 05 Task 1) — **not** outer ensure_fresh persist/isolation
+> - Lock-held `ensure_fresh_codex_auth` + dual-slot isolation / invalid_grant (Plan 05 Task 2 only)
 > - Production invoker on **`SessionActor::reconstruct_full_config`** (sampler_turn.rs)
 > - **Executable seam (cycle 2 Option C):** crate-local actor tests in `session/acp_session_tests/codex_reconstruct_refresh_tests.rs` call `actor.reconstruct_full_config().await` (pattern: `auth_error_no_retry_tests.rs`) and assert `SamplingConfig.api_key` / headers — **not** public `ensure_fresh` alone
+> - Reconstruct filters always: `cargo test -p xai-grok-shell --lib <TESTNAME>` (cycle 3: never omit `--lib`; Wave 0 must not define same-named integration RED stubs)
 > - OAuth bearer override only for `AuthType::SessionToken` + `session_oauth_allowed`; BYOK/custom endpoint tests required
 > - Permanent fail clear via `clear_provider_slot_with_lock` (no lock reacquire)
 > - Identity preserve when refresh response omits RT/claims
@@ -34,7 +36,7 @@ replan_source: 05-REVIEWS.md cycle 2
 | **Framework** | Cargo built-in `cargo test` (crate integration tests + pager unit clap tests) |
 | **Config file** | none global — per-crate; `rust-toolchain.toml` (1.92.0) |
 | **Quick run command** | `cargo test -p xai-grok-shell --test auth_codex_lifecycle -- --nocapture` |
-| **Full suite command** | `cargo test -p xai-grok-shell --test auth_codex_lifecycle -- --nocapture && cargo test -p xai-grok-shell codex_reconstruct_refreshes_mid_session_expiry -- --nocapture && cargo test -p xai-grok-shell codex_byok_key_not_overridden -- --nocapture && cargo test -p xai-grok-shell codex_oauth_bearer_absent_on_custom_endpoint -- --nocapture && cargo test -p xai-grok-shell --test auth_multi_slot -- --nocapture && cargo test -p xai-grok-shell --test provider_routing -- --nocapture && cargo test -p xai-grok-pager bum_login_provider_codex_parses -- --nocapture && cargo test -p xai-grok-pager bum_auth_status_parses -- --nocapture && cargo check -p xai-grok-shell && cargo check -p xai-grok-pager-bin && cargo fmt --all --check` |
+| **Full suite command** | `cargo test -p xai-grok-shell --test auth_codex_lifecycle -- --nocapture && cargo test -p xai-grok-shell --lib codex_reconstruct_refreshes_mid_session_expiry -- --nocapture && cargo test -p xai-grok-shell --lib codex_byok_key_not_overridden -- --nocapture && cargo test -p xai-grok-shell --lib codex_oauth_bearer_absent_on_custom_endpoint -- --nocapture && cargo test -p xai-grok-shell --test auth_multi_slot -- --nocapture && cargo test -p xai-grok-shell --test provider_routing -- --nocapture && cargo test -p xai-grok-pager bum_login_provider_codex_parses -- --nocapture && cargo test -p xai-grok-pager bum_auth_status_parses -- --nocapture && cargo check -p xai-grok-shell && cargo check -p xai-grok-pager-bin && cargo fmt --all --check` |
 | **Estimated runtime** | ~60–240 seconds after first compile (lifecycle + mock HTTP + reconstruct seam + regressions) |
 
 ### Cargo verify hygiene (locked)
@@ -45,8 +47,9 @@ replan_source: 05-REVIEWS.md cycle 2
 | Multi-test coverage | Run full binary without filter **or** chain single-filter invocations with `&&` |
 | Exit status | Never pipe cargo through bare `\| tail` without `set -o pipefail`. Prefer **no pipe** |
 | Chains | Use `&&` only — never `;` that masks failures |
-| Forbidden gates | Unfiltered `cargo test -p xai-grok-shell --lib` |
-| Option C exception | Narrow crate TESTNAME filters for reconstruct seam only (`codex_reconstruct_…`, `codex_byok_…`, `codex_oauth_bearer_absent_…`) |
+| Forbidden gates | Unfiltered `cargo test -p xai-grok-shell --lib`; crate-wide reconstruct filters **without** `--lib` |
+| Option C exception | Explicit `cargo test -p xai-grok-shell --lib <TESTNAME>` only (`codex_reconstruct_refreshes_mid_session_expiry`, `codex_byok_key_not_overridden`, `codex_oauth_bearer_absent_on_custom_endpoint`) |
+| Name isolation | Wave 0 integration binary must **not** define the three Option C reconstruct TESTNAMEs (cycle 3 collision) |
 
 ### AUTH-05 executable seam (cycle 2 — Option C locked)
 
@@ -56,14 +59,17 @@ replan_source: 05-REVIEWS.md cycle 2
 | **Test location** | `session/acp_session_tests/codex_reconstruct_refresh_tests.rs` |
 | **Pattern** | `auth_error_no_retry_tests.rs` — build actor, `reconstruct_full_config().await`, assert api_key/headers |
 | **Required names** | `codex_reconstruct_refreshes_mid_session_expiry`, `codex_byok_key_not_overridden`, `codex_oauth_bearer_absent_on_custom_endpoint` |
-| **Not sufficient** | Public `ensure_fresh_codex_auth` isolation alone |
+| **Run command** | `cargo test -p xai-grok-shell --lib <TESTNAME> -- --nocapture` (one name per invocation) |
+| **Not sufficient** | Public `ensure_fresh_codex_auth` isolation alone; crate-wide filter without `--lib` |
+| **Wave 0** | Do not create same-named RED stubs in `tests/auth_codex_lifecycle.rs` |
 
 ### Harness policy
 
 | Allowed | Forbidden |
 |---------|-----------|
 | `cargo test -p xai-grok-shell --test auth_codex_lifecycle …` | Unfiltered `cargo test -p xai-grok-shell --lib` for Phase 5 gates |
-| Narrow reconstruct seam TESTNAME filters (Option C) | Treating ensure_fresh-only as AUTH-05 production proof |
+| `cargo test -p xai-grok-shell --lib <reconstruct TESTNAME>` (Option C) | Crate-wide reconstruct filter without `--lib`; same-named Wave 0 RED stubs |
+| Explicit `--lib` reconstruct filters only | Treating ensure_fresh-only as AUTH-05 production proof |
 | `cargo test -p xai-grok-shell --test auth_multi_slot …` (AUTH-01 regression) | Fixing entire shell lib-test compile errors |
 | `cargo test -p xai-grok-shell --test provider_routing …` (MOD-04/05 regression) | Live ChatGPT login as phase gate |
 | `cargo test -p xai-grok-pager <clap_test_name>` | Full ACP e2e as required gate |
@@ -125,12 +131,12 @@ replan_source: 05-REVIEWS.md cycle 2
 | AUTH-04 | usable expired+refreshable vs expired+no-refresh | integration | `… auth_status_usable` | ❌ Wave 0 RED |
 | AUTH-04 | `run_cli_auth_status` handler path | integration | `… run_cli_auth_status` | ❌ Wave 0 RED |
 | AUTH-04 | `bum auth status` clap parses | unit (pager) | `cargo test -p xai-grok-pager bum_auth_status_parses` | ❌ Wave 0 scaffold |
-| AUTH-05 | Mock refresh updates only codex | integration | `… codex_refresh_isolates` | ❌ Wave 0 RED |
-| AUTH-05 | invalid_grant codex only | integration | `… codex_invalid_grant_no_xai_wipe` | ❌ Wave 0 RED |
-| AUTH-05 | Identity preserve when response omits RT | integration | `… codex_refresh_preserves_identity` | ❌ Wave 0 RED |
-| AUTH-05 | **reconstruct mid-session** (Option C seam) | crate-local actor | `cargo test -p xai-grok-shell codex_reconstruct_refreshes_mid_session_expiry` | ❌ Wave 0/Plan 05 |
-| AUTH-05 | BYOK key not overridden by OAuth | crate-local actor | `cargo test -p xai-grok-shell codex_byok_key_not_overridden` | ❌ Wave 0/Plan 05 |
-| AUTH-05 | OAuth bearer absent on custom endpoint | crate-local actor | `cargo test -p xai-grok-shell codex_oauth_bearer_absent_on_custom_endpoint` | ❌ Wave 0/Plan 05 |
+| AUTH-05 | Mock refresh updates only codex (outer ensure_fresh) | integration | `… codex_refresh_isolates` | ❌ Wave 0 RED → Plan 05 Task 2 |
+| AUTH-05 | invalid_grant codex only (outer ensure_fresh) | integration | `… codex_invalid_grant_no_xai_wipe` | ❌ Wave 0 RED → Plan 05 Task 2 |
+| AUTH-05 | Identity preserve when response omits RT (data-only) | integration | `… codex_refresh_preserves_identity` | ❌ Wave 0 RED → Plan 05 Task 1 |
+| AUTH-05 | **reconstruct mid-session** (Option C seam) | crate-local `--lib` | `cargo test -p xai-grok-shell --lib codex_reconstruct_refreshes_mid_session_expiry` | ❌ Plan 05 Task 2 only (no Wave 0 stub) |
+| AUTH-05 | BYOK key not overridden by OAuth | crate-local `--lib` | `cargo test -p xai-grok-shell --lib codex_byok_key_not_overridden` | ❌ Plan 05 Task 2 only (no Wave 0 stub) |
+| AUTH-05 | OAuth bearer absent on custom endpoint | crate-local `--lib` | `cargo test -p xai-grok-shell --lib codex_oauth_bearer_absent_on_custom_endpoint` | ❌ Plan 05 Task 2 only (no Wave 0 stub) |
 | AUTH-05 | Concurrent refresh single IdP spend | integration | `… codex_concurrent_refresh_single_idp_spend` | ❌ Wave 0 RED |
 | AUTH-05 | Fresh token skips IdP | integration | `… codex_fresh_token_skips_idp` | ❌ Wave 0 RED |
 | AUTH-05 | Transient hard-unexpired keeps token | integration | `… codex_transient_fail_hard_unexpired_keeps_token` | ❌ Wave 0 RED |
@@ -154,8 +160,8 @@ replan_source: 05-REVIEWS.md cycle 2
 | 05-03-02 | 03 | 3 | AUTH-02 | T-05-07/22 | Device multi-step + CLI provider; no xAI post_login_sync | integration + unit | clap provider + deviceauth + device multi-step + login | ❌ | ⬜ pending |
 | 05-04-01 | 04 | 4 | AUTH-03 | T-05-11/23 | Blocking clear; selective / all / bare | integration | selective + bare + logout_all | ❌ | ⬜ pending |
 | 05-04-02 | 04 | 4 | AUTH-04 | T-05-12/14 | status handler + dual-safe TUI/ACP | integration + unit | clap status + run_cli_auth_status + format | ❌ | ⬜ pending |
-| 05-05-01 | 05 | 5 | AUTH-05 | T-05-15/16/24 | Pure data-only refresher + isolation + identity preserve | integration | refresh_isolates + invalid_grant + preserves_identity | ❌ | ⬜ pending |
-| 05-05-02 | 05 | 5 | AUTH-05 | T-05-15/21/25/26 | **Option C reconstruct** + BYOK/custom + lock + concurrent + transient | actor + integration | reconstruct_mid + byok + custom_endpoint + concurrent + fresh_skip + transient | ❌ | ⬜ pending |
+| 05-05-01 | 05 | 5 | AUTH-05 | T-05-24 | Pure data-only CodexRefresher + identity preserve (no ensure_fresh persist) | integration | `codex_refresh_preserves_identity` only | ❌ | ⬜ pending |
+| 05-05-02 | 05 | 5 | AUTH-05 | T-05-15/16/21/25/26 | **Option C `--lib` reconstruct** + isolation/invalid_grant + BYOK/custom + lock + concurrent + transient | actor `--lib` + integration | `--lib` reconstruct trio + refresh_isolates + invalid_grant + concurrent + fresh_skip + transient | ❌ | ⬜ pending |
 | 05-05-03 | 05 | 5 | AUTH-05 | T-05-18 | Trusted-host account header + absences | integration | chatgpt_account_id_header* + no_proxy regression | ❌ | ⬜ pending |
 | 05-06-01 | 06 | 6 | AUTH-02..05 | T-05-19/21/25 | Full lifecycle + Option C seam green | integration + actor | full lifecycle + reconstruct seam filters | ❌ | ⬜ pending |
 | 05-06-02 | 06 | 6 | AUTH-01 + MOD-04/05 | T-05-20 | Regressions + clap + check + fmt + deferred audit | integration + check | Full suite command | ❌ | ⬜ pending |
@@ -176,18 +182,19 @@ replan_source: 05-REVIEWS.md cycle 2
   - `codex_oauth_state_mismatch_writes_nothing`
   - `selective_logout_isolates` / `logout_all_clears_both` / `bare_logout_fail_closed`
   - `auth_status_format_paste_safe` / `auth_status_usable_*` / `run_cli_auth_status`
-  - `codex_refresh_isolates` / `codex_invalid_grant_no_xai_wipe`
-  - `codex_refresh_preserves_identity_when_response_omits_refresh_token`
-  - `codex_reconstruct_refreshes_mid_session_expiry` (**Option C: SessionActor::reconstruct_full_config**)
-  - `codex_byok_key_not_overridden`
-  - `codex_oauth_bearer_absent_on_custom_endpoint`
+  - `codex_refresh_isolates` / `codex_invalid_grant_no_xai_wipe` (integration; Plan 05 Task 2)
+  - `codex_refresh_preserves_identity_when_response_omits_refresh_token` (integration; Plan 05 Task 1 data-only)
   - `codex_concurrent_refresh_single_idp_spend`
   - `codex_fresh_token_skips_idp`
   - `codex_transient_fail_hard_unexpired_keeps_token` / `codex_transient_fail_hard_expired_no_credential`
   - `chatgpt_account_id_header_on_codex` / `chatgpt_account_id_header_absent_*`
+- [ ] Option C reconstruct trio (**not** in Wave 0 integration binary) land only under Plan 05 crate-local module and run via `--lib`:
+  - `codex_reconstruct_refreshes_mid_session_expiry`
+  - `codex_byok_key_not_overridden`
+  - `codex_oauth_bearer_absent_on_custom_endpoint`
 - [ ] Clap scaffolds in pager cli + pager-bin compile for `--provider`, logout `--all`, `auth status`
 - [ ] Framework install: none
-- [ ] No unfiltered shell `--lib` gate (Option C narrow filters allowed)
+- [ ] No unfiltered shell `--lib` gate; Option C only via `cargo test -p xai-grok-shell --lib <TESTNAME>`
 - [ ] OnceLock policy documented in harness
 
 ---
@@ -208,11 +215,12 @@ replan_source: 05-REVIEWS.md cycle 2
 - [ ] All tasks have `<automated>` verify or Wave 0 dependencies
 - [ ] Sampling continuity: no 3 consecutive tasks without automated verify
 - [ ] Wave 0 covers all MISSING references (including reconstruct seam names + BYOK/custom + identity + concurrent + device multi-step + usable + status handler)
-- [ ] AUTH-05 production invoker proven on **Option C SessionActor::reconstruct_full_config seam** — not pure unit, prepare-only, or ensure_fresh-only
+- [ ] AUTH-05 production invoker proven on **Option C SessionActor::reconstruct_full_config seam** via explicit `--lib` TESTNAME — not pure unit, prepare-only, ensure_fresh-only, or crate-wide filter without `--lib`
+- [ ] Plan 05 Task 1 verifies pure CodexRefresher/identity only; isolation + invalid_grant live only on Task 2
 - [ ] No watch-mode flags
 - [ ] Feedback latency < 240s (warm)
-- [ ] Cargo hygiene: one TESTNAME; never unfiltered shell `--lib` as phase gate
+- [ ] Cargo hygiene: one TESTNAME; never unfiltered shell `--lib` as phase gate; reconstruct always `--lib <TESTNAME>`
 - [ ] `nyquist_compliant: true` set in frontmatter after phase execution gate green
 - [ ] `wave_0_complete: true` after Plan 01 harness lands
 
-**Approval:** pending (replan from 05-REVIEWS cycle 2)
+**Approval:** pending (replan from 05-REVIEWS cycle 3 MEDIUMs)
