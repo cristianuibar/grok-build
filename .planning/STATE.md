@@ -4,16 +4,16 @@ milestone: v1.0
 milestone_name: milestone
 current_phase: 2
 current_phase_name: Multi-slot credentials & xAI OAuth
-status: complete
-stopped_at: Completed 01-05-PLAN.md
-last_updated: "2026-07-16T08:34:42.000Z"
+status: verifying
+stopped_at: Completed 03-01-PLAN.md
+last_updated: "2026-07-16T10:21:04.327Z"
 last_activity: 2026-07-16
-last_activity_desc: Phase 2 complete — multi-slot auth + xAI OAuth under bum
+last_activity_desc: Phase 2 multi-slot credentials & xAI OAuth delivered
 progress:
-  total_phases: 1
-  completed_phases: 1
-  total_plans: 5
-  completed_plans: 5
+  total_phases: 3
+  completed_phases: 2
+  total_plans: 12
+  completed_plans: 10
 ---
 
 # Project State
@@ -29,11 +29,10 @@ See: .planning/PROJECT.md (updated 2026-07-16)
 
 Phase: 2 of 9 (Multi-slot credentials & xAI OAuth)
 Plan: 4 of 4 complete
-Status: Phase complete — verification passed
+Status: Phase complete — ready for verification
 Last activity: 2026-07-16 — Phase 2 multi-slot credentials & xAI OAuth delivered
 
-Progress: [██████████] 100%
-
+Progress: [████████░░] 83%
 
 ## Performance Metrics
 
@@ -64,6 +63,7 @@ Progress: [██████████] 100%
 | Phase 01 P02 | 19min | 3 tasks | 12 files |
 | Phase 01 P04 | 16min | 3 tasks | 61 files |
 | Phase 01 P05 | 20min | 3 tasks | 16 files |
+| Phase 03 P01 | 11min | 3 tasks | 9 files |
 
 ## Accumulated Context
 
@@ -92,6 +92,9 @@ Recent decisions affecting current work:
 - [Phase ?]: User roles/personas under product home; project cwd/.grok preserved (D-PLUGIN)
 - [Phase ?]: bundled_root via grok_home(); extension tests inject explicit roots (OnceLock-safe)
 - [Phase ?]: Production product-root readers BUM_HOME only; operational labels teach BUM_HOME/~/.bum (D-SCOPE)
+- [Phase ?]: ModelProvider (xai|codex) explicit on catalog chain; missing defaults to xai
+- [Phase ?]: GPT-5.6 Sol/Terra/Luna ship with stock agent_type; routing deferred to Phase 4
+- [Phase ?]: Phase 3 catalog proofs use cargo test --test model_catalog (not shell --lib)
 
 ### Pending Todos
 
@@ -114,7 +117,7 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-07-16T03:47:00.235Z
-Stopped at: Completed 01-05-PLAN.md
+Last session: 2026-07-16T10:21:04.319Z
+Stopped at: Completed 03-01-PLAN.md
 Resume file: None
 Next: continue Phase 1 remaining plans (01-04, 01-05)
