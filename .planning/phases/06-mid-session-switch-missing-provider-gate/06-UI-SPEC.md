@@ -142,7 +142,7 @@ Terminal monospaced — “size” is **role weight + Theme color**, not px. Exa
 | Surface | Copy |
 |---------|------|
 | Primary CTA (gate recovery) | **Login now** |
-| Secondary / dismiss | **Cancel** — description: `Keep current model` |
+| Secondary / dismiss | **Keep current model** — description: `Dismiss and stay on the active model` |
 | Successful switch (no extra CTA) | N/A — confirmation is informational only |
 
 ### Missing-provider gate modal (TUI — required)
@@ -154,8 +154,8 @@ Reuse **QuestionView** (same family as agent-type mismatch). Single question, tw
 | Question | `Sign in to {ProviderLabel} to use {ModelDisplayName}.` |
 | Option 1 label | `Login now` |
 | Option 1 description | `Run login for {ProviderLabel} (CLI: bum login --provider {id})` |
-| Option 2 label | `Cancel` |
-| Option 2 description | `Keep current model` |
+| Option 2 label | `Keep current model` |
+| Option 2 description | `Dismiss and stay on the active model` |
 | Always-visible CLI fallback | Command form must appear in option description: `bum login --provider {id}` where `{id}` is `xai` or `codex` |
 | Secrets | Never show tokens, auth.json body, or bearer material |
 
@@ -208,7 +208,7 @@ Reuse **QuestionView** (same family as agent-type mismatch). Single question, tw
 | Generic switch Other | `Couldn't switch model: {msg}` (existing) |
 | Unknown model (`/model`) | `Unknown model: {input}` (Phase 3; unchanged) |
 | Usage (`/model` empty args) | `Usage: /model <name> [effort]` (Phase 3; unchanged) |
-| Destructive confirmation | **none this phase** — Cancel is non-destructive; login is not destructive |
+| Destructive confirmation | **none this phase** — Keep current model is non-destructive; login is not destructive |
 
 ### ACP / headless typed error (machine-readable)
 
@@ -288,7 +288,7 @@ Headless/CLI that can set model must surface the same provider + suggestion; no 
 
 | Path | UI |
 |------|----|
-| Missing provider | QuestionView: Login now / Cancel; typed `MODEL_SWITCH_MISSING_PROVIDER` |
+| Missing provider | QuestionView: Login now / Keep current model; typed `MODEL_SWITCH_MISSING_PROVIDER` |
 | Incompatible agent | Existing QuestionView: Yes (new session) / No; typed `MODEL_SWITCH_INCOMPATIBLE_AGENT` |
 | Other | Scrollback `Couldn't switch model: {msg}` |
 
@@ -313,7 +313,7 @@ Do **not** collapse these into one generic modal or one error code.
 | Typed error | `xai-grok-shell` agent config (mirror `ModelSwitchIncompatibleAgentError`) | Add `ModelSwitchMissingProviderError` + ACP data code |
 | Pager error enum | `SwitchModelError` in `pager/src/app/actions.rs` | Add `MissingProvider { … }` variant separate from `IncompatibleAgent` / `Other` |
 | Switch complete handler | `dispatch/session/lifecycle.rs` `handle_switch_model_complete` | Open missing-provider QuestionView; never optimistic-commit on this error |
-| Gate modal | QuestionView + new `LocalQuestionKind` (e.g. `MissingProviderLogin`) | Login now / Cancel; wire login + deferred retry |
+| Gate modal | QuestionView + new `LocalQuestionKind` (e.g. `MissingProviderLogin`) | Login now / Keep current model; wire login + deferred retry |
 | Deferred switch | `AgentSession.deferred_model_switch` | Reuse for post-login auto-retry of blocked target |
 | Picker rows | `slash/commands/model.rs` `build_model_items` + picker `right_label` | Auth badge when provider unusable |
 | Settings model enum | settings DynamicEnum path | Same badge policy if rows are listed; same gate on switch |
@@ -374,12 +374,12 @@ Applicable state considerations resolved: **8 covered, 0 backstop, 0 unresolved*
 
 **Claude discretion applied (not re-asked):**
 
-1. **Gate chrome = QuestionView** (not toast-only) so Login now / Cancel are first-class actions; mirrors IncompatibleAgent affordance family without sharing its code path
+1. **Gate chrome = QuestionView** (not toast-only) so Login now / Keep current model are first-class actions; mirrors IncompatibleAgent affordance family without sharing its code path
 2. **Auth badge** = exact text `needs login` via **right_label** preferred, else ` · needs login` suffix; dim secondary color
 3. **Success confirm** = existing scrollback `Switched to {ModelDisplayName}` (provider already in name) — no extra toast/modal
 4. **No optimistic current** for missing-provider (stricter than IncompatibleAgent rollback pattern)
 5. **ACP code** `MODEL_SWITCH_MISSING_PROVIDER` with camelCase payload mirroring IncompatibleAgent
-6. **Option labels** `Login now` / `Cancel` with CLI always in Login now description
+6. **Option labels** `Login now` / `Keep current model` with CLI always in Login now description
 7. Theme: `accent_error` for fail emphasis only; no new Theme tokens
 
 ---
