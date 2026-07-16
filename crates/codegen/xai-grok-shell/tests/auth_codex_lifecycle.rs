@@ -47,8 +47,10 @@ use xai_grok_shell::agent::config::{
     XAI_API_BASE_URL_DEFAULT,
 };
 use xai_grok_shell::auth::{
-    read_provider_auth_store, select_provider_access_token, AuthMode, AuthStore, GrokAuth,
-    PROVIDER_CODEX, PROVIDER_XAI,
+    clear_all_provider_slots, clear_provider_slot, credential_usable, format_auth_status,
+    inspect_provider_store, mutate_provider_store_or_prune, read_provider_auth_store,
+    select_provider_access_token, AuthMode, AuthProvider, AuthStatusReport, AuthStore, GrokAuth,
+    ProviderStoreMutation, PROVIDER_CODEX, PROVIDER_XAI,
 };
 
 const XAI_FAKE: &str = "xai-fake-token";
@@ -266,25 +268,83 @@ fn codex_oauth_state_mismatch_writes_nothing() {
     );
 }
 
-// ── AUTH-03: Selective logout (RED until Plan 04) ──────────────────────────
+// ── AUTH-03 foundation: public provider-slot mutate/clear (Plan 02 GREEN) ──
 
-/// Logout --provider codex leaves xAI; logout xAI leaves Codex.
+/// Mutate Codex only; raw JSON xAI key unchanged.
 #[test]
-fn selective_logout_isolates() {
+fn mutate_provider_codex_preserves_xai() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("auth.json");
     write_dual_auth_fixture(&path);
 
-    // No public clear_provider_slot(path, provider) yet.
-    let cleared_codex_only = false;
-    assert!(
-        cleared_codex_only,
-        "Plan 04: selective_logout_isolates — expect clear_provider_slot(codex) to remove \
-         providers.codex while providers.xai key remains {XAI_FAKE} (auth_file={})",
-        path.display()
-    );
+    let outcome = mutate_provider_store_or_prune(&path, AuthProvider::Codex, |codex| {
+        if let Some(auth) = codex.get_mut(&codex_scope()) {
+            auth.key = "codex-mutated-token".to_owned();
+        }
+    })
+    .expect("mutate codex");
+    assert_eq!(outcome, ProviderStoreMutation::DocumentWritten);
 
-    // Sanity: dual fixture still intact (no accidental wipe during RED).
+    let on_disk: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+    assert_eq!(
+        pointer_key(&on_disk, PROVIDER_XAI, &xai_scope()).as_deref(),
+        Some(XAI_FAKE),
+        "xAI sibling must be preserved byte-stable on disk"
+    );
+    assert_eq!(
+        pointer_key(&on_disk, PROVIDER_CODEX, &codex_scope()).as_deref(),
+        Some("codex-mutated-token")
+    );
+}
+
+/// Mutate xAI only; Codex key unchanged.
+#[test]
+fn mutate_provider_xai_preserves_codex() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("auth.json");
+    write_dual_auth_fixture(&path);
+
+    mutate_provider_store_or_prune(&path, AuthProvider::Xai, |xai| {
+        if let Some(auth) = xai.get_mut(&xai_scope()) {
+            auth.key = "xai-mutated-token".to_owned();
+        }
+    })
+    .expect("mutate xai");
+
+    let on_disk: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+    assert_eq!(
+        pointer_key(&on_disk, PROVIDER_CODEX, &codex_scope()).as_deref(),
+        Some(CODEX_FAKE),
+        "Codex sibling must be preserved"
+    );
+    assert_eq!(
+        pointer_key(&on_disk, PROVIDER_XAI, &xai_scope()).as_deref(),
+        Some("xai-mutated-token")
+    );
+}
+
+/// clear_provider_slot(codex) leaves xAI; does not delete auth.json.
+#[test]
+fn clear_provider_codex_leaves_xai() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("auth.json");
+    write_dual_auth_fixture(&path);
+
+    let outcome = clear_provider_slot(&path, AuthProvider::Codex).expect("clear codex");
+    assert_eq!(outcome, ProviderStoreMutation::DocumentWritten);
+    assert!(path.exists(), "file must remain while xAI slot is non-empty");
+
+    assert!(
+        read_provider_auth_store(&path, PROVIDER_CODEX)
+            .unwrap()
+            .is_none()
+            || read_provider_auth_store(&path, PROVIDER_CODEX)
+                .unwrap()
+                .is_some_and(|s| s.is_empty()),
+        "codex slot cleared"
+    );
     let xai = read_provider_auth_store(&path, PROVIDER_XAI)
         .unwrap()
         .expect("xai present");
@@ -294,18 +354,84 @@ fn selective_logout_isolates() {
     );
 }
 
+/// Clearing the last remaining provider deletes auth.json.
+#[test]
+fn clear_last_provider_deletes_file() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("auth.json");
+    // Only xAI present.
+    let mut xai: AuthStore = BTreeMap::new();
+    xai.insert(xai_scope(), sample_xai_auth());
+    let document = serde_json::json!({
+        "version": 1,
+        "providers": { "xai": xai }
+    });
+    std::fs::write(&path, serde_json::to_vec_pretty(&document).unwrap()).unwrap();
+
+    let outcome = clear_provider_slot(&path, AuthProvider::Xai).expect("clear last");
+    assert_eq!(outcome, ProviderStoreMutation::FileDeleted);
+    assert!(!path.exists(), "auth.json pruned when all slots empty");
+}
+
+/// clear_all_provider_slots empties both under one lock (atomic dual clear).
+#[test]
+fn clear_all_provider_slots_empties_both() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("auth.json");
+    write_dual_auth_fixture(&path);
+
+    let outcome = clear_all_provider_slots(&path).expect("clear all");
+    assert_eq!(outcome, ProviderStoreMutation::FileDeleted);
+    assert!(!path.exists(), "dual clear prunes empty document");
+}
+
+/// Unknown provider strings fail closed at parse (typed API has no string path).
+#[test]
+fn auth_provider_parse_rejects_unknown() {
+    assert_eq!(AuthProvider::parse("xai"), Some(AuthProvider::Xai));
+    assert_eq!(AuthProvider::parse("codex"), Some(AuthProvider::Codex));
+    assert_eq!(AuthProvider::parse("openai"), None);
+    assert_eq!(AuthProvider::parse("anthropic"), None);
+    assert_eq!(AuthProvider::parse(""), None);
+    assert_eq!(AuthProvider::parse("XAI"), None, "case-sensitive allow-list");
+}
+
+// ── AUTH-03: Selective logout CLI (RED until Plan 04) ──────────────────────
+
+/// Logout --provider codex leaves xAI; logout xAI leaves Codex.
+/// Storage clear is GREEN (Plan 02); this contract is the CLI handler path.
+#[test]
+fn selective_logout_isolates() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("auth.json");
+    write_dual_auth_fixture(&path);
+
+    // Storage primitive exists; CLI logout --provider wiring is Plan 04.
+    let cli_logout_provider_handler = false;
+    assert!(
+        cli_logout_provider_handler,
+        "Plan 04: selective_logout_isolates — expect CLI logout --provider codex to call \
+         clear_provider_slot while leaving providers.xai key {XAI_FAKE} (auth_file={})",
+        path.display()
+    );
+
+    // Storage path already proven by clear_provider_codex_leaves_xai.
+    let _ = clear_provider_slot(&path, AuthProvider::Codex);
+}
+
 /// Logout --all clears both provider slots atomically.
+/// Storage clear_all is GREEN (Plan 02); this contract is the CLI handler path.
 #[test]
 fn logout_all_clears_both() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("auth.json");
     write_dual_auth_fixture(&path);
 
-    let cleared_all = false;
+    let cli_logout_all_handler = false;
     assert!(
-        cleared_all,
-        "Plan 04: logout_all_clears_both — expect clear_all_provider_slots to empty/remove \
-         both providers.xai and providers.codex (auth_file={})",
+        cli_logout_all_handler,
+        "Plan 04: logout_all_clears_both — expect CLI logout --all to call \
+         clear_all_provider_slots (auth_file={})",
         path.display()
     );
 }
@@ -330,7 +456,7 @@ fn bare_logout_fail_closed() {
     assert_eq!(std::fs::read(&path).unwrap(), before);
 }
 
-// ── AUTH-04: Status (RED until Plan 02/04) ─────────────────────────────────
+// ── AUTH-04: Status pure model (Plan 02 GREEN; CLI handler Plan 04) ────────
 
 /// Status formatter is greppable, lists both providers, never prints secrets.
 #[test]
@@ -339,30 +465,75 @@ fn auth_status_format_paste_safe() {
     let path = dir.path().join("auth.json");
     write_dual_auth_fixture(&path);
 
-    // No public format_auth_status yet.
-    let formatted: Option<String> = None;
-    let text = formatted.unwrap_or_default();
-    let has_both = text.contains("xai") && text.contains("codex");
+    let report = AuthStatusReport::from_auth_file(&path).expect("status from file");
+    let text = format_auth_status(&report);
+    // UI-SPEC labels are `xAI` / `Codex` (not bare wire keys alone).
+    let has_both = text.contains("xAI:") && text.contains("Codex:");
+    let has_keys = text.contains("logged_in:")
+        && text.contains("usable:")
+        && text.contains("account:")
+        && text.contains("plan:");
     let no_secrets = !text.contains(XAI_FAKE)
         && !text.contains(CODEX_FAKE)
         && !text.contains(CODEX_REFRESH)
         && !text.contains("xai-refresh-token");
     assert!(
-        has_both && no_secrets && !text.is_empty(),
-        "Plan 02/04: auth_status_format_paste_safe — expect greppable dual-provider \
-         status without access/refresh token substrings (auth_file={})",
+        has_both && has_keys && no_secrets && !text.is_empty(),
+        "auth_status_format_paste_safe — greppable dual-provider status without \
+         access/refresh token substrings (auth_file={}, text={text:?})",
         path.display()
     );
+    // Account emails are OK to show; tokens are not.
+    assert!(text.contains("xai@example.test") || text.contains("codex@example.test"));
+}
+
+/// Empty store still lists both providers with logged_in: no.
+#[test]
+fn auth_status_both_providers_always_listed() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("auth.json");
+    // Missing file → empty report.
+    let report = AuthStatusReport::from_auth_file(&path).expect("missing file is empty");
+    let text = report.format();
+    assert!(text.contains("xAI:"));
+    assert!(text.contains("Codex:"));
+    assert_eq!(text.matches("logged_in: no").count(), 2);
+    assert_eq!(text.matches("usable: no").count(), 2);
+}
+
+/// Asymmetric login: one yes, one no.
+#[test]
+fn auth_status_asymmetric_login() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("auth.json");
+    let mut xai: AuthStore = BTreeMap::new();
+    xai.insert(xai_scope(), sample_xai_auth());
+    let document = serde_json::json!({
+        "version": 1,
+        "providers": { "xai": xai }
+    });
+    std::fs::write(&path, serde_json::to_vec_pretty(&document).unwrap()).unwrap();
+
+    let report = AuthStatusReport::from_auth_file(&path).expect("status");
+    let xai_st = &report.providers[0];
+    let codex_st = &report.providers[1];
+    assert_eq!(xai_st.provider, AuthProvider::Xai);
+    assert_eq!(codex_st.provider, AuthProvider::Codex);
+    assert!(xai_st.logged_in && xai_st.usable);
+    assert!(!codex_st.logged_in && !codex_st.usable);
+    let text = report.format();
+    assert!(text.contains("xAI:\n  logged_in: yes"));
+    assert!(text.contains("Codex:\n  logged_in: no"));
 }
 
 /// CLI status handler path (run_cli_auth_status) must return dual status text.
 #[test]
 fn run_cli_auth_status() {
-    // Public run_cli_auth_status is Plan 02/04.
+    // Pure status API is GREEN (Plan 02); CLI handler wiring is Plan 04.
     let handler_available = false;
     assert!(
         handler_available,
-        "Plan 02/04: run_cli_auth_status — expect CLI handler returning paste-safe \
+        "Plan 04: run_cli_auth_status — expect CLI handler returning paste-safe \
          dual-provider status string (no secrets)"
     );
 }
@@ -377,14 +548,16 @@ fn auth_status_usable_expired_refreshable() {
         "fixture must carry refresh_token"
     );
 
-    // No public usable() helper yet for status semantics.
-    let usable: Option<bool> = None;
-    assert_eq!(
-        usable,
-        Some(true),
-        "Plan 02: auth_status_usable_expired_refreshable — expired access + refresh_token \
-         present must report usable=yes / refreshable"
+    assert!(
+        credential_usable(&auth),
+        "expired access + refresh_token present must report usable=yes"
     );
+
+    let mut store: AuthStore = BTreeMap::new();
+    store.insert(codex_scope(), auth);
+    let st = inspect_provider_store(AuthProvider::Codex, Some(&store));
+    assert!(st.logged_in, "session record present → logged_in");
+    assert!(st.usable, "refreshable OAuth → usable");
 }
 
 /// usable=no when expired and no refresh_token.
@@ -394,13 +567,16 @@ fn auth_status_usable_expired_no_refresh() {
     auth.expires_at = Some(Utc::now() - Duration::minutes(5));
     auth.refresh_token = None;
 
-    let usable: Option<bool> = None;
-    assert_eq!(
-        usable,
-        Some(false),
-        "Plan 02: auth_status_usable_expired_no_refresh — expired access without \
-         refresh_token must report usable=no"
+    assert!(
+        !credential_usable(&auth),
+        "expired access without refresh_token must report usable=no"
     );
+
+    let mut store: AuthStore = BTreeMap::new();
+    store.insert(codex_scope(), auth);
+    let st = inspect_provider_store(AuthProvider::Codex, Some(&store));
+    assert!(st.logged_in, "nonblank access key still means logged_in");
+    assert!(!st.usable, "hard-expired without refresh → not usable");
 }
 
 // ── AUTH-05: Independent refresh / headers (RED until Plan 05) ─────────────

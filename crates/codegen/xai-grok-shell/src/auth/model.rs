@@ -19,6 +19,56 @@ pub const PROVIDER_XAI: &str = "xai";
 /// Stable wire key for the reserved Codex provider slot in multi-slot `auth.json`.
 pub const PROVIDER_CODEX: &str = "codex";
 
+/// Typed provider-slot identity for multi-slot `auth.json` mutations.
+///
+/// Only allow-listed providers can be written via the public storage API;
+/// unknown wire strings fail closed at parse time (no silent map-key creation).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum AuthProvider {
+    /// First-party xAI / Grok OAuth or API-key slot (`providers.xai`).
+    Xai,
+    /// ChatGPT / Codex OAuth slot (`providers.codex`).
+    Codex,
+}
+
+impl AuthProvider {
+    /// Wire key used under `providers` in `auth.json`.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Xai => PROVIDER_XAI,
+            Self::Codex => PROVIDER_CODEX,
+        }
+    }
+
+    /// Human label for CLI/status copy (`xAI` / `Codex`).
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Xai => "xAI",
+            Self::Codex => "Codex",
+        }
+    }
+
+    /// Parse an allow-listed provider wire string. Unknown values fail closed.
+    pub fn parse(s: &str) -> Option<Self> {
+        match s.trim() {
+            PROVIDER_XAI => Some(Self::Xai),
+            PROVIDER_CODEX => Some(Self::Codex),
+            _ => None,
+        }
+    }
+
+    /// Both dual-auth provider slots in status display order (xAI first).
+    pub fn all() -> [Self; 2] {
+        [Self::Xai, Self::Codex]
+    }
+}
+
+impl std::fmt::Display for AuthProvider {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
 /// On-disk multi-slot document schema version written by this binary.
 pub const AUTH_DOCUMENT_VERSION: u32 = 1;
 

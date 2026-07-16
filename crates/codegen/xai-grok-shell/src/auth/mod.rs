@@ -13,6 +13,7 @@ mod model;
 pub mod oidc;
 pub(crate) mod recovery;
 pub(crate) mod refresh;
+mod status;
 mod storage;
 pub(crate) mod token_type;
 pub(crate) use config::LEGACY_AUTH_SCOPE;
@@ -36,12 +37,20 @@ pub use error::{AuthError, RefreshTokenError, RefreshTokenFailedReason};
 pub use manager::{AuthManager, shared_api_key_provider};
 pub use meta::{AuthMeta, GateInfo};
 pub use model::{
-    AuthMode, AuthStore, GrokAuth, PROVIDER_CODEX, PROVIDER_XAI, lookup_auth,
+    AuthMode, AuthProvider, AuthStore, GrokAuth, PROVIDER_CODEX, PROVIDER_XAI, lookup_auth,
     select_provider_access_token,
 };
 pub(crate) use model::{TOKEN_TTL, UserInfo, is_expired, token_suffix};
 pub(crate) use refresh::DiagnosticUploader;
+pub use status::{
+    AuthStatusReport, ProviderAuthStatus, credential_usable, format_auth_status,
+    inspect_provider_store, store_logged_in, store_usable,
+};
 pub use storage::{
-    AuthStoreReadError, clear_api_key, read_api_key, read_auth_json, read_provider_auth_store,
-    read_token_by_scope, store_api_key,
+    AuthStoreReadError, ProviderStoreMutation, clear_all_provider_slots, clear_api_key,
+    clear_provider_slot, mutate_provider_store_or_prune, read_api_key, read_auth_json,
+    read_provider_auth_store, read_token_by_scope, store_api_key,
+};
+pub(crate) use storage::{
+    clear_provider_slot_with_lock, mutate_provider_store_or_prune_with_lock,
 };

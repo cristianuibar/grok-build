@@ -5,7 +5,7 @@ use std::path::{Path, PathBuf};
 #[cfg(test)]
 use super::model::PROVIDER_CODEX;
 use super::model::{
-    API_KEY_SCOPE, AUTH_DOCUMENT_VERSION, AuthDocument, AuthMode, AuthStore, GrokAuth,
+    API_KEY_SCOPE, AUTH_DOCUMENT_VERSION, AuthDocument, AuthMode, AuthProvider, AuthStore, GrokAuth,
     PROVIDER_XAI, lookup_auth,
 };
 
@@ -15,9 +15,9 @@ pub(crate) struct AuthFileLock {
     pub(super) _file: File,
 }
 
-/// Result of a lock-scoped xAI slot mutation that may prune `auth.json`.
+/// Result of a lock-scoped provider-slot mutation that may prune `auth.json`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum XaiStoreMutation {
+pub enum ProviderStoreMutation {
     /// The nested document was written because at least one provider has scopes.
     DocumentWritten,
     /// The file did not exist and the mutation left every provider empty.
@@ -25,6 +25,9 @@ pub(crate) enum XaiStoreMutation {
     /// The file was successfully removed because every provider became empty.
     FileDeleted,
 }
+
+/// Historical alias for [`ProviderStoreMutation`] (xAI-only call sites).
+pub(crate) type XaiStoreMutation = ProviderStoreMutation;
 
 impl AuthFileLock {
     /// Returns `true` while this guard still refers to the **live**
@@ -476,6 +479,109 @@ fn apply_xai_slot(doc: &mut AuthDocument, auth_store: &AuthStore) {
     // Do NOT insert empty PROVIDER_CODEX by default; preserve if present.
 }
 
+/// Mutate one provider slot under an acquired lock, pruning `auth.json` only
+/// when every provider slot is empty.
+///
+/// Sibling provider keys are preserved. Empty post-mutation slots are removed
+/// from the map (not written as `{}`). Uses typed [`AuthProvider`] so unknown
+/// providers cannot create arbitrary map keys.
+pub fn mutate_provider_store_or_prune<F>(
+    auth_file: &Path,
+    provider: AuthProvider,
+    f: F,
+) -> std::io::Result<ProviderStoreMutation>
+where
+    F: FnOnce(&mut AuthStore),
+{
+    let lock = crate::auth::manager::lock::lock_auth_file_blocking(auth_file)?;
+    mutate_provider_store_or_prune_with_lock(auth_file, &lock, provider, f)
+}
+
+/// Guard-held form of [`mutate_provider_store_or_prune`].
+///
+/// **Never** re-acquires `auth.json.lock`. Callers that already hold the live
+/// guard (refresh permanent-fail cleanup, scope removal) must use this path.
+/// Same-crate only (`AuthFileLock` is crate-private).
+pub(crate) fn mutate_provider_store_or_prune_with_lock<F>(
+    auth_file: &Path,
+    lock: &AuthFileLock,
+    provider: AuthProvider,
+    f: F,
+) -> std::io::Result<ProviderStoreMutation>
+where
+    F: FnOnce(&mut AuthStore),
+{
+    if !lock.still_live(auth_file) {
+        return Err(lock_not_live_error());
+    }
+
+    let mut doc = read_auth_document_for_write(auth_file)?;
+    let file_exists = auth_file.try_exists()?;
+    let key = provider.as_str();
+    let mut store = doc.providers.remove(key).unwrap_or_default();
+    f(&mut store);
+    if !store.is_empty() {
+        doc.providers.insert(key.to_owned(), store);
+    }
+    // Drop empty residual maps if present.
+    doc.providers.retain(|_, s| !s.is_empty());
+    doc.version = Some(AUTH_DOCUMENT_VERSION);
+
+    if !lock.still_live(auth_file) {
+        return Err(lock_not_live_error());
+    }
+    persist_document_or_prune(auth_file, &doc, file_exists, remove_auth_file)
+}
+
+/// Clear one provider slot (acquires lock). Sibling slots are preserved.
+/// Deletes `auth.json` only when every provider becomes empty.
+pub fn clear_provider_slot(
+    auth_file: &Path,
+    provider: AuthProvider,
+) -> std::io::Result<ProviderStoreMutation> {
+    mutate_provider_store_or_prune(auth_file, provider, AuthStore::clear)
+}
+
+/// Guard-held selective clear. **Never** re-acquires `auth.json.lock`.
+///
+/// Plan 05 permanent-fail path must use this (or
+/// [`mutate_provider_store_or_prune_with_lock`]) while already holding the lock.
+/// Same-crate only (`AuthFileLock` is crate-private).
+pub(crate) fn clear_provider_slot_with_lock(
+    auth_file: &Path,
+    lock: &AuthFileLock,
+    provider: AuthProvider,
+) -> std::io::Result<ProviderStoreMutation> {
+    mutate_provider_store_or_prune_with_lock(auth_file, lock, provider, AuthStore::clear)
+}
+
+/// Atomic dual clear under a single lock acquisition (logout `--all`).
+///
+/// Holds `auth.json.lock` once, removes both allow-listed provider keys, then
+/// prunes the file when nothing remains.
+pub fn clear_all_provider_slots(auth_file: &Path) -> std::io::Result<ProviderStoreMutation> {
+    let lock = crate::auth::manager::lock::lock_auth_file_blocking(auth_file)?;
+    if !lock.still_live(auth_file) {
+        return Err(lock_not_live_error());
+    }
+
+    let mut doc = read_auth_document_for_write(auth_file)?;
+    let file_exists = auth_file.try_exists()?;
+    for provider in AuthProvider::all() {
+        doc.providers.remove(provider.as_str());
+    }
+    // Also drop any empty residual maps under known keys if present.
+    doc.providers.retain(|_, s| !s.is_empty());
+    doc.version = Some(AUTH_DOCUMENT_VERSION);
+
+    if !lock.still_live(auth_file) {
+        return Err(lock_not_live_error());
+    }
+    // Full dual clear: if only unknown keys remain they were never written by
+    // our typed API; prune when no non-empty provider maps remain.
+    persist_document_or_prune(auth_file, &doc, file_exists, remove_auth_file)
+}
+
 /// Mutate the xAI slot under an acquired lock, pruning `auth.json` only when
 /// every provider slot is empty.
 pub(crate) fn mutate_xai_store_or_prune<F>(
@@ -485,8 +591,7 @@ pub(crate) fn mutate_xai_store_or_prune<F>(
 where
     F: FnOnce(&mut AuthStore),
 {
-    let lock = crate::auth::manager::lock::lock_auth_file_blocking(auth_file)?;
-    mutate_xai_store_or_prune_with_lock(auth_file, &lock, f)
+    mutate_provider_store_or_prune(auth_file, AuthProvider::Xai, f)
 }
 
 /// Guard-held form of [`mutate_xai_store_or_prune`].
@@ -501,23 +606,7 @@ pub(crate) fn mutate_xai_store_or_prune_with_lock<F>(
 where
     F: FnOnce(&mut AuthStore),
 {
-    if !lock.still_live(auth_file) {
-        return Err(lock_not_live_error());
-    }
-
-    let mut doc = read_auth_document_for_write(auth_file)?;
-    let file_exists = auth_file.try_exists()?;
-    let mut xai = doc.providers.remove(PROVIDER_XAI).unwrap_or_default();
-    f(&mut xai);
-    if !xai.is_empty() {
-        doc.providers.insert(PROVIDER_XAI.to_owned(), xai);
-    }
-    doc.version = Some(AUTH_DOCUMENT_VERSION);
-
-    if !lock.still_live(auth_file) {
-        return Err(lock_not_live_error());
-    }
-    persist_document_or_prune(auth_file, &doc, file_exists, remove_auth_file)
+    mutate_provider_store_or_prune_with_lock(auth_file, lock, AuthProvider::Xai, f)
 }
 
 fn remove_auth_file(path: &Path) -> std::io::Result<()> {
@@ -529,17 +618,17 @@ fn persist_document_or_prune(
     doc: &AuthDocument,
     file_exists: bool,
     remove: fn(&Path) -> std::io::Result<()>,
-) -> std::io::Result<XaiStoreMutation> {
+) -> std::io::Result<ProviderStoreMutation> {
     if doc.providers.values().all(AuthStore::is_empty) {
         if !file_exists {
-            return Ok(XaiStoreMutation::Unchanged);
+            return Ok(ProviderStoreMutation::Unchanged);
         }
         remove(auth_file)?;
-        return Ok(XaiStoreMutation::FileDeleted);
+        return Ok(ProviderStoreMutation::FileDeleted);
     }
 
     write_auth_document(auth_file, doc)?;
-    Ok(XaiStoreMutation::DocumentWritten)
+    Ok(ProviderStoreMutation::DocumentWritten)
 }
 
 // ── Low-level nested serialize (no lock) ──────────────────────────────
