@@ -150,7 +150,16 @@ Plans:
   2. Selecting a model whose provider has no usable credentials blocks the switch and prompts that provider’s login (no silent mid-turn 401 as primary UX)
   3. With both providers logged in, user can move between Grok and GPT-5.6 models in one continuous session
 
-**Plans**: TBD
+**Plans**: 6 plans
+
+Plans:
+- [ ] 06-01-PLAN.md — Shell typed MODEL_SWITCH_MISSING_PROVIDER + authoritative gate in model_switch::apply
+- [ ] 06-02-PLAN.md — Pager MissingProvider QuestionView + no optimistic current + Keep current
+- [ ] 06-03-PLAN.md — Login now deferred_model_switch + AuthComplete auto-retry
+- [ ] 06-04-PLAN.md — Dual-slot usable cache + picker needs login badge (full mixed catalog)
+- [ ] 06-05-PLAN.md — Dual-login free Grok↔GPT switch + BYOK/history/mid-turn proofs
+- [ ] 06-06-PLAN.md — Phase validation map + aggregate cargo gate
+
 **UI hint**: yes
 
 ### Phase 7: Cross-provider multi-agent orchestration
@@ -212,7 +221,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 →
 | 3. Model catalog & GPT-5.6 entries | 3/3 | Complete    | 2026-07-16 |
 | 4. Provider-aware request routing | 5/5 | Complete    | 2026-07-16 |
 | 5. Codex OAuth & dual auth lifecycle | 6/6 | Complete    | 2026-07-16 |
-| 6. Mid-session switch & missing-provider gate | 0/TBD | Not started | - |
+| 6. Mid-session switch & missing-provider gate | 0/6 | Not started | - |
 | 7. Cross-provider multi-agent orchestration | 0/TBD | Not started | - |
 | 8. Quiet fork & rebrand polish | 0/TBD | Not started | - |
 | 9. Daily-driver end-to-end validation | 0/TBD | Not started | - |
