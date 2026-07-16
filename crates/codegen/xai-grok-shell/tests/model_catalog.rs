@@ -359,6 +359,8 @@ fn custom_endpoint_skips_codex_inject() {
 }
 
 /// Q1 RESOLVED: empty Some({}) still receives Codex defaults when !has_custom_endpoint.
+/// WR-02: also re-injects bundled xAI defaults so the preferred default stays grok-build
+/// (empty map must not strand first_or_fallback on gpt-5.6-sol).
 #[test]
 fn empty_prefetch_still_gets_codex_defaults() {
     let cfg = Config::default();
@@ -375,10 +377,70 @@ fn empty_prefetch_still_gets_codex_defaults() {
         );
         assert_eq!(list[id].info.provider.as_str(), "codex");
     }
-    // xAI bundled defaults stay pruned on empty Some (only Codex re-append).
+    // Empty/xAI-less prefetch re-injects bundled xAI so default resolution stays on
+    // grok-build (remote non-empty catalogs still win and may omit it).
     assert!(
-        !list.contains_key("grok-build"),
-        "empty prefetch must not resurrect grok-build"
+        list.contains_key("grok-build"),
+        "empty prefetch must re-inject preferred default grok-build; keys={:?}",
+        list.keys().collect::<Vec<_>>()
+    );
+    assert_eq!(
+        list["grok-build"].info.provider.as_str(),
+        "xai",
+        "re-injected grok-build must remain xai"
+    );
+    let first_key = list
+        .keys()
+        .next()
+        .map(|k| k.as_str())
+        .expect("catalog must be non-empty after empty prefetch");
+    assert_eq!(
+        first_key, "grok-build",
+        "xAI reinject must lead the catalog so first_or_fallback prefers grok-build; keys={:?}",
+        list.keys().collect::<Vec<_>>()
+    );
+    let grok_pos = list
+        .keys()
+        .position(|k| k.as_str() == "grok-build")
+        .expect("grok-build present");
+    for id in GPT_IDS {
+        let gpt_pos = list
+            .keys()
+            .position(|k| k.as_str() == id)
+            .unwrap_or_else(|| panic!("{id} missing"));
+        assert!(
+            grok_pos < gpt_pos,
+            "{id} must follow re-injected grok-build; keys={:?}",
+            list.keys().collect::<Vec<_>>()
+        );
+    }
+}
+
+/// WR-02: empty prefetch must not make session default land on a GPT id.
+#[test]
+fn empty_prefetch_default_stays_on_grok_build_not_gpt() {
+    let cfg = Config::default();
+    let list = resolve_model_list(&cfg, Some(IndexMap::new()));
+    assert!(
+        list.contains_key("grok-build"),
+        "empty prefetch catalog must include grok-build; keys={:?}",
+        list.keys().collect::<Vec<_>>()
+    );
+    // Public surface only: first catalog key is what first_or_fallback uses when
+    // no default_model override is set and the entry is visible/selectable.
+    let first = list
+        .keys()
+        .next()
+        .map(|k| k.as_str())
+        .expect("non-empty catalog");
+    assert_eq!(
+        first, "grok-build",
+        "empty prefetch must not default to gpt-5.6-*; first={first}, keys={:?}",
+        list.keys().collect::<Vec<_>>()
+    );
+    assert!(
+        !first.starts_with("gpt-5.6-"),
+        "preferred default must not be a GPT-5.6 id after empty prefetch"
     );
 }
 

@@ -3158,9 +3158,11 @@ pub fn resolve_model_list(
         // Terra→Luna and remote cannot rebind those ids to xai. Skip on enterprise
         // custom models endpoints (has_custom_endpoint).
         if !cfg.endpoints.has_custom_endpoint() {
-            let codex_defaults: Vec<_> = default_model_entries(&cfg.endpoints)
-                .into_iter()
+            let defaults = default_model_entries(&cfg.endpoints);
+            let codex_defaults: Vec<_> = defaults
+                .iter()
                 .filter(|(_, entry)| entry.info.provider == ModelProvider::Codex)
+                .map(|(k, e)| (k.clone(), e.clone()))
                 .collect();
             for (key, _) in &codex_defaults {
                 resolved.shift_remove(key);
@@ -3171,6 +3173,30 @@ pub fn resolve_model_list(
                     "re-appending bundled Codex default after prefetch replace"
                 );
                 resolved.insert(key, entry);
+            }
+            // WR-02: empty/xAI-less prefetch must not leave only Codex rows — otherwise
+            // resolve_default_model's first_or_fallback lands on gpt-5.6-sol. When the
+            // preferred bundled default is missing and no xAI rows remain, re-inject
+            // missing bundled xAI defaults at the front (JSON order). Non-empty remote
+            // catalogs still win: any remaining provider==Xai entry skips this path.
+            let default_id = crate::models::default_model();
+            let has_xai = resolved
+                .values()
+                .any(|e| e.info.provider == ModelProvider::Xai);
+            if !resolved.contains_key(default_id) && !has_xai {
+                let mut ordered = IndexMap::new();
+                for (key, entry) in defaults {
+                    if entry.info.provider == ModelProvider::Xai && !resolved.contains_key(&key)
+                    {
+                        tracing::debug!(
+                            model_key = % key,
+                            "re-injecting bundled xAI default after empty/xAI-less prefetch"
+                        );
+                        ordered.insert(key, entry);
+                    }
+                }
+                ordered.extend(resolved);
+                resolved = ordered;
             }
         }
     }
@@ -11056,10 +11082,28 @@ default = "grok-4.5"
         assert!(!resolved.contains_key("grok-build"));
     }
     #[test]
-    fn resolve_model_list_empty_prefetch_yields_empty_base() {
+    fn resolve_model_list_empty_prefetch_reinjects_xai_and_codex_defaults() {
+        // Empty Some({}) used to leave only Codex re-appends (or nothing pre-multi-
+        // provider). WR-02 re-injects missing bundled xAI when preferred default is
+        // absent and no xAI rows remain, so first_or_fallback stays on grok-build.
         let cfg = Config::default();
         let resolved = resolve_model_list(&cfg, Some(IndexMap::new()));
-        assert!(resolved.is_empty());
+        assert!(
+            resolved.contains_key("grok-build"),
+            "empty prefetch must re-inject grok-build; keys={:?}",
+            resolved.keys().collect::<Vec<_>>()
+        );
+        assert_eq!(
+            resolved.keys().next().map(|k| k.as_str()),
+            Some("grok-build")
+        );
+        for id in ["gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna"] {
+            assert!(
+                resolved.contains_key(id),
+                "empty prefetch must still inject {id}"
+            );
+            assert_eq!(resolved[id].info.provider, ModelProvider::Codex);
+        }
     }
     /// Regression: enterprise managed config aliases grok-build to their own
     /// endpoint with env_key. The bundled grok-build has supported_in_api=false.
