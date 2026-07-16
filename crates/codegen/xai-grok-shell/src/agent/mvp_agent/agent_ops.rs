@@ -1118,7 +1118,11 @@ impl MvpAgent {
             xai_session_key,
             codex_session_key,
         );
+        // Preferred Oidc and session-based ACP methods are xAI-principal
+        // preferences — do not rewrite Codex prepare provenance to SessionToken
+        // when the Codex slot is empty (wrong chat-state auth_type).
         if matches!(preferred, Some(crate::auth::PreferredAuthMethod::Oidc))
+            && model.info.provider == crate::agent::config::ModelProvider::Xai
             && !model.has_own_credentials()
             && credentials.auth_type == xai_chat_state::AuthType::ApiKey
         {
@@ -1131,8 +1135,11 @@ impl MvpAgent {
             self.cfg.borrow().grok_com_config.api_key_auth_disabled(),
             xai_session_key,
         );
-        if !has_session_key && credentials.auth_type == xai_chat_state::AuthType::ApiKey
-            && !model.has_own_credentials() && self.is_session_based_auth()
+        if !has_session_key
+            && credentials.auth_type == xai_chat_state::AuthType::ApiKey
+            && !model.has_own_credentials()
+            && self.is_session_based_auth()
+            && model.info.provider == crate::agent::config::ModelProvider::Xai
         {
             tracing::info!(
                 model = model.info().model.as_str(),
