@@ -618,20 +618,21 @@ pub fn resolve_label_collision(base_dir: &Path, label: &str) -> String {
 // Worktree Base Directory Resolution
 // ============================================================================
 
-/// Resolve the grok home for worktree paths via the **same** resolver used for
-/// `worktrees.db` (`xai_fast_worktree::resolve_grok_home`), so checkout dirs and
-/// the metadata DB always live under the same `.grok` tree. That resolver
-/// canonicalizes its `$HOME` fallback to match `xai_grok_config::grok_home()`,
-/// so worktree paths also agree with trust/hooks and other grok-home paths.
+/// Resolve the product home for worktree paths via the **same** resolver used
+/// for `worktrees.db` (`xai_fast_worktree::resolve_grok_home`), so checkout dirs
+/// and the metadata DB always live under the same `.bum` tree. That resolver
+/// is lockstep with `xai_grok_config::grok_home()` / `resolve_product_home`
+/// (`BUM_HOME` + user-home `.bum`), so worktree paths also agree with
+/// trust/hooks and other product-home paths.
 fn grok_home() -> std::path::PathBuf {
     xai_fast_worktree::resolve_grok_home().unwrap_or_else(|_| {
         dirs::home_dir()
             .unwrap_or_else(|| std::path::PathBuf::from("/tmp"))
-            .join(".grok")
+            .join(".bum")
     })
 }
 
-/// Returns `~/.grok/worktrees/<repo_slug>` for the given git root.
+/// Returns `~/.bum/worktrees/<repo_slug>` for the given git root.
 ///
 /// Uses [`repo_slug`] to derive a collision-resistant directory name from
 /// the last two meaningful path components.
@@ -640,16 +641,16 @@ pub fn worktree_base_dir(git_root: &Path) -> std::path::PathBuf {
     grok_home().join("worktrees").join(slug)
 }
 
-/// Resolves the worktree base directory (`~/.grok/worktrees/<repo_name>`)
-/// for a given source path, correctly handling grok-managed worktrees.
+/// Resolves the worktree base directory (`~/.bum/worktrees/<repo_name>`)
+/// for a given source path, correctly handling product-managed worktrees.
 ///
-/// When `source_path` is already under `~/.grok/worktrees/<repo>/...`, the
+/// When `source_path` is already under `~/.bum/worktrees/<repo>/...`, the
 /// repo name is derived from the directory structure directly. This avoids
 /// `find_main_repo_root_from_path`, which misidentifies standalone worktrees
 /// as the main repo root (returning the worktree itself instead of the
 /// original repo).
 ///
-/// For paths outside the grok worktree directory, falls back to
+/// For paths outside the product worktree directory, falls back to
 /// `find_main_repo_root_from_path` + `worktree_base_dir`.
 pub fn worktree_base_dir_for_source(source_path: &Path) -> Result<std::path::PathBuf> {
     let worktrees_dir = grok_home().join("worktrees");
@@ -693,7 +694,7 @@ pub fn label_from_path(worktree_path: &str) -> String {
         .unwrap_or_default()
 }
 
-/// Walk up from `cwd` (staying within `~/.grok/worktrees/`) to its registered
+/// Walk up from `cwd` (staying within `~/.bum/worktrees/`) to its registered
 /// worktree record.
 ///
 /// Shared resolver for [`lookup_worktree_label`] and [`touch_worktree_for_cwd`];
@@ -727,7 +728,7 @@ fn worktree_record_for_cwd(cwd: &str) -> Option<(WorktreeDb, WorktreeRecord)> {
 /// The recorded source repo of the grok-managed worktree containing `cwd`, if any.
 ///
 /// Thin wrapper over [`worktree_record_for_cwd`] that drops the DB handle;
-/// returns `None` (without DB I/O) for paths outside `~/.grok/worktrees/`.
+/// returns `None` (without DB I/O) for paths outside `~/.bum/worktrees/`.
 pub(crate) fn source_repo_for_cwd(cwd: &str) -> Option<std::path::PathBuf> {
     worktree_record_for_cwd(cwd).map(|(_db, rec)| rec.source_repo)
 }
@@ -1418,7 +1419,7 @@ impl From<CreateWorktreeFromWorktreeRequestWire> for CreateWorktreeFromWorktreeR
 
 /// Resolve the target worktree path for a fork operation.
 ///
-/// When the source path is already inside `~/.grok/worktrees/<repo>/`, the
+/// When the source path is already inside `~/.bum/worktrees/<repo>/`, the
 /// repo name is derived from the directory structure rather than calling
 /// `find_main_repo_root_from_path` (which would return the standalone
 /// worktree root itself, causing nested paths).
@@ -2476,7 +2477,7 @@ pub fn candidate_worktree_cwds_for_same_repo(current_cwd: &std::path::Path) -> R
     ))
 }
 
-/// Scan `~/.grok/worktrees/<repo_name>/` for subdirectories not tracked
+/// Scan `~/.bum/worktrees/<repo_name>/` for subdirectories not tracked
 /// in the DB. Returns a sorted list of absolute directory paths.
 fn scan_worktree_dirs_on_disk(main_repo_root: &std::path::Path) -> Vec<String> {
     let base = worktree_base_dir(main_repo_root);
@@ -2737,12 +2738,12 @@ mod tests {
     // regardless of how the caller binds the fixture's return.
     use crate::LockedTestEnv;
 
-    /// Point `GROK_HOME` at an isolated tempdir (`resolve_grok_home` re-reads
+    /// Point `BUM_HOME` at an isolated tempdir (`resolve_grok_home` re-reads
     /// the env per call by design) and register one worktree record at
     /// `<home>/worktrees/repo/wt` with no `last_accessed_at`.
     ///
     /// Returns `(env, home, worktree dir)`; the [`LockedTestEnv`] holds the lock
-    /// and restores `GROK_HOME` on drop (before releasing the lock), so the
+    /// and restores `BUM_HOME` on drop (before releasing the lock), so the
     /// caller may bind it any way.
     fn worktree_db_fixture(
         temp: &tempfile::TempDir,
@@ -2750,12 +2751,12 @@ mod tests {
         // Canonicalize so macOS /var -> /private/var agrees between the stored
         // record path and `db.get`'s canonicalized query path.
         let root = dunce::canonicalize(temp.path()).unwrap();
-        let home = root.join("grok-home");
+        let home = root.join("bum-home");
         let wt = home.join("worktrees").join("repo").join("wt");
         std::fs::create_dir_all(&wt).unwrap();
         // Acquire the lock, then set the env under it (LockedTestEnv restores the
         // env before releasing the lock on drop).
-        let env = LockedTestEnv::lock().set("GROK_HOME", &home);
+        let env = LockedTestEnv::lock().set("BUM_HOME", &home);
 
         let db = WorktreeDb::open(&home).unwrap();
         let record = WorktreeRecord {

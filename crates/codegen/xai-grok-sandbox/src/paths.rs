@@ -8,9 +8,10 @@
 use std::path::Path;
 use std::path::PathBuf;
 
-// ── Grok state directory ────────────────────────────────────────────────────
+// ── Product state directory ─────────────────────────────────────────────────
 
-/// Grok state directory — always writable (`$GROK_HOME` or `~/.grok`).
+/// Product state directory — always writable (`$BUM_HOME` or `~/.bum`).
+/// Re-exports the config SoT; no second resolver.
 pub(crate) fn grok_home() -> PathBuf {
     xai_grok_config::grok_home()
 }
@@ -88,7 +89,7 @@ pub(crate) fn essential_writable_paths(workspace: &Path) -> Vec<PathBuf> {
     paths
 }
 
-/// Writable directory paths for the read-only profile (minimal: just ~/.grok + temp).
+/// Writable directory paths for the read-only profile (minimal: product home + temp).
 /// Device files are handled separately via `allow_file` in `to_capability_set_with_config`.
 #[cfg(all(feature = "enforce", unix))]
 pub(crate) fn essential_writable_paths_minimal() -> Vec<PathBuf> {
