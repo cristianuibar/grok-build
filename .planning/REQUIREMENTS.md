@@ -28,7 +28,7 @@ Requirements for initial release. Each maps to roadmap phases.
 - [ ] **MOD-03**: User can switch models mid-session anytime; the next turn uses the newly selected model
 - [x] **MOD-04**: Requests for Grok/xAI models use the xAI / cli-chat-proxy path with xAI credentials
 - [x] **MOD-05**: Requests for GPT/Codex models use the OpenAI/Codex (ChatGPT backend) path with ChatGPT OAuth credentials — not Platform API key semantics and not the xAI proxy
-- [ ] **MOD-06**: Selecting a model whose provider has no usable credentials blocks the switch and prompts that provider’s login (fail closed; no silent mid-turn 401 as the primary UX)
+- [x] **MOD-06**: Selecting a model whose provider has no usable credentials blocks the switch and prompts that provider’s login (fail closed; no silent mid-turn 401 as the primary UX)
 
 ### Multi-agent / subagent orchestration
 
@@ -101,7 +101,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 | MOD-03 | Phase 6 | Pending |
 | MOD-04 | Phase 4 | Complete |
 | MOD-05 | Phase 4 | Complete |
-| MOD-06 | Phase 6 | Pending |
+| MOD-06 | Phase 6 | Complete |
 | AGENT-01 | Phase 7 | Pending |
 | AGENT-02 | Phase 7 | Pending |
 | AGENT-03 | Phase 7 | Pending |
