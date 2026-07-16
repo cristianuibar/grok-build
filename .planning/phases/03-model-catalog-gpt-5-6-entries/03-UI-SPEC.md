@@ -1,10 +1,11 @@
 ---
 phase: 3
 slug: model-catalog-gpt-5-6-entries
-status: draft
+status: approved
 shadcn_initialized: false
 preset: none
 created: 2026-07-16
+reviewed_at: 2026-07-16
 surface: terminal-tui
 ---
 
@@ -61,6 +62,8 @@ Declared values for **terminal layout** (cell-based; multiples of 4 where width 
 
 - Icon-only touch targets (44px) — **N/A** (keyboard/mouse terminal, not mobile web)
 - Do not invent CSS rem/px spacing outside the cell table above
+- **Character-cell chrome (xs=1 / sm=2, fold/prefix 2 cells, trailing pad 1):** locked to existing picker geometry (`views/picker.rs`). These are **not** web 4px-grid violations — do not "fix" them to 4-col prefixes or you will break fold/glyph layout. Larger gutters (`md`–`3xl`: 4/8/16/24/32) already match the standard set.
+
 
 ---
 
