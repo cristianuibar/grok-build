@@ -1,8 +1,8 @@
 ---
 phase: 6
 reviewers: [codex]
-reviewed_at: 2026-07-17T00:51:00Z
-cycle: 2
+reviewed_at: 2026-07-17T01:11:00Z
+cycle: 3
 plans_reviewed:
   - 06-01-PLAN.md
   - 06-02-PLAN.md
@@ -12,11 +12,13 @@ plans_reviewed:
   - 06-06-PLAN.md
 verdict: FAIL
 finding_counts:
-  high: 1
-  medium: 6
-  low: 1
-cycle1_high_still_open: 1
-replan_commit: 8dfdef6
+  high: 0
+  medium: 1
+  low: 0
+cycle1_high_still_open: 0
+cycle2_high_still_open: 0
+replan_commit: 53d80ac
+raw_output: /tmp/gsd-review-grok-build-1557405645-cycle3-out.md
 ---
 
 # Cross-AI Plan Review — Phase 6
@@ -405,3 +407,227 @@ No Phase 7 or Phase 8 scope creep. Provider-status polling, `bum login` copy, an
 ### Next step
 
 Replan focusing on: (1) close H3 with explicit refresh-trigger tasks/files/tests on 06-04, (2) wave-2 Effect ownership, (3) `persist_default` on deferred, (4) remaining MEDIUM/LOW list above — then cycle 3 review.
+
+---
+
+## Codex Review — Cycle 3
+
+### Overall verdict
+
+FAIL
+
+The replan resolves all prior HIGH findings and six of seven actionable cycle-2 residuals. Shell gating, auth lifecycle refresh, external-login observation, badge coverage, session observables, wave ownership, and subgroup discovery are executable as planned. One MEDIUM cross-plan contract gap remains: a settings-originated switch blocked with `MissingProvider` loses its `persist_default` intent while passing through QuestionView into `DeferredModelSwitch`. Execution as written would auto-switch after login but fail to persist the selected default or show the settings success behavior.
+
+### Cycle-2 residual verification
+
+- **H3 startup/login/logout/focus refresh triggers — RESOLVED.** Plan 04 Task 1 owns `AuthMeta` dual-slot production and `RefreshProviderAuthStatus`. Plan 04 Task 2 explicitly owns startup/session-ready, successful `AuthComplete`, logout/status-clear, unconditional `FocusGained`, and manual refresh behavior, with `p6_provider_auth_*` and `p6_refresh_*` tests. Live seams exist in `handle_auth_complete`, `dispatch_logout`, session lifecycle, and `Event::FocusGained`.
+
+- **`persist_default` on deferred — PARTIAL.** Plan 02 Task 1 threads `persist_default` through `Effect::SwitchModel` and `TaskResult::SwitchModelComplete`; Plan 03 defines it on `DeferredModelSwitch` and preserves it during session-created/status-refresh retry. However, Plan 02’s `LocalQuestionKind::MissingProviderLogin` and `MissingProviderLoginAnswered` omit the flag, while Plan 03 Task 1 action 3 sets it to `false` unless a deferred entry already exists. For a live session, `set_default_model` emits `SwitchModel` rather than stashing a deferred entry, so the settings intent is unavailable when Login now is answered.
+
+- **External-login tests and generation cancellation — RESOLVED.** Plan 03’s pinned scheduling contract and Task 2 require production emission from Login now and `FocusGained`, bounded polling, refresh completion, and stale-generation rejection through `p6_focus_gained`, `p6_external_cli`, and `p6_refresh_generation`.
+
+- **Wave ownership 02→04 — RESOLVED.** Plan 04 is wave 3 with `depends_on: [06-01, 06-02]`. Its ownership table makes Plan 02 sole owner of the transactional SwitchModel contract and Plan 04 sole owner of `RefreshProviderAuthStatus`.
+
+- **Settings DynamicEnum badge required — RESOLVED.** Plan 04 Task 3 action 5 mandates the same badge policy for `ActiveModelCatalog`; `p6_needs_login_settings_dynamic_enum` is required behavior.
+
+- **Concrete Plan 05 observables — RESOLVED.** The non-negotiable session harness requires non-empty user/assistant history with count plus stable identity, `MockInferenceServer::hold_agent_completions`, a real in-flight switch, and an observed no-cancel path. Code-path-only and pure-routing substitutes are explicitly forbidden.
+
+- **Plan 06 per-subgroup discovery — RESOLVED.** Plan 06’s required subgroup section, Task 2 action, and automated verification use `discover()` independently for shell and pager filters. Aggregate `grep -c p6_` is explicitly forbidden.
+
+- **No `||` masking in Plan 04 — RESOLVED.** Task verifications run cargo commands unconditionally under `set -euo pipefail`. Remaining `|| true` occurrences only normalize `grep -c` before an explicit numeric discovery assertion; they do not mask cargo failures.
+
+### Cycle-1 HIGH verification
+
+- **H1 transactional switch / no optimistic current — RESOLVED.** Plan 02 Task 1 forbids current-model, app-model, toast, and default persistence changes before `SwitchModelComplete(Ok)`, with dedicated transactional tests.
+- **H2 external CLI login drives deferred retry — RESOLVED.** Plan 03 requires bounded polling, unconditional focus refresh, refresh-result consumption, and stale-generation cancellation.
+- **H3 authoritative dual-slot status producer — RESOLVED.** Plan 04 Tasks 1–2 cover the producer, cache, refresh effect, and all required lifecycle triggers.
+
+### Per-plan analysis
+
+#### 06-01 — Shell missing-provider gate
+
+**Verdict:** PASS
+
+**Strengths:** Correct authority and gate position; dual-slot `store_usable` semantics; refreshable credentials accepted; BYOK exemption; distinct typed ACP error; real apply-path harness and no-side-effect assertions.
+
+**Findings:** None.
+
+#### 06-02 — Transactional pager gate and QuestionView
+
+**Verdict:** PASS
+
+**Strengths:** Fully resolves optimistic state/persistence; strict provider parsing; separate MissingProvider QuestionView; exhaustive `LocalQuestionKind` consumer included; Keep current is non-mutating.
+
+**Findings:** None independently; its QuestionView payload participates in the shared Plan 03 finding below.
+
+#### 06-03 — Login recovery and deferred retry
+
+**Verdict:** FAIL
+
+**Strengths:** Provider-aware deferred state, bounded external-login polling, production refresh emissions, wrong-provider rejection, stale-generation handling, and session-created retry are well specified.
+
+**Findings:**
+
+- **[MEDIUM] Settings-origin `persist_default` is lost across QuestionView → Login now** — Plan 02 Task 1 carries the flag only as far as `SwitchModelComplete`; its QuestionView kind/action carries model, effort, and provider only. Plan 03 Task 1 action 3 then creates the deferred intent with `persist_default: false` unless an entry already exists, but the live-session settings path has not stashed one — carry the flag through `LocalQuestionKind`/answer Action, or stash a complete deferred gate intent when MissingProvider completes; add an immediate-session settings → block → Login now → refresh → successful retry persistence test.
+
+#### 06-04 — Dual-slot cache and badges
+
+**Verdict:** PASS
+
+**Strengths:** Closes H3 lifecycle ownership; serializes shared file edits; preserves the mixed catalog; handles refreshable credentials and BYOK; requires both slash and settings badges; avoids filesystem reads during picker construction.
+
+**Findings:** None.
+
+#### 06-05 — Session continuity proofs
+
+**Verdict:** PASS
+
+**Strengths:** Uses a real session/apply path, non-empty history snapshots, held inference, observable non-cancellation, next-provider routing, both switch directions, same-provider switching, and BYOK.
+
+**Findings:** None.
+
+#### 06-06 — Validation and phase gate
+
+**Verdict:** PASS
+
+**Strengths:** Correct wave map, unique prefixes, independent discovery assertions, shell/pager separation, incompatible-agent regression, and fixture-only policy.
+
+**Findings:** None.
+
+### Cross-cutting findings
+
+- No unresolved same-wave conflict remains. Plans 02→04→03 serialize all shared `actions.rs` and `effects/mod.rs` work. Plans 01→05 serialize `model_switch_gate.rs`.
+- The only incomplete shared contract is:
+
+  `persist_default` in SwitchModelComplete → MissingProvider QuestionView → Login-now answer → DeferredModelSwitch.
+
+- Auth status remains display-only in the pager; Plan 01’s shell gate stays authoritative.
+- Poll generation, provider isolation, malformed provider handling, and secret-free errors are adequately covered by tasks and threat models.
+- No new credential-leakage or cross-slot threat-model gap was found.
+
+### Symbol verification table
+
+| Plan claim | Code reality | Status |
+|---|---|---|
+| `model_switch::apply` is the switch authority | `pub(crate)` handler exists at `model_switch.rs:13` | OK |
+| Gate can precede preparation and mutation | Resolve at line 34; prepare at 116; `SetSessionModel` at 196; broadcast later | OK |
+| Dual-provider usability exists | `AuthStatusReport`, `credential_usable`, and `store_usable` exist | OK |
+| `AuthMeta` already carries dual slots | Live `AuthMeta` is xAI account/subscription only | PLANNED |
+| BYOK seam exists | `ModelEntry::has_own_credentials` exists | OK |
+| ACP model metadata exposes provider | `to_acp_model_info` emits `provider` | OK |
+| ACP metadata exposes `hasOwnCredentials` | Not live | PLANNED |
+| Pager deferred state is provider-aware | Live state remains `Option<(ModelId, Option<Effort>)>` | PLANNED |
+| Transactional settings switch is live | Live `set_default_model` still mutates and persists optimistically | PLANNED |
+| `Event::FocusGained` exists | Present at `event_loop.rs:2665` | OK |
+| MissingProvider QuestionView kind exists | Not live | PLANNED |
+| Exhaustive local-kind consumer exists | `interactions.rs:81–86` matches current variants | OK |
+| Settings DynamicEnum seam exists | `dynamic_enum_choices` and `PagerLocalSnapshot` exist | OK |
+| Real MvpAgent ACP harness patterns exist | `session_load_perf.rs` and `git_contention_e2e.rs` construct both ACP sides | OK |
+| Held inference observable exists | `MockInferenceServer::hold_agent_completions` and release exist | OK |
+| History observables exist | Chat-state exposes conversation, length, item, and count queries | OK |
+| Existing routing regression exists | `switch_changes_next_sample_route` is present but remains pure routing only | OK |
+| Phase 6 `p6_` tests exist | None exist before execution | PLANNED |
+| Settings-origin persist intent reaches deferred Login now | No live field; updated plan omits the handoff | MISSING |
+
+### Residual checker / test executability notes
+
+- Cargo tests were not run because this was a read-only review and Cargo would write target locks/artifacts.
+- Documented cargo command forms are syntactically valid.
+- Absence of `p6_` tests and `model_switch_gate.rs` is expected before execution.
+- Plan 06’s `discover()` ordering is valid for both integration targets and crate-wide filters.
+- Plan 04 no longer has cargo-failure fallback masking.
+- A required regression is still missing from plan behavior: live-session `SetDefaultModel` → MissingProvider → Login now → provider becomes usable → retry succeeds → exactly one default persistence effect, app model update, and settings success toast. Keep current must produce none of those effects.
+
+### Scope creep check
+
+No Phase 7 subagent orchestration or Phase 8 rebrand work is included. Provider-status refresh, `bum login` copy, model metadata, and settings badge plumbing are necessary Phase 6 work.
+
+### Recommended plan edits before execute
+
+1. Complete the settings-origin deferred contract:
+
+   - Add `persist_default` to `LocalQuestionKind::MissingProviderLogin` and `MissingProviderLoginAnswered`, or stash a complete `DeferredModelSwitch` when the missing-provider result opens.
+   - Change Plan 03 Task 1 so Login now consumes the carried value instead of defaulting to `false`.
+   - Add a `p6_deferred_*` test covering the full live-session settings block/login/retry/success path and asserting one default persist; add the Keep current counterpart asserting zero persistence.
+
+### Finding counts
+
+- HIGH: 0
+- MEDIUM: 1
+- LOW: 0
+- cycle2_high_still_open: 0
+- cycle1_high_still_open: 0
+
+VERDICT: FAIL  
+CURRENT_HIGH: 0  
+CURRENT_ACTIONABLE: 1
+
+---
+
+## Synthesis (orchestrator) — Cycle 3 (FINAL)
+
+**Overall:** Cycle 3 **FAIL** with **0 HIGH** — replan `53d80ac` closed all prior HIGHs and every named cycle-2 residual except a narrow **`persist_default` handoff** through QuestionView on the **live-session settings** path. Plans 01, 02, 04, 05, 06 are execute-ready; Plan 03 is execute-ready for recovery/external CLI except that settings-origin Login-now deferred may incorrectly force `persist_default: false`.
+
+### Cycle-2 residual disposition
+
+| Residual | Cycle 3 |
+|----------|---------|
+| H3 refresh trigger ownership (04 Task 2) | **RESOLVED** |
+| `persist_default` on deferred | **PARTIAL** — field exists on Effect/Complete + DeferredModelSwitch; **live-session** MissingProvider → Login now drops the flag |
+| External-login emission + generation cancel | **RESOLVED** |
+| Wave serialize 02→04 | **RESOLVED** (04 wave 3 depends_on 02) |
+| Settings DynamicEnum badge required | **RESOLVED** |
+| Plan 05 concrete observables | **RESOLVED** (named history + MockInferenceServer; no substitutes) |
+| Plan 06 per-subgroup discovery | **RESOLVED** |
+| Plan 04 no `\|\|` cargo masking | **RESOLVED** |
+
+### Cycle-1 HIGH disposition (final)
+
+| # | Topic | Cycle 3 |
+|---|--------|---------|
+| H1 | Transactional switch / no optimistic current | **RESOLVED** |
+| H2 | External CLI → deferred apply | **RESOLVED** |
+| H3 | Dual-slot AuthMeta + lifecycle refresh | **RESOLVED** |
+
+### Unresolved HIGH (cycle 3)
+
+None.
+
+### Unresolved actionable Non-HIGH
+
+1. **[M] Settings-origin `persist_default` lost across QuestionView → Login now (02/03)** — Live-session `set_default_model` emits `SwitchModel { persist_default: true }` then opens `MissingProviderLogin { model_id, effort, provider }` **without** the flag; Plan 03 Login now sets `persist_default: false` unless a pre-existing deferred stash already holds true (no-session path only). Fix: carry `persist_default` on kind/answer **or** stash complete `DeferredModelSwitch` on MissingProvider open; Login now consumes it; add `p6_deferred_*` live-session settings block→login→retry persist test (+ Keep current zero-persist).
+
+### Fully resolved this cycle (do not re-count)
+
+- H3 lifecycle emissions; wave 02→04 ownership; DynamicEnum badge; Plan 05 named observables; Plan 06 per-subgroup discover; Plan 04 verify no cargo masking; external login FocusGained/poll/generation; all cycle-1 HIGHs.
+
+### Criteria checklist (cycle 3)
+
+| Criterion | Result |
+|-----------|--------|
+| Shell gate before prepare/SetSessionModel/ModelChanged | OK planned (01 PASS) |
+| Usable creds both xai + codex | OK planned |
+| BYOK / has_own_credentials | Shell + badge suppress planned |
+| Typed MISSING_PROVIDER ≠ IncompatibleAgent | OK planned |
+| QuestionView + no optimistic current | **H1 RESOLVED** |
+| deferred after Login now + external CLI | **H2 RESOLVED**; scheduling tests planned |
+| Dual-slot usable producer + refresh ownership | **H3 RESOLVED** |
+| Badge does not hide models; settings DynamicEnum | OK planned |
+| Test commands / per-subgroup discovery | OK planned |
+| Threat models | Adequate |
+| Hallucinated symbols | Core OK; planned symbols PLANNED |
+| Phase 7/8 scope creep | None |
+| Same-wave file ownership | **RESOLVED** (02→04) |
+| Settings persist_default through Login now | **MEDIUM residual** |
+
+### Execute readiness
+
+- **No HIGH blockers.** Final cycle residual is one MEDIUM contract hole on settings default-persist after blocked switch + Login now.
+- Prefer a **tiny replan** of Plans 02/03 for the handoff field + test **or** execute with that item as first-class must-fix during Plan 02 Task 1 / Plan 03 Task 1 (executor must not default Login-now deferred to `false` when `SwitchModelComplete` had `persist_default: true`).
+- Phase gate should not ship without the live-session settings→Login now→persist path covered.
+
+### Next step
+
+Optional micro-replan of 02/03 for `persist_default` on QuestionView/answer/deferred Login now + one E2E `p6_` test; otherwise start `/gsd-execute-phase 6` with that residual as a hard execute acceptance check.
+
+**Counts:** HIGH 0 · MEDIUM 1 · LOW 0 · cycle1/2 high still open 0 · CURRENT_ACTIONABLE 1
