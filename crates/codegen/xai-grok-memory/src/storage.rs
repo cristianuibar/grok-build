@@ -74,7 +74,7 @@ impl MemoryStorage {
     }
 
     /// Create a `MemoryStorage` with explicit paths (for testing).
-    #[cfg(test)]
+    #[cfg(any(test, debug_assertions))]
     pub fn with_paths(global_dir: PathBuf, workspace_dir: PathBuf) -> Self {
         Self {
             global_dir,

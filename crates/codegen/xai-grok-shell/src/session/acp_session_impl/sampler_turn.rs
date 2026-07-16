@@ -278,19 +278,51 @@ impl SessionActor {
         // Transform B: attach xAI AuthManagerBearerResolver only for Some(Xai).
         // Unknown (None) and Codex never attach — credential ownership is catalog
         // Option provider, not URL heuristics (T-04-02 / T-04-09).
-        // Phase 5: live multi-principal Codex AuthManager refresh (snapshot only here).
         let use_bearer_resolver = crate::agent::config::reconstruct_attach_policy_from_facts(
             &model_facts,
             session_token_gate_active,
         );
         self.log_auth_gate_unknown("reconstruct_full_config", gate, &cfg.base_url);
         let auth_scheme = model_facts.auth_scheme;
+
+        // AUTH-05: per-request Codex OAuth ensure_fresh on SessionToken + first-party host.
+        // BYOK (ApiKey) and custom non-allowlisted hosts keep prepared creds.api_key;
+        // never force OAuth bearer override or IdP spend on those routes.
+        let endpoints = crate::agent::config::EndpointsConfig::from_effective_config();
+        let mut api_key = creds.api_key;
+        let mut codex_account_id: Option<String> = None;
+        let codex_session_oauth = model_facts.provider
+            == Some(crate::agent::config::ModelProvider::Codex)
+            && creds.auth_type == xai_chat_state::AuthType::SessionToken
+            && crate::agent::config::is_first_party_codex_url(&cfg.base_url, &endpoints);
+        if codex_session_oauth {
+            match crate::agent::config::ensure_fresh_codex_auth().await {
+                Some(material) => {
+                    api_key = Some(material.bearer);
+                    codex_account_id = material.account_id;
+                }
+                None => {
+                    // Permanent fail / hard-expired: do not serve stale prepared bearer.
+                    api_key = None;
+                }
+            }
+        }
+
         let mut extra_headers = cfg.extra_headers;
         crate::agent::config::inject_url_derived_headers(
             &mut extra_headers,
             creds.alpha_test_key.as_deref(),
             &cfg.base_url,
         );
+        // Trusted-host ChatGPT-Account-ID only (D-11) — same first-party gate as bearer.
+        if codex_session_oauth {
+            crate::agent::config::inject_chatgpt_account_id_header(
+                &mut extra_headers,
+                &cfg.base_url,
+                &endpoints,
+                codex_account_id.as_deref(),
+            );
+        }
         let compaction_at_tokens = self.compaction_at_tokens.get();
         let compactions_remaining = self.compactions_remaining.get();
         if compactions_remaining.is_some() || compaction_at_tokens.is_some() {
@@ -316,7 +348,7 @@ impl SessionActor {
             }
         }
         SamplingConfig {
-            api_key: creds.api_key,
+            api_key,
             base_url: cfg.base_url,
             model: cfg.model,
             max_completion_tokens: cfg.max_completion_tokens,

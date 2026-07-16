@@ -204,7 +204,7 @@ impl CpuProfileManager {
         Self::default()
     }
 
-    #[cfg(test)]
+    #[cfg(any(test, debug_assertions))]
     pub fn force_unsupported_for_test(&mut self) {
         self.force_unsupported = true;
     }
@@ -517,8 +517,8 @@ fn now_timestamp() -> String {
 }
 
 // Module-level (not inside `mod tests`) so downstream crates' test targets
-// can reach it in test-only builds.
-#[cfg(test)]
+// can reach it when this crate is built as a non-test dependency.
+#[cfg(any(test, debug_assertions))]
 impl CpuProfileManager {
     pub fn start_with_engine_for_test(
         &mut self,

@@ -11,7 +11,8 @@
 //!   per-session gateway bridge actor and routes prompts through
 //!   it. Unset → falls back to [`GrokBuildEnvironment::gateway_ws_url`] for
 //!   sessions created in gateway mode; otherwise local-mode (unchanged).
-#[cfg(test)]
+// Re-export for dependent crate `--lib` tests (cfg(test) alone is crate-local).
+#[cfg(any(test, debug_assertions))]
 pub use xai_grok_env::EnvVarGuard;
 pub use xai_grok_env::{
     GrokBuildEnvironment, PROD_ASSET_SERVER_URL, PROD_CLI_CHAT_PROXY_BASE_URL, PROD_GATEWAY_WS_URL,

@@ -43,13 +43,16 @@ use std::path::Path;
 use chrono::{Duration, Utc};
 use indexmap::IndexMap;
 use xai_grok_shell::agent::config::{
-    inject_url_derived_headers, is_first_party_codex_url, EndpointsConfig, CODEX_BASE_URL_DEFAULT,
-    XAI_API_BASE_URL_DEFAULT,
+    clear_ensure_fresh_codex_test_hooks, ensure_fresh_codex_auth_at, inject_chatgpt_account_id_header,
+    inject_url_derived_headers, is_first_party_codex_url, set_ensure_fresh_codex_synthetic_permanent,
+    set_ensure_fresh_codex_synthetic_success, set_ensure_fresh_codex_synthetic_transient,
+    EndpointsConfig, EnsureFreshCodexOptions, CODEX_BASE_URL_DEFAULT, XAI_API_BASE_URL_DEFAULT,
 };
 use xai_grok_shell::auth::codex::{
-    self, CODEX_AUTH_SCOPE, CODEX_CLIENT_ID, CODEX_ISSUER, CODEX_PREFERRED_PORT, CodexAuthorizeSession,
-    CodexTokenResponse, apply_codex_oauth_callback, build_codex_authorize_url, codex_device_token_url,
-    codex_device_usercode_url, codex_redirect_uri, persist_codex_tokens,
+    self, apply_codex_oauth_callback, build_codex_authorize_url, codex_device_token_url,
+    codex_device_usercode_url, codex_redirect_uri, merge_codex_refresh_response, persist_codex_tokens,
+    CodexAuthorizeSession, CodexTokenResponse, CODEX_AUTH_SCOPE, CODEX_CLIENT_ID, CODEX_ISSUER,
+    CODEX_PREFERRED_PORT,
 };
 use xai_grok_shell::auth::{
     bare_logout_usage, clear_all_provider_slots, clear_provider_slot, credential_usable,
@@ -58,6 +61,8 @@ use xai_grok_shell::auth::{
     select_provider_access_token, write_cli_auth_status, AuthMode, AuthProvider, AuthStatusReport,
     AuthStore, GrokAuth, ProviderStoreMutation, PROVIDER_CODEX, PROVIDER_XAI,
 };
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::Arc;
 
 const XAI_FAKE: &str = "xai-fake-token";
 const CODEX_FAKE: &str = "codex-fake-token";
@@ -801,38 +806,99 @@ fn auth_status_usable_expired_no_refresh() {
     assert!(!st.usable, "hard-expired without refresh → not usable");
 }
 
-// ── AUTH-05: Independent refresh / headers (RED until Plan 05) ─────────────
+// ── AUTH-05: Independent refresh / headers ─────────────────────────────────
+
+fn write_near_expiry_codex_dual(path: &Path, codex: GrokAuth) {
+    let mut xai: AuthStore = BTreeMap::new();
+    xai.insert(xai_scope(), sample_xai_auth());
+    let mut codex_store: AuthStore = BTreeMap::new();
+    codex_store.insert(codex_scope(), codex);
+    let document = serde_json::json!({
+        "version": 1,
+        "providers": {
+            "xai": xai,
+            "codex": codex_store,
+        }
+    });
+    std::fs::write(path, serde_json::to_vec_pretty(&document).unwrap()).unwrap();
+}
+
+fn near_expiry_codex(key: &str) -> GrokAuth {
+    let mut a = sample_codex_auth();
+    a.key = key.to_owned();
+    // Inside 5-minute early-invalidation buffer → ensure_fresh refreshes.
+    a.expires_at = Some(Utc::now() + Duration::minutes(2));
+    a
+}
+
+fn fresh_rotated_codex() -> GrokAuth {
+    GrokAuth {
+        key: "codex-fresh-after-refresh".to_owned(),
+        auth_mode: AuthMode::Oidc,
+        create_time: Utc::now(),
+        user_id: "codex-user".to_owned(),
+        email: Some("codex@example.test".to_owned()),
+        organization_id: Some(CODEX_ACCOUNT.to_owned()),
+        expires_at: Some(Utc::now() + Duration::hours(1)),
+        refresh_token: Some("codex-rt-rotated".to_owned()),
+        oidc_issuer: Some(CODEX_ISSUER.to_owned()),
+        oidc_client_id: Some(CODEX_CLIENT_ID.to_owned()),
+        ..Default::default()
+    }
+}
 
 /// Outer ensure_fresh must update only codex slot.
-#[test]
-fn codex_refresh_isolates() {
+#[tokio::test(flavor = "current_thread")]
+async fn codex_refresh_isolates() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("auth.json");
-    write_dual_auth_fixture(&path);
+    write_near_expiry_codex_dual(&path, near_expiry_codex(CODEX_FAKE));
+    let counter = Arc::new(AtomicUsize::new(0));
+    set_ensure_fresh_codex_synthetic_success(path.clone(), fresh_rotated_codex(), counter);
+    let material = ensure_fresh_codex_auth_at(&path, EnsureFreshCodexOptions::default())
+        .await
+        .expect("ensure_fresh should return material");
+    clear_ensure_fresh_codex_test_hooks();
 
-    let ensure_fresh_persisted_codex_only = false;
-    assert!(
-        ensure_fresh_persisted_codex_only,
-        "Plan 05 Task 2: codex_refresh_isolates — expect ensure_fresh_codex_auth to \
-         rotate providers.codex access token only; xAI key remains {XAI_FAKE} \
-         (auth_file={})",
-        path.display()
+    assert_eq!(material.bearer, "codex-fresh-after-refresh");
+    let on_disk: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+    assert_eq!(
+        pointer_key(&on_disk, PROVIDER_XAI, &xai_scope()).as_deref(),
+        Some(XAI_FAKE),
+        "xAI must be untouched after Codex refresh"
     );
+    let codex = read_provider_auth_store(&path, PROVIDER_CODEX)
+        .expect("read")
+        .expect("codex present");
+    let tok = select_provider_access_token(&codex).expect("codex token");
+    assert_eq!(tok.key, "codex-fresh-after-refresh");
 }
 
 /// invalid_grant on Codex must not wipe xAI.
-#[test]
-fn codex_invalid_grant_no_xai_wipe() {
+#[tokio::test(flavor = "current_thread")]
+async fn codex_invalid_grant_no_xai_wipe() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("auth.json");
-    write_dual_auth_fixture(&path);
+    write_near_expiry_codex_dual(&path, near_expiry_codex(CODEX_FAKE));
+    set_ensure_fresh_codex_synthetic_permanent(path.clone());
+    let material = ensure_fresh_codex_auth_at(&path, EnsureFreshCodexOptions::default()).await;
+    clear_ensure_fresh_codex_test_hooks();
 
-    let permanent_fail_cleared_codex_only = false;
+    assert!(material.is_none(), "permanent fail returns no material");
+    let on_disk: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+    assert_eq!(
+        pointer_key(&on_disk, PROVIDER_XAI, &xai_scope()).as_deref(),
+        Some(XAI_FAKE),
+        "xAI must survive Codex invalid_grant"
+    );
+    // Codex slot cleared (or empty selection).
+    let codex = read_provider_auth_store(&path, PROVIDER_CODEX).expect("read");
     assert!(
-        permanent_fail_cleared_codex_only,
-        "Plan 05 Task 2: codex_invalid_grant_no_xai_wipe — permanent Codex fail must \
-         clear/mark only providers.codex; xAI key remains {XAI_FAKE} (auth_file={})",
-        path.display()
+        codex.as_ref().is_none_or(|s| s.is_empty()
+            || select_provider_access_token(s).is_none()),
+        "codex slot cleared/empty after permanent fail"
     );
 }
 
@@ -840,31 +906,13 @@ fn codex_invalid_grant_no_xai_wipe() {
 #[test]
 fn codex_refresh_preserves_identity_when_response_omits_refresh_token() {
     let prev = sample_codex_auth();
-    // Simulated token response without refresh_token rotation.
-    let mut refreshed = GrokAuth {
-        key: "codex-rotated-access".to_owned(),
-        auth_mode: AuthMode::Oidc,
-        create_time: Utc::now(),
-        user_id: String::new(),
-        email: None,
-        organization_id: None,
-        expires_at: Some(Utc::now() + Duration::hours(1)),
+    let tokens = CodexTokenResponse {
+        access_token: "codex-rotated-access".to_owned(),
         refresh_token: None, // IdP omitted RT
-        oidc_issuer: prev.oidc_issuer.clone(),
-        oidc_client_id: prev.oidc_client_id.clone(),
-        ..Default::default()
+        id_token: None,
+        expires_in: Some(3600),
     };
-
-    // Plan 05 Task 1 owns pure CodexRefresher / merge helper. Until exported:
-    let pure_merge_applied = false;
-    if pure_merge_applied {
-        if refreshed.refresh_token.is_none() {
-            refreshed.refresh_token = prev.refresh_token.clone();
-        }
-        refreshed.user_id = prev.user_id.clone();
-        refreshed.email = prev.email.clone();
-        refreshed.organization_id = prev.organization_id.clone();
-    }
+    let refreshed = merge_codex_refresh_response(&prev, &tokens);
 
     assert_eq!(
         refreshed.refresh_token.as_deref(),
@@ -881,60 +929,97 @@ fn codex_refresh_preserves_identity_when_response_omits_refresh_token() {
         refreshed.user_id, prev.user_id,
         "Plan 05 Task 1: must preserve user identity across refresh"
     );
+    assert_eq!(refreshed.email, prev.email);
+    assert_eq!(refreshed.oidc_issuer, prev.oidc_issuer);
+    assert_eq!(refreshed.oidc_client_id, prev.oidc_client_id);
+    assert_eq!(refreshed.key, "codex-rotated-access");
 }
 
 /// Concurrent ensure_fresh must spend IdP refresh once.
-#[test]
-fn codex_concurrent_refresh_single_idp_spend() {
-    let concurrent_single_spend = false;
-    assert!(
-        concurrent_single_spend,
-        "Plan 05: codex_concurrent_refresh_single_idp_spend — concurrent ensure_fresh \
-         must single-flight IdP refresh (one spend of refresh_token)"
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn codex_concurrent_refresh_single_idp_spend() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("auth.json");
+    write_near_expiry_codex_dual(&path, near_expiry_codex(CODEX_FAKE));
+    let counter = Arc::new(AtomicUsize::new(0));
+    set_ensure_fresh_codex_synthetic_success(
+        path.clone(),
+        fresh_rotated_codex(),
+        counter.clone(),
+    );
+
+    let p1 = path.clone();
+    let p2 = path.clone();
+    let (a, b) = tokio::join!(
+        ensure_fresh_codex_auth_at(&p1, EnsureFreshCodexOptions::default()),
+        ensure_fresh_codex_auth_at(&p2, EnsureFreshCodexOptions::default()),
+    );
+    clear_ensure_fresh_codex_test_hooks();
+
+    assert!(a.is_some() && b.is_some());
+    assert_eq!(
+        counter.load(Ordering::SeqCst),
+        1,
+        "exactly one IdP spend under concurrent ensure_fresh"
     );
 }
 
 /// Fresh unexpired token must skip IdP entirely.
-#[test]
-fn codex_fresh_token_skips_idp() {
+#[tokio::test(flavor = "current_thread")]
+async fn codex_fresh_token_skips_idp() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("auth.json");
     write_dual_auth_fixture(&path);
+    let counter = Arc::new(AtomicUsize::new(0));
+    // Even if synthetic is installed, fresh token must short-circuit before IdP.
+    set_ensure_fresh_codex_synthetic_success(path.clone(), fresh_rotated_codex(), counter.clone());
+    let material = ensure_fresh_codex_auth_at(&path, EnsureFreshCodexOptions::default())
+        .await
+        .expect("fresh token returns material");
+    clear_ensure_fresh_codex_test_hooks();
 
-    let idp_called = true; // no public ensure_fresh yet → cannot prove skip
-    assert!(
-        !idp_called,
-        "Plan 05: codex_fresh_token_skips_idp — hard-unexpired access token must not \
-         call IdP refresh (auth_file={})",
-        path.display()
+    assert_eq!(material.bearer, CODEX_FAKE);
+    assert_eq!(
+        counter.load(Ordering::SeqCst),
+        0,
+        "hard-unexpired access must not call IdP"
     );
 }
 
 /// Transient fail with hard-unexpired access keeps old token.
-#[test]
-fn codex_transient_fail_hard_unexpired_keeps_token() {
+#[tokio::test(flavor = "current_thread")]
+async fn codex_transient_fail_hard_unexpired_keeps_token() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("auth.json");
-    write_dual_auth_fixture(&path);
+    // Near-expiry (buffer) but hard-unexpired (real exp in future).
+    write_near_expiry_codex_dual(&path, near_expiry_codex(CODEX_FAKE));
+    set_ensure_fresh_codex_synthetic_transient(path.clone());
+    let material = ensure_fresh_codex_auth_at(&path, EnsureFreshCodexOptions::default()).await;
+    clear_ensure_fresh_codex_test_hooks();
 
-    let kept_old = false;
-    assert!(
-        kept_old,
-        "Plan 05: codex_transient_fail_hard_unexpired_keeps_token — transient IdP fail \
-         while access still unexpired must keep existing codex key {CODEX_FAKE} \
-         (auth_file={})",
-        path.display()
+    assert_eq!(
+        material.as_ref().map(|m| m.bearer.as_str()),
+        Some(CODEX_FAKE),
+        "transient fail with hard-unexpired keeps old codex key"
     );
 }
 
 /// Transient fail with hard-expired access yields no usable credential.
-#[test]
-fn codex_transient_fail_hard_expired_no_credential() {
-    let no_usable_credential = false;
+#[tokio::test(flavor = "current_thread")]
+async fn codex_transient_fail_hard_expired_no_credential() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("auth.json");
+    let mut expired = sample_codex_auth();
+    expired.key = CODEX_FAKE.to_owned();
+    expired.expires_at = Some(Utc::now() - Duration::minutes(1));
+    write_near_expiry_codex_dual(&path, expired);
+    set_ensure_fresh_codex_synthetic_transient(path.clone());
+    let material = ensure_fresh_codex_auth_at(&path, EnsureFreshCodexOptions::default()).await;
+    clear_ensure_fresh_codex_test_hooks();
+
     assert!(
-        no_usable_credential,
-        "Plan 05: codex_transient_fail_hard_expired_no_credential — transient fail with \
-         hard-expired access must not surface a usable Codex bearer"
+        material.is_none(),
+        "transient fail with hard-expired access must not surface usable bearer"
     );
 }
 
@@ -952,9 +1037,13 @@ fn chatgpt_account_id_header_on_codex() {
     );
 
     let mut headers = IndexMap::new();
-    // Current public inject_url_derived_headers has no account-id arg; Plan 05
-    // will inject ChatGPT-Account-ID only for trusted Codex + OAuth material.
     inject_url_derived_headers(&mut headers, None, CODEX_BASE_URL_DEFAULT);
+    inject_chatgpt_account_id_header(
+        &mut headers,
+        CODEX_BASE_URL_DEFAULT,
+        &endpoints,
+        Some(CODEX_ACCOUNT),
+    );
 
     assert_eq!(
         headers.get("ChatGPT-Account-ID").map(String::as_str),
@@ -967,8 +1056,15 @@ fn chatgpt_account_id_header_on_codex() {
 /// xAI inference URL must never receive ChatGPT-Account-ID.
 #[test]
 fn chatgpt_account_id_header_absent_on_xai() {
+    let endpoints = EndpointsConfig::default();
     let mut headers = IndexMap::new();
     inject_url_derived_headers(&mut headers, None, XAI_API_BASE_URL_DEFAULT);
+    inject_chatgpt_account_id_header(
+        &mut headers,
+        XAI_API_BASE_URL_DEFAULT,
+        &endpoints,
+        Some(CODEX_ACCOUNT),
+    );
     assert!(
         !headers.contains_key("ChatGPT-Account-ID"),
         "chatgpt_account_id_header_absent_on_xai — xAI base URL must not get \
@@ -980,8 +1076,10 @@ fn chatgpt_account_id_header_absent_on_xai() {
 #[test]
 fn chatgpt_account_id_header_absent_on_custom_endpoint() {
     let custom = "https://evil.example/v1";
+    let endpoints = EndpointsConfig::default();
     let mut headers = IndexMap::new();
     inject_url_derived_headers(&mut headers, None, custom);
+    inject_chatgpt_account_id_header(&mut headers, custom, &endpoints, Some(CODEX_ACCOUNT));
     assert!(
         !headers.contains_key("ChatGPT-Account-ID"),
         "chatgpt_account_id_header_absent_on_custom_endpoint — custom host must not \

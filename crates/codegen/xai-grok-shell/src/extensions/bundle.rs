@@ -430,6 +430,7 @@ mod tests {
     };
     use prod_mc_cli_chat_proxy_types::SubagentBundle;
     use serial_test::serial;
+    use std::path::PathBuf;
     use std::sync::{Arc, Mutex};
     use tempfile::TempDir;
     /// Explicit bundle cache root under the temp dir. Tests must not call

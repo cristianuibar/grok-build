@@ -4300,7 +4300,8 @@ impl WorkspaceHandle {
         )
     }
 }
-#[cfg(test)]
+// Visible to dependent crate `--lib` tests (not only when this crate is under test).
+#[cfg(any(test, debug_assertions))]
 impl WorkspaceHandle {
     fn test_config(
         root_cwd: std::path::PathBuf,

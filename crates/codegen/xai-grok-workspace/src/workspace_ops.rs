@@ -1514,7 +1514,9 @@ impl WorkspaceOps {
         }
     }
 }
-#[cfg(test)]
+// Available to dependent crate tests (cfg(test) on this crate alone is not
+// visible when shell/etc. compile --lib against a non-test dependency build).
+#[cfg(any(test, debug_assertions))]
 impl WorkspaceOps {
     /// Test variant backed by a temp dir.
     ///

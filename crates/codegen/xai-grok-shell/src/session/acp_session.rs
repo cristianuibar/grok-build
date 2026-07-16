@@ -1771,6 +1771,10 @@ impl Drop for TurnMetrics {
 #[cfg(test)]
 #[path = "acp_session_tests/auth_error_no_retry_tests.rs"]
 mod auth_error_no_retry_tests;
+/// AUTH-05 Option C: reconstruct_full_config Codex ensure_fresh wiring.
+#[cfg(test)]
+#[path = "acp_session_tests/codex_reconstruct_refresh_tests.rs"]
+mod codex_reconstruct_refresh_tests;
 /// Regression coverage for the auto-wake suppression sweep + shutdown
 /// drain. These exercise the helpers added to fix the trailing
 /// `<system-reminder>` chat history bug.

@@ -4705,6 +4705,7 @@ pub fn snapshot_codex_session_key_from_auth_store() -> Option<String> {
         path: PathBuf,
         modified: Option<SystemTime>,
         len: u64,
+        epoch: u64,
         token: Option<String>,
     }
 
@@ -4714,12 +4715,14 @@ pub fn snapshot_codex_session_key_from_auth_store() -> Option<String> {
     let meta = std::fs::metadata(&path).ok();
     let modified = meta.as_ref().and_then(|m| m.modified().ok());
     let len = meta.as_ref().map(|m| m.len()).unwrap_or(0);
+    let epoch = CODEX_SNAPSHOT_EPOCH.load(std::sync::atomic::Ordering::SeqCst);
 
     if let Ok(guard) = CACHE.lock()
         && let Some(cached) = guard.as_ref()
         && cached.path == path
         && cached.modified == modified
         && cached.len == len
+        && cached.epoch == epoch
     {
         return cached.token.clone();
     }
@@ -4741,10 +4744,49 @@ pub fn snapshot_codex_session_key_from_auth_store() -> Option<String> {
             path,
             modified,
             len,
+            epoch,
             token: token.clone(),
         });
     }
     token
+}
+
+/// Invalidate the prepare-time Codex session-key mtime cache after a live
+/// refresh (AUTH-05). Safe to call when no cache entry exists.
+pub fn invalidate_codex_session_key_snapshot() {
+    CODEX_SNAPSHOT_EPOCH.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+}
+
+static CODEX_SNAPSHOT_EPOCH: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
+/// Re-export AUTH-05 ensure_fresh + material for reconstruct / integration.
+pub use crate::auth::codex::{
+    clear_ensure_fresh_codex_test_hooks, ensure_fresh_codex_auth, ensure_fresh_codex_auth_at,
+    set_ensure_fresh_codex_synthetic_permanent, set_ensure_fresh_codex_synthetic_success,
+    set_ensure_fresh_codex_synthetic_transient, set_ensure_fresh_codex_test_hooks_public,
+    CodexAuthMaterial, EnsureFreshCodexOptions,
+};
+
+/// Inject `ChatGPT-Account-ID` only for trusted first-party Codex endpoints.
+///
+/// Does **not** read auth.json. Callers pass `account_id` from
+/// [`CodexAuthMaterial`] after ensure_fresh. No-op when account_id is None or
+/// the base URL is not a first-party Codex host.
+pub fn inject_chatgpt_account_id_header(
+    headers: &mut IndexMap<String, String>,
+    base_url: &str,
+    endpoints: &EndpointsConfig,
+    account_id: Option<&str>,
+) {
+    let Some(aid) = account_id.map(str::trim).filter(|s| !s.is_empty()) else {
+        return;
+    };
+    if !is_first_party_codex_url(base_url, endpoints) {
+        return;
+    }
+    headers
+        .entry("ChatGPT-Account-ID".to_string())
+        .or_insert_with(|| aid.to_owned());
 }
 
 /// Dual-key, endpoint-trust credential resolve (MOD-04 / MOD-05 / D-09 / D-15).
