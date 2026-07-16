@@ -29,9 +29,12 @@ pub(crate) use flow::{
     try_ensure_session_noninteractive,
 };
 pub use flow::{
-    AuthUrlInfo, AuthUrlMode, LoginTransportOverride, LogoutResult, ensure_authenticated,
-    ensure_authenticated_or_noninteractive, ensure_authenticated_with_override, perform_logout,
-    run_cli_login, run_cli_login_for_provider, run_cli_logout, try_ensure_fresh_auth,
+    AuthUrlInfo, AuthUrlMode, DualLogoutResult, LoginTransportOverride, LogoutResult,
+    bare_logout_usage, ensure_authenticated, ensure_authenticated_or_noninteractive,
+    ensure_authenticated_with_override, format_dual_logout_message, logout_all_provider_slots,
+    logout_provider_slot, perform_logout, run_cli_auth_status, run_cli_login,
+    run_cli_login_for_provider, run_cli_logout, run_cli_logout_at_path, try_ensure_fresh_auth,
+    write_cli_auth_status,
 };
 pub use jwt::{is_jwt_expired_or_near, parse_jwt_expiration};
 mod meta;

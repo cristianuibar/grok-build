@@ -52,10 +52,11 @@ use xai_grok_shell::auth::codex::{
     codex_device_usercode_url, codex_redirect_uri, persist_codex_tokens,
 };
 use xai_grok_shell::auth::{
-    clear_all_provider_slots, clear_provider_slot, credential_usable, format_auth_status,
-    inspect_provider_store, mutate_provider_store_or_prune, read_provider_auth_store,
-    select_provider_access_token, AuthMode, AuthProvider, AuthStatusReport, AuthStore, GrokAuth,
-    ProviderStoreMutation, PROVIDER_CODEX, PROVIDER_XAI,
+    bare_logout_usage, clear_all_provider_slots, clear_provider_slot, credential_usable,
+    format_auth_status, format_dual_logout_message, inspect_provider_store, logout_all_provider_slots,
+    logout_provider_slot, mutate_provider_store_or_prune, read_provider_auth_store,
+    select_provider_access_token, write_cli_auth_status, AuthMode, AuthProvider, AuthStatusReport,
+    AuthStore, GrokAuth, ProviderStoreMutation, PROVIDER_CODEX, PROVIDER_XAI,
 };
 
 const XAI_FAKE: &str = "xai-fake-token";
@@ -556,43 +557,75 @@ fn auth_provider_parse_rejects_unknown() {
     assert_eq!(AuthProvider::parse("XAI"), None, "case-sensitive allow-list");
 }
 
-// ── AUTH-03: Selective logout CLI (RED until Plan 04) ──────────────────────
+// ── AUTH-03: Selective logout CLI (Plan 04 — disk SoT clear_provider_slot) ─
 
 /// Logout --provider codex leaves xAI; logout xAI leaves Codex.
-/// Storage clear is GREEN (Plan 02); this contract is the CLI handler path.
+/// CLI path uses blocking logout_provider_slot (not nonblocking remove_scope).
 #[test]
 fn selective_logout_isolates() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("auth.json");
     write_dual_auth_fixture(&path);
 
-    // Storage primitive exists; CLI logout --provider wiring is Plan 04.
-    let cli_logout_provider_handler = false;
+    // --provider codex
+    let codex_out =
+        logout_provider_slot(&path, AuthProvider::Codex).expect("logout codex");
+    assert!(codex_out.was_logged_in);
+    assert_eq!(codex_out.provider, Some(AuthProvider::Codex));
+    assert!(!codex_out.cleared_all);
     assert!(
-        cli_logout_provider_handler,
-        "Plan 04: selective_logout_isolates — expect CLI logout --provider codex to call \
-         clear_provider_slot while leaving providers.xai key {XAI_FAKE} (auth_file={})",
-        path.display()
+        format_dual_logout_message(&codex_out).contains("Codex"),
+        "selective success copy must name Codex"
     );
 
-    // Storage path already proven by clear_provider_codex_leaves_xai.
-    let _ = clear_provider_slot(&path, AuthProvider::Codex);
+    let on_disk: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+    assert_eq!(
+        pointer_key(&on_disk, PROVIDER_XAI, &xai_scope()).as_deref(),
+        Some(XAI_FAKE),
+        "xAI must remain after Codex logout"
+    );
+    assert!(
+        pointer_key(&on_disk, PROVIDER_CODEX, &codex_scope()).is_none(),
+        "Codex slot must be cleared"
+    );
+
+    // reverse: restore dual, clear xAI, Codex remains
+    write_dual_auth_fixture(&path);
+    let xai_out = logout_provider_slot(&path, AuthProvider::Xai).expect("logout xai");
+    assert!(xai_out.was_logged_in);
+    assert_eq!(xai_out.provider, Some(AuthProvider::Xai));
+    let on_disk: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+    assert_eq!(
+        pointer_key(&on_disk, PROVIDER_CODEX, &codex_scope()).as_deref(),
+        Some(CODEX_FAKE),
+        "Codex must remain after xAI logout"
+    );
+    assert!(
+        pointer_key(&on_disk, PROVIDER_XAI, &xai_scope()).is_none(),
+        "xAI slot must be cleared"
+    );
 }
 
-/// Logout --all clears both provider slots atomically.
-/// Storage clear_all is GREEN (Plan 02); this contract is the CLI handler path.
+/// Logout --all clears both provider slots atomically (one-lock clear_all).
 #[test]
 fn logout_all_clears_both() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("auth.json");
     write_dual_auth_fixture(&path);
 
-    let cli_logout_all_handler = false;
+    let out = logout_all_provider_slots(&path).expect("logout --all");
+    assert!(out.was_logged_in);
+    assert!(out.cleared_all);
+    assert_eq!(out.provider, None);
+    assert_eq!(
+        format_dual_logout_message(&out),
+        "Logged out of all providers"
+    );
     assert!(
-        cli_logout_all_handler,
-        "Plan 04: logout_all_clears_both — expect CLI logout --all to call \
-         clear_all_provider_slots (auth_file={})",
-        path.display()
+        !path.exists(),
+        "atomic dual clear must prune empty auth.json"
     );
 }
 
@@ -604,16 +637,27 @@ fn bare_logout_fail_closed() {
     write_dual_auth_fixture(&path);
     let before = std::fs::read(&path).unwrap();
 
-    // Contract: bare logout without --provider/--all must not mutate store.
-    // Production dual fail-closed handler lands in Plan 04.
-    let bare_logout_rejected_without_mutation = false;
+    // Path-taking CLI handler: bare (no provider, no all) → Err + zero mutation.
+    // Use a minimal config; grok_com_config is only needed for AuthManager
+    // secondary invalidate which bare path never reaches.
+    let config = xai_grok_shell::agent::config::Config::default();
+    let err = xai_grok_shell::auth::run_cli_logout_at_path(&path, &config, None, false)
+        .expect_err("bare logout must fail closed");
+    let msg = format!("{err:#}");
     assert!(
-        bare_logout_rejected_without_mutation,
-        "Plan 04: bare_logout_fail_closed — expect usage error without clearing either \
-         provider slot (auth_file={})",
-        path.display()
+        msg.contains("Specify a provider or clear all")
+            || msg.contains("bum logout --provider"),
+        "bare logout must surface UI-SPEC usage, got: {msg}"
     );
-    assert_eq!(std::fs::read(&path).unwrap(), before);
+    assert_eq!(
+        std::fs::read(&path).unwrap(),
+        before,
+        "bare logout must not mutate either provider slot"
+    );
+    // Usage helper matches UI-SPEC body.
+    assert!(bare_logout_usage().contains("bum logout --all"));
+    assert!(bare_logout_usage().contains("bum logout --provider xai"));
+    assert!(bare_logout_usage().contains("bum logout --provider codex"));
 }
 
 // ── AUTH-04: Status pure model (Plan 02 GREEN; CLI handler Plan 04) ────────
@@ -687,15 +731,33 @@ fn auth_status_asymmetric_login() {
 }
 
 /// CLI status handler path (run_cli_auth_status) must return dual status text.
+///
+/// Test name kept for Plan 04 gate filter: `run_cli_auth_status`.
 #[test]
 fn run_cli_auth_status() {
-    // Pure status API is GREEN (Plan 02); CLI handler wiring is Plan 04.
-    let handler_available = false;
-    assert!(
-        handler_available,
-        "Plan 04: run_cli_auth_status — expect CLI handler returning paste-safe \
-         dual-provider status string (no secrets)"
-    );
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("auth.json");
+    write_dual_auth_fixture(&path);
+
+    let text = xai_grok_shell::auth::run_cli_auth_status(&path).expect("status handler");
+    assert!(text.contains("xAI:"), "must list xAI block");
+    assert!(text.contains("Codex:"), "must list Codex block");
+    assert!(text.contains("logged_in: yes"));
+    assert!(text.contains("usable: yes"));
+    assert!(text.contains("account:"));
+    assert!(text.contains("plan:"));
+    // Paste-safe: never emit access/refresh token substrings.
+    assert!(!text.contains(XAI_FAKE));
+    assert!(!text.contains(CODEX_FAKE));
+    assert!(!text.contains(CODEX_REFRESH));
+    assert!(!text.contains("xai-refresh-token"));
+
+    // Injectable Write path (same production handler).
+    let mut buf = Vec::new();
+    write_cli_auth_status(&path, &mut buf).expect("write status");
+    let written = String::from_utf8(buf).unwrap();
+    assert!(written.contains("xAI:") && written.contains("Codex:"));
+    assert!(!written.contains(XAI_FAKE));
 }
 
 /// usable=yes when expired but refresh_token present.

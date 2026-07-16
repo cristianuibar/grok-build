@@ -999,10 +999,165 @@ pub struct LogoutResult {
     pub api_key_still_set: bool,
 }
 
-/// Core logout logic shared by the CLI subcommand and the ACP handler.
+/// Outcome of dual-safe selective / `--all` logout (disk-authoritative).
 ///
-/// When `scope` is `None`, clears the default scope (same as `/logout`
-/// in the TUI). When `Some`, removes only that scope entry.
+/// Disk mutation always uses blocking [`super::clear_provider_slot`] /
+/// [`super::clear_all_provider_slots`] — never `AuthManager::remove_scope`
+/// (nonblocking, not disk SoT for dual-auth).
+#[derive(Debug, Clone)]
+pub struct DualLogoutResult {
+    /// `true` if a cached session for the target was present before clear.
+    pub was_logged_in: bool,
+    /// Account label/email when known (selective only).
+    pub email: Option<String>,
+    /// Provider cleared (`None` when `--all`).
+    pub provider: Option<super::AuthProvider>,
+    /// `true` when `--all` ran (atomic dual clear under one lock).
+    pub cleared_all: bool,
+    /// `true` if `XAI_API_KEY` env is set (only meaningful after xAI clear).
+    pub api_key_still_set: bool,
+}
+
+/// UI-SPEC bare-logout usage body (D-05). Print to stderr and exit non-zero.
+pub fn bare_logout_usage() -> &'static str {
+    "Specify a provider or clear all:\n  bum logout --provider xai\n  bum logout --provider codex\n  bum logout --all"
+}
+
+/// Reset external telemetry identity after intentional credential removal.
+fn flush_identity_on_logout() {
+    // Order matters for the no-leak guarantee (flush-on-logout parity). Clear
+    // the external OTEL identity attrs FIRST so any record emitted from here
+    // on cannot carry the prior user's ids; THEN flush already-queued records.
+    xai_grok_telemetry::external::set_identity(
+        xai_grok_telemetry::external::IdentityAttrs::default(),
+    );
+    xai_grok_telemetry::external::flush();
+}
+
+/// Peek provider session label before a selective clear (path-taking; no I/O
+/// mutation). Missing / empty slot → not logged in.
+fn peek_provider_session(
+    auth_file: &std::path::Path,
+    provider: super::AuthProvider,
+) -> (bool, Option<String>) {
+    match super::read_provider_auth_store(auth_file, provider.as_str()) {
+        Ok(store) => {
+            let st = super::inspect_provider_store(provider, store.as_ref());
+            (st.logged_in, st.account)
+        }
+        Err(_) => (false, None),
+    }
+}
+
+/// Selective logout with **blocking** disk authority ([`super::clear_provider_slot`]).
+///
+/// Sibling provider slots are preserved. Does not touch remote OAuth/revoke.
+/// Suitable for integration tests with explicit fixture paths (OnceLock-safe).
+pub fn logout_provider_slot(
+    auth_file: &std::path::Path,
+    provider: super::AuthProvider,
+) -> std::io::Result<DualLogoutResult> {
+    let (was_logged_in, email) = peek_provider_session(auth_file, provider);
+    xai_grok_telemetry::unified_log::info(
+        "auth: logout",
+        None,
+        Some(serde_json::json!({
+            "was_logged_in": was_logged_in,
+            "provider": provider.as_str(),
+            "mode": "selective",
+        })),
+    );
+    if was_logged_in {
+        flush_identity_on_logout();
+    }
+    // Disk SoT: blocking clear — independent of AuthManager nonblocking lock.
+    let _mutation = super::clear_provider_slot(auth_file, provider)?;
+    Ok(DualLogoutResult {
+        was_logged_in,
+        email,
+        provider: Some(provider),
+        cleared_all: false,
+        api_key_still_set: matches!(provider, super::AuthProvider::Xai)
+            && crate::agent::auth_method::has_xai_api_key_env(),
+    })
+}
+
+/// Atomic dual logout under one lock ([`super::clear_all_provider_slots`]).
+///
+/// Path-taking for integration tests. Local clear only (no remote revoke).
+pub fn logout_all_provider_slots(
+    auth_file: &std::path::Path,
+) -> std::io::Result<DualLogoutResult> {
+    let was_logged_in = match super::AuthStatusReport::from_auth_file(auth_file) {
+        Ok(report) => report.providers.iter().any(|p| p.logged_in),
+        Err(_) => auth_file.exists(),
+    };
+    xai_grok_telemetry::unified_log::info(
+        "auth: logout",
+        None,
+        Some(serde_json::json!({
+            "was_logged_in": was_logged_in,
+            "mode": "all",
+        })),
+    );
+    if was_logged_in {
+        flush_identity_on_logout();
+    }
+    let _mutation = super::clear_all_provider_slots(auth_file)?;
+    Ok(DualLogoutResult {
+        was_logged_in,
+        email: None,
+        provider: None,
+        cleared_all: true,
+        api_key_still_set: crate::agent::auth_method::has_xai_api_key_env(),
+    })
+}
+
+/// Format dual-logout outcome to a string (UI-SPEC copy; no secrets).
+pub fn format_dual_logout_message(result: &DualLogoutResult) -> String {
+    if result.cleared_all {
+        if result.was_logged_in {
+            "Logged out of all providers".to_owned()
+        } else {
+            "No cached sessions to log out of.".to_owned()
+        }
+    } else if let Some(provider) = result.provider {
+        let label = provider.label();
+        if !result.was_logged_in {
+            format!("No cached {label} session to log out of.")
+        } else if let Some(email) = result.email.as_deref() {
+            format!("Logged out of {label} (was signed in as {email})")
+        } else {
+            format!("Logged out of {label}")
+        }
+    } else {
+        "Logged out".to_owned()
+    }
+}
+
+/// Secondary in-memory xAI AuthManager invalidate after disk clear succeeded.
+///
+/// Never used as disk authority — [`AuthManager::remove_scope`] is nonblocking
+/// and may skip persistence; disk was already cleared via blocking APIs.
+fn invalidate_xai_auth_manager_memory(
+    auth_manager: &AuthManager,
+    clear_managed_orphan: bool,
+) {
+    // Best-effort: clear in-memory token + attempt scope removal. Disk already
+    // authoritative; lock contention must not undo selective sibling slots.
+    let _ = auth_manager.clear();
+    if clear_managed_orphan {
+        crate::managed_config::clear_orphan();
+    }
+}
+
+/// Legacy xAI-scope logout shared by older ACP clients that still pass
+/// `scope` without dual-auth `provider`/`all` params.
+///
+/// Prefer [`logout_provider_slot`] / [`logout_all_provider_slots`] for new paths.
+/// Bare (no scope) clear of the current manager is **not** dual-safe — callers
+/// must fail-closed instead of invoking this with `scope: None` when both
+/// slots may exist (ACP `x.ai/auth/logout` dual contract).
 pub fn perform_logout(
     auth_manager: &AuthManager,
     scope: Option<&str>,
@@ -1020,21 +1175,11 @@ pub fn perform_logout(
             "was_logged_in": was_logged_in,
             "scope": scope.unwrap_or("(current)"),
             "user_id": auth.as_ref().map(|a| a.user_id.clone()),
+            "mode": "legacy_xai_scope",
         })),
     );
     if was_logged_in {
-        // Order matters for the no-leak guarantee (flush-on-logout
-        // parity). Clear the external OTEL identity attrs FIRST so any
-        // record emitted from here on cannot carry the prior user's ids; THEN
-        // flush already-queued records (which were built with their ids during
-        // the active session — that is correct); THEN clear credentials.
-        // Clearing identity before the flush closes the window in which a
-        // concurrent emission between flush and identity-reset would still
-        // stamp the prior user's ids onto a customer-collector record.
-        xai_grok_telemetry::external::set_identity(
-            xai_grok_telemetry::external::IdentityAttrs::default(),
-        );
-        xai_grok_telemetry::external::flush();
+        flush_identity_on_logout();
         if let Some(scope) = scope {
             auth_manager.remove_scope(scope)?;
         } else {
@@ -1051,29 +1196,111 @@ pub fn perform_logout(
     })
 }
 
-/// `grok logout` CLI handler. Calls [`perform_logout`] and formats
-/// the result to stderr.
-pub fn run_cli_logout(config: &crate::agent::config::Config) -> anyhow::Result<()> {
-    let grok_home = grok_home::grok_home();
-    let auth_manager = AuthManager::new(&grok_home, config.grok_com_config.clone());
-    let result = perform_logout(&auth_manager, None)
-        .map_err(|e| anyhow::anyhow!("Failed to clear auth: {e}"))?;
-    if !result.was_logged_in {
-        eprintln!("No cached session to log out of.");
-        if result.api_key_still_set {
-            eprintln!("You are authenticated via XAI_API_KEY (environment variable).");
-        }
-        return Ok(());
+/// Dual-safe `bum logout` CLI handler (AUTH-03 / D-05).
+///
+/// - Bare (`provider=None`, `all=false`) → UI-SPEC usage on stderr, **Err**, zero mutation
+/// - `--provider xai|codex` → blocking [`logout_provider_slot`]
+/// - `--all` → atomic [`logout_all_provider_slots`] under one lock
+///
+/// Disk authority is never `AuthManager::remove_scope`. After successful xAI
+/// (or `--all`) disk clear, in-memory AuthManager is invalidated secondarily.
+pub fn run_cli_logout(
+    config: &crate::agent::config::Config,
+    provider: Option<super::AuthProvider>,
+    all: bool,
+) -> anyhow::Result<()> {
+    run_cli_logout_at_path(
+        &grok_home::grok_home().join("auth.json"),
+        config,
+        provider,
+        all,
+    )
+}
+
+/// Path-taking CLI logout for tests and the production home path.
+pub fn run_cli_logout_at_path(
+    auth_file: &std::path::Path,
+    config: &crate::agent::config::Config,
+    provider: Option<super::AuthProvider>,
+    all: bool,
+) -> anyhow::Result<()> {
+    if !all && provider.is_none() {
+        // Fail closed: never silent dual-wipe / never AuthManager::clear bare.
+        eprintln!("{}", bare_logout_usage());
+        anyhow::bail!("{}", bare_logout_usage());
     }
-    if let Some(email) = result.email {
-        eprintln!("Logged out (was signed in as {email})");
+
+    let result = if all {
+        logout_all_provider_slots(auth_file)
+            .map_err(|e| anyhow::anyhow!("Failed to clear auth: {e}"))?
     } else {
-        eprintln!("Logged out");
+        let provider = provider.expect("provider set when not --all");
+        logout_provider_slot(auth_file, provider)
+            .map_err(|e| anyhow::anyhow!("Failed to clear auth: {e}"))?
+    };
+
+    // Secondary: invalidate in-memory xAI manager when xAI (or all) was cleared.
+    let need_xai_memory = result.cleared_all
+        || matches!(result.provider, Some(super::AuthProvider::Xai));
+    if need_xai_memory && result.was_logged_in {
+        let grok_home = auth_file
+            .parent()
+            .map(std::path::Path::to_path_buf)
+            .unwrap_or_else(grok_home::grok_home);
+        // Only construct manager when auth_file is under a home we can open;
+        // fixture tests pass temp paths — memory invalidate is best-effort.
+        let auth_manager = AuthManager::new(&grok_home, config.grok_com_config.clone());
+        invalidate_xai_auth_manager_memory(&auth_manager, true);
     }
-    if result.api_key_still_set {
+
+    eprintln!("{}", format_dual_logout_message(&result));
+    // xAI path may note XAI_API_KEY; Codex path never invents Platform key warning.
+    if result.api_key_still_set
+        && (result.cleared_all || matches!(result.provider, Some(super::AuthProvider::Xai)))
+    {
         eprintln!("XAI_API_KEY is still set and will be used for authentication.");
     }
     Ok(())
+}
+
+/// Dual-provider `bum auth status` (AUTH-04 / D-06).
+///
+/// Returns paste-safe greppable text (UI-SPEC). Never dumps `auth.json` body
+/// or token material. Path-taking for integration tests (OnceLock-safe).
+pub fn run_cli_auth_status(auth_file: &std::path::Path) -> anyhow::Result<String> {
+    match super::AuthStatusReport::from_auth_file(auth_file) {
+        Ok(report) => Ok(report.format()),
+        Err(_) => {
+            // UI-SPEC unreadable store — path label only; never dump contents.
+            let label = auth_status_path_label(auth_file);
+            anyhow::bail!(
+                "Could not read auth store at {label}. Fix permissions or re-run login."
+            )
+        }
+    }
+}
+
+/// Write dual auth status to an injectable [`std::io::Write`] (testable I/O).
+pub fn write_cli_auth_status(
+    auth_file: &std::path::Path,
+    mut out: impl std::io::Write,
+) -> anyhow::Result<()> {
+    let text = run_cli_auth_status(auth_file)?;
+    out.write_all(text.as_bytes())?;
+    if !text.ends_with('\n') {
+        out.write_all(b"\n")?;
+    }
+    Ok(())
+}
+
+/// Prefer `$BUM_HOME/auth.json` when the path is under product home; else display.
+fn auth_status_path_label(auth_file: &std::path::Path) -> String {
+    let home = grok_home::grok_home();
+    if auth_file == home.join("auth.json") {
+        "$BUM_HOME/auth.json".to_owned()
+    } else {
+        auth_file.display().to_string()
+    }
 }
 
 #[cfg(test)]
