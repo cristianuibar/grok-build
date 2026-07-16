@@ -814,6 +814,8 @@ mod tests {
         let path = dir.join("auth.json");
         let mut map = crate::auth::read_auth_json(&path).unwrap_or_default();
         map.insert(scope.to_owned(), auth.clone());
+        // Deliberately legacy-flat: production writes are nested, while this
+        // fixture also keeps the read-migration path covered.
         let json = serde_json::to_string_pretty(&map).unwrap();
         std::fs::write(&path, json).unwrap();
     }

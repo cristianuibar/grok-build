@@ -9,8 +9,8 @@
 //! 2. **RefreshFromAuthority** — run the appropriate refresh chain
 //!    (OIDC token refresh, external binary, etc.) based on `TokenType`,
 //!    unless the live token was minted moments ago (fresh-mint guard).
-//! 3. **DevboxRecovery** — on devboxes, purge `auth.json` and mint fresh
-//!    OIDC credentials.
+//! 3. **DevboxRecovery** — on devboxes, replace the xAI slot with freshly
+//!    minted OIDC credentials while preserving sibling provider slots.
 //! 4. **Done** — all recovery strategies exhausted.
 
 use std::sync::Arc;

@@ -204,7 +204,8 @@ pub async fn request_device_code(
 
 /// Poll the token endpoint until the user approves (or denies / expires).
 ///
-/// On success, persists credentials to `~/.grok/auth.json` and returns
+/// On success, persists credentials to the product auth store
+/// (`$BUM_HOME/auth.json`) and returns
 /// the authenticated `GrokAuth`.
 ///
 /// Callers should have already displayed `device_code.verification_uri`
@@ -537,7 +538,25 @@ pub(crate) mod tests {
     use std::sync::Arc;
 
     use super::{AuthManager, build_auth, validate_verification_uri};
-    use crate::auth::{AuthMode, GrokComConfig};
+    use crate::auth::{AuthMode, GrokAuth, GrokComConfig};
+
+    fn seed_codex_fixture(auth_path: &std::path::Path, key: &str) {
+        let mut codex = crate::auth::model::AuthStore::new();
+        codex.insert(
+            "codex::fixture".to_owned(),
+            GrokAuth {
+                key: key.to_owned(),
+                auth_mode: AuthMode::ApiKey,
+                ..GrokAuth::test_default()
+            },
+        );
+        crate::auth::storage::write_fixture_auth_document(
+            auth_path,
+            crate::auth::model::AuthStore::new(),
+            Some(codex),
+        )
+        .unwrap();
+    }
 
     #[test]
     fn validate_verification_uri_rejects_unsupported_scheme() {
@@ -814,9 +833,10 @@ pub(crate) mod tests {
     // floored at 10 min (MIN_DEVICE_CODE_EXPIRY_FALLBACK_SECS).
     async fn run_poll(
         responses: Vec<(u16, serde_json::Value)>,
-    ) -> anyhow::Result<(super::GrokAuth, bool)> {
+    ) -> (anyhow::Result<(super::GrokAuth, bool)>, tempfile::TempDir) {
         let (issuer, server) = spawn_token_server(responses).await;
         let temp_dir = tempfile::tempdir().unwrap();
+        seed_codex_fixture(&temp_dir.path().join("auth.json"), "device-codex-survives");
         let auth_manager = auth_manager_with_grok_home(temp_dir.path(), "http://127.0.0.1:9");
         let device_code = device_code_for_test(1, 900);
         let result = super::complete_device_code_login(
@@ -828,7 +848,7 @@ pub(crate) mod tests {
         )
         .await;
         server.abort();
-        result
+        (result, temp_dir)
     }
 
     fn success_body() -> serde_json::Value {
@@ -842,49 +862,66 @@ pub(crate) mod tests {
 
     #[tokio::test]
     async fn poll_succeeds_on_first_poll() {
-        let (auth, is_new) = run_poll(vec![(200, success_body())])
-            .await
-            .expect("should resolve to a token");
+        let (result, product_home) = run_poll(vec![(200, success_body())]).await;
+        let (auth, is_new) = result.expect("should resolve to a token");
         assert_eq!(auth.key, "mock-access-token");
         assert!(is_new);
+
+        let auth_path = product_home.path().join("auth.json");
+        let auth_json: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(auth_path).unwrap()).unwrap();
+        assert_eq!(auth_json.get("version").and_then(|v| v.as_u64()), Some(1));
+        let xai = auth_json
+            .pointer("/providers/xai")
+            .and_then(|slot| slot.as_object())
+            .expect("device login must persist providers.xai");
+        assert!(xai.values().any(|entry| {
+            entry.get("key").and_then(|key| key.as_str()) == Some("mock-access-token")
+        }));
+        assert_eq!(
+            auth_json
+                .pointer("/providers/codex/codex::fixture/key")
+                .and_then(|key| key.as_str()),
+            Some("device-codex-survives")
+        );
     }
 
     #[tokio::test]
     async fn poll_succeeds_after_pending() {
-        let (auth, _) = run_poll(vec![
+        let (result, _product_home) = run_poll(vec![
             (400, serde_json::json!({ "error": "authorization_pending" })),
             (200, success_body()),
         ])
-        .await
-        .expect("should resolve to a token after pending");
+        .await;
+        let (auth, _) = result.expect("should resolve to a token after pending");
         assert_eq!(auth.key, "mock-access-token");
     }
 
     #[tokio::test]
     async fn poll_handles_slow_down_then_succeeds() {
         // slow_down must be tolerated (interval bumped) without erroring.
-        let (auth, _) = run_poll(vec![
+        let (result, _product_home) = run_poll(vec![
             (400, serde_json::json!({ "error": "slow_down" })),
             (200, success_body()),
         ])
-        .await
-        .expect("slow_down should be retried, not fatal");
+        .await;
+        let (auth, _) = result.expect("slow_down should be retried, not fatal");
         assert_eq!(auth.key, "mock-access-token");
     }
 
     #[tokio::test]
     async fn poll_maps_access_denied_to_error() {
-        let err = run_poll(vec![(400, serde_json::json!({ "error": "access_denied" }))])
-            .await
-            .expect_err("access_denied must be an error");
+        let (result, _product_home) =
+            run_poll(vec![(400, serde_json::json!({ "error": "access_denied" }))]).await;
+        let err = result.expect_err("access_denied must be an error");
         assert!(err.to_string().contains("denied"), "got: {err}");
     }
 
     #[tokio::test]
     async fn poll_maps_expired_token_to_error() {
-        let err = run_poll(vec![(400, serde_json::json!({ "error": "expired_token" }))])
-            .await
-            .expect_err("expired_token must be an error");
+        let (result, _product_home) =
+            run_poll(vec![(400, serde_json::json!({ "error": "expired_token" }))]).await;
+        let err = result.expect_err("expired_token must be an error");
         assert!(err.to_string().contains("expired"), "got: {err}");
     }
 }

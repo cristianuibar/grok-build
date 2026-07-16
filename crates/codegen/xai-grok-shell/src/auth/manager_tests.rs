@@ -4,8 +4,45 @@
 
 use super::*;
 use crate::auth::error::RefreshTokenError;
+use std::ffi::OsString;
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::time::Instant;
+
+struct EnvVarGuard {
+    key: &'static str,
+    previous: Option<OsString>,
+}
+
+impl EnvVarGuard {
+    fn set(key: &'static str, value: &std::ffi::OsStr) -> Self {
+        let previous = std::env::var_os(key);
+        // SAFETY: Tests using this guard are serialized because environment
+        // mutation is process-global.
+        unsafe { std::env::set_var(key, value) };
+        Self { key, previous }
+    }
+
+    fn unset(key: &'static str) -> Self {
+        let previous = std::env::var_os(key);
+        // SAFETY: Tests using this guard are serialized because environment
+        // mutation is process-global.
+        unsafe { std::env::remove_var(key) };
+        Self { key, previous }
+    }
+}
+
+impl Drop for EnvVarGuard {
+    fn drop(&mut self) {
+        // SAFETY: Tests using this guard are serialized because environment
+        // mutation is process-global.
+        unsafe {
+            match self.previous.take() {
+                Some(value) => std::env::set_var(self.key, value),
+                None => std::env::remove_var(self.key),
+            }
+        }
+    }
+}
 
 fn make_auth(expires_at: Option<DateTime<Utc>>, create_time: DateTime<Utc>) -> GrokAuth {
     GrokAuth {
@@ -95,6 +132,109 @@ fn auth_scope_uses_oauth2_when_present() {
             crate::auth::config::XAI_OAUTH2_ISSUER,
             obfstr::obfstr!("b1a00492-073a-47ea-816f-4c329264a828"),
         )
+    );
+}
+
+fn assert_nested_xai_token(path: &std::path::Path, expected_key: &str) {
+    let raw: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(path).unwrap()).unwrap();
+    assert_eq!(
+        raw.get("version").and_then(serde_json::Value::as_u64),
+        Some(1)
+    );
+    let xai = raw
+        .pointer("/providers/xai")
+        .and_then(serde_json::Value::as_object)
+        .expect("providers.xai must be an object");
+    assert!(
+        xai.values()
+            .any(|auth| auth.get("key").and_then(serde_json::Value::as_str) == Some(expected_key)),
+        "providers.xai must contain the persisted token"
+    );
+}
+
+#[tokio::test]
+#[serial_test::serial]
+async fn foreign_grok_auth_path_cannot_receive_manager_writes() {
+    let product_home = tempfile::tempdir().unwrap();
+    let foreign_home = tempfile::tempdir().unwrap();
+    let foreign_auth = foreign_home.path().join("auth.json");
+    let _inline_auth = EnvVarGuard::unset("GROK_AUTH");
+    let _auth_path = EnvVarGuard::set("GROK_AUTH_PATH", foreign_auth.as_os_str());
+
+    let manager = Arc::new(AuthManager::new(
+        product_home.path(),
+        GrokComConfig::default(),
+    ));
+    let mut auth = make_auth(Some(Utc::now() + Duration::hours(1)), Utc::now());
+    auth.key = "product-home-token".to_owned();
+    manager.update(auth).await.unwrap();
+
+    let product_auth = product_home.path().join("auth.json");
+    assert_nested_xai_token(&product_auth, "product-home-token");
+    assert!(
+        !foreign_auth.exists(),
+        "foreign GROK_AUTH_PATH must not be created"
+    );
+}
+
+#[tokio::test]
+#[serial_test::serial]
+async fn exact_product_grok_auth_path_is_accepted() {
+    let product_home = tempfile::tempdir().unwrap();
+    let product_auth = product_home.path().join("auth.json");
+    let _inline_auth = EnvVarGuard::unset("GROK_AUTH");
+    let _auth_path = EnvVarGuard::set("GROK_AUTH_PATH", product_auth.as_os_str());
+
+    let manager = Arc::new(AuthManager::new(
+        product_home.path(),
+        GrokComConfig::default(),
+    ));
+    let mut auth = make_auth(Some(Utc::now() + Duration::hours(1)), Utc::now());
+    auth.key = "exact-product-token".to_owned();
+    manager.update(auth).await.unwrap();
+
+    assert_nested_xai_token(&product_auth, "exact-product-token");
+}
+
+#[cfg(unix)]
+#[tokio::test]
+#[serial_test::serial]
+async fn in_home_auth_symlink_cannot_escape_product_home() {
+    use std::os::unix::fs::symlink;
+
+    let product_home = tempfile::tempdir().unwrap();
+    let outside_home = tempfile::tempdir().unwrap();
+    let outside_auth = outside_home.path().join("auth.json");
+    let escape_auth = product_home.path().join("escape_auth.json");
+    symlink(&outside_auth, &escape_auth).unwrap();
+    let _inline_auth = EnvVarGuard::unset("GROK_AUTH");
+    let _auth_path = EnvVarGuard::set("GROK_AUTH_PATH", escape_auth.as_os_str());
+
+    let manager = Arc::new(AuthManager::new(
+        product_home.path(),
+        GrokComConfig::default(),
+    ));
+    let mut auth = make_auth(Some(Utc::now() + Duration::hours(1)), Utc::now());
+    auth.key = "symlink-safe-token".to_owned();
+    manager.update(auth).await.unwrap();
+
+    let product_auth = product_home.path().join("auth.json");
+    assert_nested_xai_token(&product_auth, "symlink-safe-token");
+    assert!(
+        std::fs::symlink_metadata(&escape_auth)
+            .unwrap()
+            .file_type()
+            .is_symlink(),
+        "the rejected override should remain an untouched symlink"
+    );
+    assert!(
+        !outside_auth.exists(),
+        "the symlink target must not receive credentials"
+    );
+    assert!(
+        std::fs::read_to_string(&escape_auth).is_err(),
+        "following the escape symlink must not reveal the written token"
     );
 }
 

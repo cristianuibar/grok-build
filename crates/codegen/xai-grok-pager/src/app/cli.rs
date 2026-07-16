@@ -880,6 +880,50 @@ impl PagerArgs {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn bum_login_defaults_to_xai_without_provider_argument() {
+        let args = PagerArgs::try_parse_from(["bum", "login"]).expect("bare bum login parses");
+        let Some(Command::Login {
+            oauth, device_auth, ..
+        }) = args.command
+        else {
+            panic!("expected login command");
+        };
+        assert!(!oauth);
+        assert!(!device_auth);
+
+        let oauth = PagerArgs::try_parse_from(["bum", "login", "--oauth"])
+            .expect("--oauth remains available");
+        assert!(matches!(
+            oauth.command,
+            Some(Command::Login {
+                oauth: true,
+                device_auth: false,
+                ..
+            })
+        ));
+
+        let device = PagerArgs::try_parse_from(["bum", "login", "--device-auth"])
+            .expect("--device-auth remains available");
+        assert!(matches!(
+            device.command,
+            Some(Command::Login {
+                oauth: false,
+                device_auth: true,
+                ..
+            })
+        ));
+
+        let conflict =
+            PagerArgs::try_parse_from(["bum", "login", "--oauth", "--device-auth"]).unwrap_err();
+        assert_eq!(
+            conflict.kind(),
+            clap::error::ErrorKind::ArgumentConflict,
+            "login transport flags must remain mutually exclusive"
+        );
+    }
+
     #[test]
     fn version_flag_exits_zero() {
         let err = PagerArgs::try_parse_from(["grok", "--version"]).unwrap_err();

@@ -557,6 +557,24 @@ mod tests {
     use super::super::test_helpers::*;
     use super::*;
 
+    fn seed_codex_fixture(auth_path: &std::path::Path, key: &str) {
+        let mut codex = crate::auth::model::AuthStore::new();
+        codex.insert(
+            "codex::fixture".to_owned(),
+            crate::auth::GrokAuth {
+                key: key.to_owned(),
+                auth_mode: crate::auth::AuthMode::ApiKey,
+                ..crate::auth::GrokAuth::test_default()
+            },
+        );
+        crate::auth::storage::write_fixture_auth_document(
+            auth_path,
+            crate::auth::model::AuthStore::new(),
+            Some(codex),
+        )
+        .unwrap();
+    }
+
     /// End-to-end test: mock IdP + full login flow with code arriving via loopback.
     /// Exercises discovery → PKCE → race_callback_and_stdin → token exchange → user info → persist.
     #[tokio::test]
@@ -564,6 +582,8 @@ mod tests {
         ensure_crypto_provider();
         let (issuer, idp_server) = start_mock_idp().await;
         let temp_dir = tempfile::tempdir().unwrap();
+        let auth_path = temp_dir.path().join("auth.json");
+        seed_codex_fixture(&auth_path, "browser-codex-survives");
         // Dead proxy port: inline `/user` enrichment fails fast in tests.
         let dead_proxy = {
             let l = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
@@ -650,9 +670,22 @@ mod tests {
         assert!(auth.expires_at.is_some());
         assert_eq!(auth.oidc_issuer.as_deref(), Some(issuer.as_str()));
 
-        let auth_json = std::fs::read_to_string(temp_dir.path().join("auth.json")).unwrap();
-        assert!(auth_json.contains("mock-access-token"));
-        assert!(auth_json.contains("user-42"));
+        let auth_json: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(&auth_path).unwrap()).unwrap();
+        assert_eq!(auth_json.get("version").and_then(|v| v.as_u64()), Some(1));
+        let xai = auth_json
+            .pointer("/providers/xai")
+            .and_then(|slot| slot.as_object())
+            .expect("browser login must persist providers.xai");
+        assert!(xai.values().any(|entry| {
+            entry.get("key").and_then(|key| key.as_str()) == Some("mock-access-token")
+        }));
+        assert_eq!(
+            auth_json
+                .pointer("/providers/codex/codex::fixture/key")
+                .and_then(|key| key.as_str()),
+            Some("browser-codex-survives")
+        );
 
         idp_server.abort();
     }

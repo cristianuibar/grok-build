@@ -266,6 +266,31 @@ enum LockOutcome {
     Adopted(Box<GrokAuth>),
 }
 
+/// Resolve the only auth store this manager may read or write.
+///
+/// `GROK_AUTH_PATH` is retained for compatibility only when it names the
+/// product store exactly. Rejecting every other override avoids both direct
+/// writes to stock credential homes and lexical-in-home symlink escapes. The
+/// secure file writer follows symlinks, so this boundary must be enforced
+/// before any credential I/O.
+fn resolve_auth_path(grok_home: &Path) -> PathBuf {
+    let product_auth = grok_home.join("auth.json");
+    let Some(override_path) = std::env::var_os("GROK_AUTH_PATH").map(PathBuf::from) else {
+        return product_auth;
+    };
+
+    if override_path == product_auth {
+        return override_path;
+    }
+
+    tracing::warn!(
+        override_path = %override_path.display(),
+        product_auth = %product_auth.display(),
+        "ignoring GROK_AUTH_PATH outside the product auth store"
+    );
+    product_auth
+}
+
 // ── Construction + builders ──────────────────────────────────────────
 
 impl AuthManager {
@@ -302,10 +327,9 @@ impl AuthManager {
             tracing::warn!("GROK_AUTH set but failed to parse as JSON, falling back to file");
         }
 
-        // GROK_AUTH_PATH: custom file path (overrides default $BUM_HOME/auth.json).
-        let path = std::env::var("GROK_AUTH_PATH")
-            .map(PathBuf::from)
-            .unwrap_or_else(|_| grok_home.join("auth.json"));
+        // GROK_AUTH_PATH may only restate the exact product auth path. Foreign
+        // and symlink paths are ignored so bum credentials remain isolated.
+        let path = resolve_auth_path(grok_home);
 
         let (auth, auth_read_detail, initial_disk_state) = match read_auth_json(&path) {
             Ok(map) => {
@@ -1396,8 +1420,8 @@ impl AuthManager {
 
         // Devbox last-resort recovery: if all normal auth/refresh paths
         // failed and we're on a devbox, try minting fresh credentials via
-        // the remote devbox login helper. Purges existing auth.json and writes only
-        // the new OIDC entry so we start from a clean state.
+        // the remote devbox login helper. Replaces only the xAI slot so sibling
+        // provider credentials survive recovery.
         // preferred_method=api_key forbids automatic OIDC mint.
         if result.is_err()
             && !self.grok_com_config.blocks_automatic_oidc()

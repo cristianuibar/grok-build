@@ -69,8 +69,7 @@ fn write_auth_to_disk(dir: &std::path::Path, scope: &str, auth: &GrokAuth) {
     let path = dir.join("auth.json");
     let mut map = crate::auth::read_auth_json(&path).unwrap_or_default();
     map.insert(scope.to_owned(), auth.clone());
-    let json = serde_json::to_string_pretty(&map).unwrap();
-    std::fs::write(&path, json).unwrap();
+    crate::auth::storage::write_auth_json(&path, &map).unwrap();
 }
 
 #[tokio::test]
