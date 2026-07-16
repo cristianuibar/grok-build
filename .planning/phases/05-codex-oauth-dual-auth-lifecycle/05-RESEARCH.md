@@ -460,28 +460,27 @@ Bare `Logout` without provider/all → usage + non-zero exit (UI-SPEC).
 | A6 | `originator=bum` accepted by IdP (Codex sets its own originator) | OAuth URL | Cosmetic analytics only if ignored; unlikely hard fail |
 | A7 | HTTP SSE remains sufficient for ChatGPT backend (Phase 4 open item) | Out of AUTH scope | Inference issues are Phase 9/4 residual, not AUTH-02 |
 
-## Open Questions
+## Open Questions (RESOLVED)
 
 1. **Codex refresh ownership model**
    - What we know: xAI `AuthManager` is large (sleep gate, proactive loop, lock revalidation).
-   - What's unclear: whether to parameterize it by provider or add a thinner `CodexAuthHandle`.
-   - Recommendation: **thin Codex handle** + shared storage RMW for Phase 5 speed; share `TokenRefresher` trait. Avoid rewriting xAI manager.
+   - **RESOLVED (plans 05-05, D-08):** Thin `CodexRefresher` implementing `TokenRefresher` + shared storage RMW (`mutate_provider_store_or_prune(PROVIDER_CODEX)`). Do **not** rewrite xAI `AuthManager` for dual ownership. Production invoker is **prepare-time / pre-request** (not a second AuthManager process): when Codex access token JWT/`expires_at` ≤ now+5m and a refresh_token is present, call `CodexRefresher` → persist codex only → invalidate Phase 4 snapshot cache → return fresh bearer. Permanent fail clears/marks **codex only**.
 
 2. **`last_refresh` field**
    - Codex persists `last_refresh`; `GrokAuth` has no dedicated field.
-   - Recommendation: derive proactive refresh from JWT `exp` first; add optional serde field only if 8-day policy is required.
+   - **RESOLVED (plan 05-05 discretion):** Prefer **JWT `exp` / `expires_at` ≤ now+5m** for proactive prepare-time refresh. Do **not** add a dedicated `last_refresh` serde field in Phase 5 unless a later requirement forces the 8-day Codex policy.
 
 3. **TUI `/logout`**
    - Today: clears via shell without provider choice; description implies full logout.
-   - Recommendation: fail-closed toast if would dual-wipe; CLI is source of truth this phase (UI-SPEC).
+   - **RESOLVED (plan 05-04, D-03/D-05):** Fail-closed dual-safe messaging; description points to `bum logout --provider|--all`. CLI is source of truth this phase (UI-SPEC). No silent dual wipe.
 
 4. **Live ChatGPT Account header in prepare path**
    - Phase 4 stamps bearer; `sampling_config_for_model` does not yet inject `ChatGPT-Account-ID`.
-   - Recommendation: include in Phase 5 when persisting real account_id so dual auth is actually usable (still not Phase 6 gate).
+   - **RESOLVED (plan 05-05 Task 3, D-11):** Inject `ChatGPT-Account-ID` from stored `GrokAuth.organization_id` on Codex sampling / `inject_url_derived_headers` (or prepare path) when account id present — Codex provider/base only, never on xAI/cli-chat-proxy. Proven by `chatgpt_account_id_header_on_codex`. Still not Phase 6 missing-provider gate.
 
 5. **Revoke on logout**
    - Codex has `oauth/revoke`; bum xAI logout is local clear.
-   - Recommendation: **local clear only** for v1 (matches current xAI; simpler tests). Optional revoke later.
+   - **RESOLVED (plan 05-04, COVERAGE OPT-OUT):** **Local clear only** — `clear_provider_slot` / disk prune; no remote `oauth/revoke` in Phase 5.
 
 ## Environment Availability
 
@@ -507,21 +506,26 @@ Bare `Logout` without provider/all → usage + non-zero exit (UI-SPEC).
 |----------|-------|
 | Framework | cargo test (crate-local) + existing shell integration tests |
 | Config file | none special — `crates/codegen/xai-grok-shell` |
-| Quick run command | `cargo test -p xai-grok-shell --test auth_multi_slot --test auth_codex_lifecycle --lib auth:: -- --nocapture` (adjust names) |
-| Full suite command | `cargo test -p xai-grok-shell --test auth_multi_slot --test auth_codex_lifecycle --test provider_routing` |
+| Quick run command | `cargo test -p xai-grok-shell --test auth_codex_lifecycle -- --nocapture` |
+| Full suite command | `cargo test -p xai-grok-shell --test auth_codex_lifecycle -- --nocapture && cargo test -p xai-grok-shell --test auth_multi_slot -- --nocapture && cargo test -p xai-grok-shell --test provider_routing -- --nocapture` |
+| Forbidden gates | `cargo test -p xai-grok-shell --lib` (Phase 4 lesson; never Phase 5 gate) |
 
 ### Phase Requirements → Test Map
 
 | Req ID | Behavior | Test Type | Automated Command | File Exists? |
 |--------|----------|-----------|-------------------|-------------|
 | AUTH-02 | Mock browser/device exchange writes only `providers.codex` under temp BUM_HOME | integration | `cargo test -p xai-grok-shell --test auth_codex_lifecycle codex_login_persists_slot` | ❌ Wave 0 |
-| AUTH-02 | PKCE authorize URL contains client_id, S256, localhost:1455/auth/callback | unit | `cargo test -p xai-grok-shell codex_authorize_url_` | ❌ Wave 0 |
-| AUTH-03 | Logout codex leaves xai token; logout xai leaves codex | integration | `cargo test -p xai-grok-shell selective_logout_isolates` | ❌ Wave 0 |
-| AUTH-03 | Bare logout prints usage + non-zero (or Err) without mutating | unit/cli | clap + handler test | ❌ Wave 0 |
-| AUTH-03 | `--all` clears both when both present | integration | `... logout_all` | ❌ Wave 0 |
-| AUTH-04 | Status greppable; both providers; no token substrings | unit | `auth_status_format_` | ❌ Wave 0 |
-| AUTH-05 | Refresh codex mock updates only codex slot | integration | `codex_refresh_isolates` | ❌ Wave 0 |
-| AUTH-05 | invalid_grant marks/wipes codex only | integration | `codex_invalid_grant_no_xai_wipe` | ❌ Wave 0 |
+| AUTH-02 | PKCE authorize URL contains client_id, S256, localhost callback | integration | `… codex_authorize_url_includes_pkce_and_localhost_callback` | ❌ Wave 0 |
+| AUTH-02 | Device endpoints use Codex deviceauth paths | integration | `… codex_device_endpoints_use_deviceauth` | ❌ Wave 0 |
+| AUTH-03 | Logout codex leaves xai token; logout xai leaves codex | integration | `… selective_logout_isolates` | ❌ Wave 0 |
+| AUTH-03 | Bare logout prints usage + non-zero (or Err) without mutating | integration | `… bare_logout_fail_closed` | ❌ Wave 0 |
+| AUTH-03 | `--all` clears both when both present | integration | `… logout_all_clears_both` | ❌ Wave 0 |
+| AUTH-04 | Status greppable; both providers; no token substrings | integration | `… auth_status_format_paste_safe` | ❌ Wave 0 |
+| AUTH-04 | CLI status handler path | integration | `… run_cli_auth_status` | ❌ Wave 0 |
+| AUTH-05 | Refresh codex mock updates only codex slot | integration | `… codex_refresh_isolates` | ❌ Wave 0 |
+| AUTH-05 | invalid_grant marks/wipes codex only | integration | `… codex_invalid_grant_no_xai_wipe` | ❌ Wave 0 |
+| AUTH-05 | Production prepare-time refresh updates snapshot | integration | `… codex_pre_request_refresh_updates_snapshot` | ❌ Wave 0 |
+| AUTH-05 | ChatGPT-Account-ID header on Codex path | integration | `… chatgpt_account_id_header_on_codex` | ❌ Wave 0 |
 | AUTH-01 reg | xAI login still works / multi-slot sibling preserve | existing | `cargo test -p xai-grok-shell --test auth_multi_slot` | ✅ |
 | MOD-04/05 reg | Routing still selects slots | existing | `cargo test -p xai-grok-shell --test provider_routing` | ✅ |
 
@@ -533,10 +537,11 @@ Bare `Logout` without provider/all → usage + non-zero exit (UI-SPEC).
 
 ### Wave 0 Gaps
 
-- [ ] `crates/codegen/xai-grok-shell/tests/auth_codex_lifecycle.rs` — AUTH-02..05 integration
+- [ ] `crates/codegen/xai-grok-shell/tests/auth_codex_lifecycle.rs` — AUTH-02..05 integration (see `05-VALIDATION.md`)
 - [ ] Mock IdP helpers (wiremock routes for `/oauth/token`, deviceauth) under test module or `auth/codex/test_support`
 - [ ] Clap parse tests in `cli.rs` for `--provider`, bare logout fail-closed, `auth status`
 - [ ] Export or duplicate PKCE helper visibility for unit tests
+- [ ] Named RED contracts for prepare-time refresh + ChatGPT-Account-ID + deviceauth URL + authorize URL + `run_cli_auth_status`
 
 ## Security Domain
 
