@@ -61,3 +61,9 @@ The plans have a sound architecture and stay within Phase 3’s catalog boundary
 | LOW | 3 | manifests, empty-state, pub API note |
 
 **Next:** replan with `--reviews` incorporating all HIGH + actionable MEDIUM.
+
+---
+
+## Cycle 1 Replan Status (2026-07-16)
+
+Replanned in place: `03-01`/`03-02`/`03-03` PLAN.md + `03-VALIDATION.md` + `03-UI-SPEC.md`. All HIGH + actionable MEDIUM incorporated into executable plan contracts (see planner return).
