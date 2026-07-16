@@ -68,3 +68,32 @@ pub fn default_session_summary_model() -> &'static str {
         .as_deref()
         .unwrap_or(&DEFAULTS.default)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn default_model_is_grok_build_and_catalog_has_four_plus() {
+        assert_eq!(default_model(), "grok-build");
+        // Force LazyLock init + default∈ids assert; count ids from embedded JSON.
+        let root: serde_json::Value =
+            serde_json::from_str(DEFAULT_MODELS_JSON).expect("default_models.json parses");
+        let models = root["models"]
+            .as_array()
+            .expect("models array present");
+        assert!(
+            models.len() >= 4,
+            "expected mixed catalog (>=4 models), got {}",
+            models.len()
+        );
+        let ids: Vec<&str> = models
+            .iter()
+            .filter_map(|m| m.get("model").and_then(|v| v.as_str()))
+            .collect();
+        assert!(ids.contains(&"grok-build"));
+        assert!(ids.contains(&"gpt-5.6-sol"));
+        assert!(ids.contains(&"gpt-5.6-terra"));
+        assert!(ids.contains(&"gpt-5.6-luna"));
+    }
+}
