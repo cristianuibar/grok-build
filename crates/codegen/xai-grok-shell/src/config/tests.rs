@@ -2255,16 +2255,17 @@ fn discover_personas_inline_takes_precedence() {
     );
 }
 /// Priority: inline config > project cwd/.grok > product-home user > bundled.
-/// Uses the process product home (`grok_home` OnceLock) so multi-scenario HOME /
-/// BUM_HOME mutation is avoided — files are written under the pinned product root.
+///
+/// Mirrors [`SubagentsConfig::resolve`]'s discovery order against **temp-only**
+/// trees. Never calls `grok_home()` / `bundled_root()` — those use a process-wide
+/// OnceLock that may already point at the developer's real `~/.bum`, and writing
+/// there would delete real roles/personas.
 #[test]
-#[serial_test::serial]
 fn bundled_personas_and_roles_have_lowest_priority_in_resolve_order() {
     let tmp = tempfile::TempDir::new().unwrap();
     let workspace = tmp.path().join("workspace");
-    // Product home is process-pinned; write user + bundled fixtures there.
-    let product_home = xai_grok_config::grok_home();
-    let bundled = crate::bundle::bundled_root();
+    let product_home = tmp.path().join("product-home");
+    let bundled = tmp.path().join("bundled");
     let user_role = product_home.join("roles/reviewer.toml");
     let user_persona = product_home.join("personas/reviewer.toml");
     let bundled_role = bundled.join("roles/reviewer.toml");
@@ -2279,20 +2280,32 @@ fn bundled_personas_and_roles_have_lowest_priority_in_resolve_order() {
     std::fs::create_dir_all(bundled.join("roles")).unwrap();
     std::fs::create_dir_all(bundled.join("personas")).unwrap();
 
-    let cleanup = || {
-        let _ = std::fs::remove_file(&user_role);
-        let _ = std::fs::remove_file(&user_persona);
-        let _ = std::fs::remove_file(&bundled_role);
-        let _ = std::fs::remove_file(&bundled_persona);
-    };
-    cleanup();
-
     std::fs::write(&bundled_role, r#"description = "Bundled reviewer""#).unwrap();
     std::fs::write(&bundled_persona, r#"instructions = "Bundled persona""#).unwrap();
     std::fs::write(&user_role, r#"description = "User reviewer""#).unwrap();
     std::fs::write(&user_persona, r#"instructions = "User persona""#).unwrap();
     std::fs::write(&project_role, r#"description = "Project reviewer""#).unwrap();
     std::fs::write(&project_persona, r#"instructions = "Project persona""#).unwrap();
+
+    /// Same layer order as `SubagentsConfig::resolve`, with injectable homes.
+    fn resolve_layers(
+        config: &toml::Value,
+        cwd: &std::path::Path,
+        product_home: &std::path::Path,
+        bundled: &std::path::Path,
+    ) -> SubagentsConfig {
+        let mut result: SubagentsConfig = config
+            .get("subagents")
+            .and_then(|v| v.clone().try_into().ok())
+            .unwrap_or_default();
+        result.discover_roles(cwd);
+        result.discover_personas(cwd);
+        result.discover_roles_in_dir(&product_home.join("roles"));
+        result.discover_personas_in_dir(&product_home.join("personas"));
+        result.discover_roles_in_dir(&bundled.join("roles"));
+        result.discover_personas_in_dir(&bundled.join("personas"));
+        result
+    }
 
     let config_inline = toml::from_str::<toml::Value>(
         r#"
@@ -2307,7 +2320,7 @@ fn bundled_personas_and_roles_have_lowest_priority_in_resolve_order() {
                 "#,
     )
     .unwrap();
-    let resolved = SubagentsConfig::resolve(true, &config_inline, Some(&workspace));
+    let resolved = resolve_layers(&config_inline, &workspace, &product_home, &bundled);
     assert_eq!(
         resolved.get_role("reviewer").unwrap().description,
         "Inline reviewer"
@@ -2330,7 +2343,7 @@ fn bundled_personas_and_roles_have_lowest_priority_in_resolve_order() {
                 "#,
     )
     .unwrap();
-    let resolved = SubagentsConfig::resolve(true, &config_plain, Some(&workspace));
+    let resolved = resolve_layers(&config_plain, &workspace, &product_home, &bundled);
     assert_eq!(
         resolved.get_role("reviewer").unwrap().description,
         "User reviewer"
@@ -2346,7 +2359,7 @@ fn bundled_personas_and_roles_have_lowest_priority_in_resolve_order() {
 
     std::fs::remove_file(&user_role).unwrap();
     std::fs::remove_file(&user_persona).unwrap();
-    let resolved = SubagentsConfig::resolve(true, &config_plain, Some(&workspace));
+    let resolved = resolve_layers(&config_plain, &workspace, &product_home, &bundled);
     assert_eq!(
         resolved.get_role("reviewer").unwrap().description,
         "Bundled reviewer"
@@ -2359,8 +2372,6 @@ fn bundled_personas_and_roles_have_lowest_priority_in_resolve_order() {
             .as_deref(),
         Some("Bundled persona")
     );
-
-    cleanup();
 }
 #[test]
 fn render_io_summary_shows_bundled_for_bundled_personas() {
