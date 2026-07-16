@@ -5,28 +5,26 @@
 //! `--lib` gates. Fake tokens only (`xai-fake-token` / `codex-fake-token`) — no live
 //! ChatGPT OAuth, no Phase 5 login UX, no Phase 6 missing-provider gate.
 //!
-//! **CI RED policy:** this binary intentionally commits behavior-RED contracts for
-//! MOD-04/MOD-05. Sequential GSD execution on the phase branch: Plan 01 RED →
-//! Plans 02–05 GREEN before mainline CI that runs all integration tests. Do not
-//! `#[ignore]` core contracts.
+//! **CI RED policy:** catalog + dual-key credential contracts are GREEN as of
+//! Plan 03. `switch_changes_next_sample_route` remains intentional RED until
+//! Plan 04 (prepare/reconstruct). Do not `#[ignore]` core contracts.
 //!
 //! **04-REVIEWS (HIGH):**
 //! - `switch_changes_next_sample_route` is the production-path contract
 //!   (prepare → chat-state / SetSessionModel → reconstruct). Plan 04 wires transforms
-//!   A/B. Wave 0 reserves the name as intentional RED — pure dual
-//!   `sampling_config_for_model` does **not** fulfill SC-3.
-//! - `never_cross_slot` is dual-token isolation (both tokens present simultaneously).
-//!   Plan 03 lands `resolve_credentials_for_provider` GREEN.
+//!   A/B — pure dual `sampling_config_for_model` does **not** fulfill SC-3.
+//! - `never_cross_slot` dual-token isolation is GREEN via
+//!   `resolve_credentials_for_provider`.
 //!
 //! Prefer `cargo test -p xai-grok-shell --test provider_routing` only.
 
 use indexmap::IndexMap;
 use serial_test::serial;
 use xai_grok_shell::agent::config::{
-    inject_url_derived_headers, resolve_credentials, resolve_model_list,
-    resolve_provider_route, sampling_config_for_model, Config, ConfigModelOverride,
-    EndpointsConfig, ModelEntry, ModelProvider, CLI_CHAT_PROXY_BASE_URL_DEFAULT,
-    CODEX_BASE_URL_DEFAULT, XAI_API_BASE_URL_DEFAULT,
+    inject_url_derived_headers, resolve_credentials, resolve_credentials_for_provider,
+    resolve_model_list, resolve_provider_route, sampling_config_for_model, Config,
+    ConfigModelOverride, EndpointsConfig, ModelEntry, ModelProvider,
+    CLI_CHAT_PROXY_BASE_URL_DEFAULT, CODEX_BASE_URL_DEFAULT, XAI_API_BASE_URL_DEFAULT,
 };
 use xai_grok_shell::sampling::ApiBackend;
 use xai_grok_test_support::EnvGuard;
@@ -447,6 +445,7 @@ fn provider_override_explicit_base_preserved() {
 /// D-04: explicit per-model `base_url` override wins over provider defaults.
 #[test]
 fn model_override_base_url_wins() {
+    let endpoints = deterministic_endpoints();
     let override_url = "https://byok.example/v1";
     let mut entry = catalog_entry("gpt-5.6-sol");
     entry.info.provider = ModelProvider::Codex;
@@ -454,13 +453,139 @@ fn model_override_base_url_wins() {
     // Clear api_base_url so resolve does not fall through to xAI Platform.
     entry.api_base_url = None;
 
-    let creds = resolve_credentials(&entry, Some(CODEX_FAKE));
+    let creds = resolve_credentials_for_provider(
+        &entry,
+        &endpoints,
+        Some(XAI_FAKE),
+        Some(CODEX_FAKE),
+    );
     assert_eq!(
         creds.base_url, override_url,
         "D-04: explicit model base_url override must win; got {}",
         creds.base_url
     );
-    assert_eq!(creds.api_key.as_deref(), Some(CODEX_FAKE));
+    // Custom host denies session OAuth; base still preserved (own_credential would attach key).
+    assert!(
+        creds.api_key.is_none(),
+        "custom override host must not attach session OAuth; got {:?}",
+        creds.api_key
+    );
+}
+
+/// Custom host: session OAuth keys must not attach (session_oauth_allowed false).
+#[test]
+fn custom_host_skips_session_oauth() {
+    let endpoints = deterministic_endpoints();
+    let mut entry = catalog_entry("gpt-5.6-sol");
+    entry.info.provider = ModelProvider::Codex;
+    entry.info.base_url = "https://byok.example/v1".to_owned();
+    entry.api_base_url = None;
+    entry.api_key = None;
+    entry.env_key = None;
+
+    let creds = resolve_credentials_for_provider(
+        &entry,
+        &endpoints,
+        Some(XAI_FAKE),
+        Some(CODEX_FAKE),
+    );
+    assert_eq!(creds.base_url, "https://byok.example/v1");
+    assert!(
+        creds.api_key.is_none(),
+        "custom Codex host must not receive session OAuth keys; got {:?}",
+        creds.api_key
+    );
+}
+
+/// Own credential on custom host always wins (host policy does not block BYOK).
+#[test]
+fn own_credential_on_custom_host_wins() {
+    let endpoints = deterministic_endpoints();
+    let mut entry = catalog_entry("gpt-5.6-sol");
+    entry.info.provider = ModelProvider::Codex;
+    entry.info.base_url = "https://byok.example/v1".to_owned();
+    entry.api_base_url = None;
+    entry.api_key = Some("byok-own-key".to_owned());
+
+    let creds = resolve_credentials_for_provider(
+        &entry,
+        &endpoints,
+        Some(XAI_FAKE),
+        Some(CODEX_FAKE),
+    );
+    assert_eq!(creds.base_url, "https://byok.example/v1");
+    assert_eq!(creds.api_key.as_deref(), Some("byok-own-key"));
+}
+
+/// Operator-configured first-party Codex endpoint still allows session OAuth
+/// (EndpointsConfig provenance — not default-only string compare).
+#[test]
+fn configured_codex_endpoint_allows_session_oauth() {
+    let configured = "https://codex.enterprise.example/backend-api/codex";
+    let endpoints = EndpointsConfig {
+        codex_base_url: configured.to_owned(),
+        ..deterministic_endpoints()
+    };
+    let mut entry = catalog_entry("gpt-5.6-sol");
+    entry.info.provider = ModelProvider::Codex;
+    entry.info.base_url = configured.to_owned();
+    entry.api_base_url = None;
+
+    let creds = resolve_credentials_for_provider(
+        &entry,
+        &endpoints,
+        Some(XAI_FAKE),
+        Some(CODEX_FAKE),
+    );
+    assert_eq!(creds.base_url, configured);
+    assert_eq!(
+        creds.api_key.as_deref(),
+        Some(CODEX_FAKE),
+        "configured first-party Codex host must allow session OAuth from matching EndpointsConfig"
+    );
+}
+
+/// D-15: XAI_API_KEY env must never apply to Codex models.
+#[test]
+#[serial]
+fn codex_skips_xai_api_key_env_fallback() {
+    let endpoints = deterministic_endpoints();
+    let _guard = EnvGuard::set("XAI_API_KEY", "xai-env-should-not-leak");
+    let mut entry = catalog_entry("gpt-5.6-sol");
+    entry.info.provider = ModelProvider::Codex;
+    entry.info.base_url = endpoints.resolve_codex_base_url();
+    entry.api_base_url = None;
+    entry.api_key = None;
+    entry.env_key = None;
+
+    let creds = resolve_credentials_for_provider(&entry, &endpoints, None, None);
+    assert_eq!(
+        creds.base_url,
+        endpoints.resolve_codex_base_url(),
+        "Codex base preserved without credentials"
+    );
+    assert!(
+        creds.api_key.is_none(),
+        "Codex must not receive XAI_API_KEY fallback; got {:?}",
+        creds.api_key
+    );
+}
+
+/// D-11: empty Codex key still constructs a route (fail-closed is Plan 05).
+#[test]
+fn empty_codex_key_allows_route_construction() {
+    let endpoints = deterministic_endpoints();
+    let mut entry = catalog_entry("gpt-5.6-sol");
+    entry.info.provider = ModelProvider::Codex;
+    entry.info.base_url = endpoints.resolve_codex_base_url();
+    entry.api_base_url = None;
+
+    let creds = resolve_credentials_for_provider(&entry, &endpoints, Some(XAI_FAKE), None);
+    assert_eq!(creds.base_url, endpoints.resolve_codex_base_url());
+    assert!(
+        creds.api_key.is_none(),
+        "construction with empty Codex slot must leave api_key None"
+    );
 }
 
 /// Safety / Pitfall 4: Codex base must not receive X-XAI-Token-Auth proxy headers.
@@ -480,54 +605,81 @@ fn no_proxy_headers_on_codex() {
 
 /// Dual-token isolation (D-09 / T-04-02 / 04-REVIEWS HIGH).
 ///
-/// Final GREEN (Plan 03): public dual-key API
-/// `resolve_credentials_for_provider(model, endpoints, Some(xai_key), Some(codex_key))`
-/// with **both** tokens present returns only the provider-correct key:
-/// - Codex model → `codex-fake-token` only (never `xai-fake-token`)
-/// - xAI model → `xai-fake-token` only (never `codex-fake-token`)
-///
-/// Wave 0/Task 2: both tokens always in locals; prove today's single-key API is a
-/// cross-slot defect vector (Codex accepts xAI key); fail until dual-key lands.
-/// Do **not** reduce this to two independent single-key resolves that each only
-/// see one token — that cannot detect cross-slot bugs.
+/// Both tokens present simultaneously; dual-key API returns only the
+/// provider-correct key (never the other slot).
 #[test]
 fn never_cross_slot() {
     // Both tokens present simultaneously — dual-token fixture (required).
     let xai_key = XAI_FAKE;
     let codex_key = CODEX_FAKE;
-    let dual_map = [( "xai", xai_key ), ( "codex", codex_key )];
+    let dual_map = [("xai", xai_key), ("codex", codex_key)];
     assert_eq!(dual_map.len(), 2, "dual-token fixture must hold both slots");
     assert_ne!(xai_key, codex_key);
 
-    let xai_entry = catalog_entry("grok-build");
-    let codex_entry = catalog_entry("gpt-5.6-sol");
+    let endpoints = deterministic_endpoints();
+    let cfg = Config {
+        endpoints: endpoints.clone(),
+        ..Config::default()
+    };
+    let list = resolve_model_list(&cfg, None);
+    let xai_entry = list
+        .get("grok-build")
+        .cloned()
+        .expect("catalog must include grok-build");
+    let codex_entry = list
+        .get("gpt-5.6-sol")
+        .cloned()
+        .expect("catalog must include gpt-5.6-sol");
     assert_eq!(xai_entry.info.provider.as_str(), "xai");
     assert_eq!(codex_entry.info.provider.as_str(), "codex");
 
-    // Documented defect: single-key resolve_credentials is provider-blind.
-    // When the wrong slot key is offered for a Codex model, it is accepted today.
+    // Dual-key with BOTH slots Some: each model receives only its provider key.
+    let codex_creds = resolve_credentials_for_provider(
+        &codex_entry,
+        &endpoints,
+        Some(xai_key),
+        Some(codex_key),
+    );
+    assert_eq!(
+        codex_creds.api_key.as_deref(),
+        Some(codex_key),
+        "Codex model must receive only codex-fake when both tokens present"
+    );
+    assert_ne!(
+        codex_creds.api_key.as_deref(),
+        Some(xai_key),
+        "Codex model must never receive xai-fake"
+    );
+
+    let xai_creds = resolve_credentials_for_provider(
+        &xai_entry,
+        &endpoints,
+        Some(xai_key),
+        Some(codex_key),
+    );
+    assert_eq!(
+        xai_creds.api_key.as_deref(),
+        Some(xai_key),
+        "xAI model must receive only xai-fake when both tokens present"
+    );
+    assert_ne!(
+        xai_creds.api_key.as_deref(),
+        Some(codex_key),
+        "xAI model must never receive codex-fake"
+    );
+
+    // Single-key maps into the model provider slot only (wrong-slot callers get
+    // None for the other slot — no longer provider-blind acceptance).
     let codex_with_xai_key = resolve_credentials(&codex_entry, Some(xai_key));
+    // session_key is treated as the *Codex* slot key for a Codex model.
+    // Offering an xAI token string as the Codex slot would attach it only if
+    // session OAuth is allowed — the dual-key API is the safe dual-slot path.
+    // Document that single-key cannot type-check provenance:
     assert_eq!(
         codex_with_xai_key.api_key.as_deref(),
         Some(xai_key),
-        "precondition: current single-key API wrongly accepts xAI key for Codex model"
-    );
-    let xai_with_codex_key = resolve_credentials(&xai_entry, Some(codex_key));
-    assert_eq!(
-        xai_with_codex_key.api_key.as_deref(),
-        Some(codex_key),
-        "precondition: current single-key API wrongly accepts Codex key for xAI model"
-    );
-
-    // Plan 03 GREEN: dual-key API with both Some(...) never returns the wrong slot.
-    // Until that symbol is public, keep compiling via intentional RED scaffold.
-    let dual_key_api_ready = false;
-    assert!(
-        dual_key_api_ready,
-        "Plan 03: resolve_credentials_for_provider dual-token isolation — \
-         both tokens present (xai={xai_key}, codex={codex_key}): \
-         dual_key(codex, both) == {codex_key} only AND dual_key(xai, both) == {xai_key} only \
-         (Codex must not receive xai-fake; xAI must not receive codex-fake)"
+        "single-key still attaches the provided string as this model's slot key \
+         (provenance untyped — dual-key required for dual-slot isolation)"
     );
 }
 

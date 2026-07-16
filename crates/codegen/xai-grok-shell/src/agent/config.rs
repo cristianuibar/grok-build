@@ -4515,55 +4515,161 @@ pub fn is_first_party_codex_url(url: &str, endpoints: &EndpointsConfig) -> bool 
     false
 }
 
-/// Resolve credentials for a model.
-/// Priority: model api_key/env_key > session token > XAI_API_KEY.
+/// Resolve credentials for a model (single provider-slot key).
+///
+/// Priority: model api_key/env_key > provider-slot session token (when host
+/// allows session OAuth) > `XAI_API_KEY` (**xAI provider only**).
+///
+/// `session_key` is the key for **this model’s provider slot only** — not a
+/// universal “always xAI” token. It is mapped into the dual-key API with the
+/// other slot set to `None`.
+///
+/// # Prefer dual-key when both slots are available
+///
+/// Dual-slot production builders **must** call
+/// [`resolve_credentials_for_provider`] with the effective [`EndpointsConfig`]
+/// used at catalog stamp / prepare time. This single-key form cannot type-check
+/// provenance of the key and uses env-filled [`EndpointsConfig::default`] for
+/// OAuth host policy (not a string-compare of `base_url` to a freshly defaulted
+/// endpoint set).
 ///
 /// When `env_key` lists multiple names, the first set non-empty value is used.
 pub fn resolve_credentials(model: &ModelEntry, session_key: Option<&str>) -> ResolvedCredentials {
+    // Env-filled defaults for hot path; dual-slot callers pass explicit endpoints.
+    let endpoints = EndpointsConfig::default();
+    let (xai_session_key, codex_session_key) = match model.info.provider {
+        ModelProvider::Xai => (session_key, None),
+        ModelProvider::Codex => (None, session_key),
+    };
+    resolve_credentials_for_provider(model, &endpoints, xai_session_key, codex_session_key)
+}
+
+fn non_blank_session_key(key: Option<&str>) -> Option<&str> {
+    key.map(str::trim).filter(|s| !s.is_empty())
+}
+
+/// Dual-key, endpoint-trust credential resolve (MOD-04 / MOD-05 / D-09 / D-15).
+///
+/// # Endpoint trust provenance
+///
+/// Callers **must** pass the same effective [`EndpointsConfig`] used when the
+/// catalog was stamped / prepare ran. Session OAuth attachment is gated only by
+/// [`resolve_provider_route`]'s `session_oauth_allowed` for this model’s
+/// provider + entry `base_url` against **this** endpoints value — never by
+/// comparing `ModelEntry.base_url` to a fresh `Config::default()` endpoint set.
+///
+/// # Priority
+///
+/// 1. Model own credential (BYOK) — always allowed; host policy does not block
+/// 2. Provider-slot session key when `session_oauth_allowed`
+/// 3. `XAI_API_KEY` env + `api_base_url` fallback — **xAI provider only**
+/// 4. Else empty key + entry/route base (construction OK; live fail-closed later)
+pub fn resolve_credentials_for_provider(
+    model: &ModelEntry,
+    endpoints: &EndpointsConfig,
+    xai_session_key: Option<&str>,
+    codex_session_key: Option<&str>,
+) -> ResolvedCredentials {
     let info = model.info();
+    let provider = info.provider;
+    // Classify OAuth eligibility against the actual request URL + caller's endpoints.
+    let route = resolve_provider_route(provider, endpoints, Some(info.base_url.as_str()));
+
     let (api_key, base_url, auth_type) = if let Some(key) = model.own_credential() {
         (
             Some(key),
             info.base_url.clone(),
             xai_chat_state::AuthType::ApiKey,
         )
-    } else if let Some(key) = session_key {
-        (
-            Some(key.to_owned()),
-            info.base_url.clone(),
-            xai_chat_state::AuthType::SessionToken,
-        )
-    } else if let Ok(key) = crate::agent::auth_method::read_xai_api_key_env() {
-        let url = model
-            .api_base_url
-            .clone()
-            .unwrap_or_else(|| info.base_url.clone());
-        (Some(key), url, xai_chat_state::AuthType::ApiKey)
-    } else {
-        if let Some(ref env_keys) = model.env_key
-            && !env_keys.is_empty()
-        {
-            tracing::warn!(
-                model = % info.model, env_key = % env_keys,
-                "model has env_key configured but none of the environment variables are set — \
-                 requests will have no API key",
-            );
+    } else if route.session_oauth_allowed {
+        let slot_key = match provider {
+            ModelProvider::Xai => non_blank_session_key(xai_session_key),
+            ModelProvider::Codex => non_blank_session_key(codex_session_key),
+        };
+        if let Some(key) = slot_key {
+            (
+                Some(key.to_owned()),
+                info.base_url.clone(),
+                xai_chat_state::AuthType::SessionToken,
+            )
+        } else if provider == ModelProvider::Xai {
+            if let Ok(key) = crate::agent::auth_method::read_xai_api_key_env() {
+                let url = model
+                    .api_base_url
+                    .clone()
+                    .unwrap_or_else(|| info.base_url.clone());
+                (Some(key), url, xai_chat_state::AuthType::ApiKey)
+            } else {
+                warn_missing_env_key(model);
+                (
+                    None,
+                    info.base_url.clone(),
+                    xai_chat_state::AuthType::ApiKey,
+                )
+            }
+        } else {
+            // Codex: never fall through to XAI_API_KEY (D-15).
+            warn_missing_env_key(model);
+            (
+                None,
+                info.base_url.clone(),
+                xai_chat_state::AuthType::ApiKey,
+            )
         }
+    } else if provider == ModelProvider::Xai {
+        // Custom host: no session OAuth; still allow global XAI_API_KEY for xAI.
+        if let Ok(key) = crate::agent::auth_method::read_xai_api_key_env() {
+            let url = model
+                .api_base_url
+                .clone()
+                .unwrap_or_else(|| info.base_url.clone());
+            (Some(key), url, xai_chat_state::AuthType::ApiKey)
+        } else {
+            warn_missing_env_key(model);
+            (
+                None,
+                info.base_url.clone(),
+                xai_chat_state::AuthType::ApiKey,
+            )
+        }
+    } else {
+        // Codex custom host without own credential: no session OAuth, no XAI env.
+        warn_missing_env_key(model);
         (
             None,
             info.base_url.clone(),
             xai_chat_state::AuthType::ApiKey,
         )
     };
+
     let auth_scheme = info.auth_scheme;
     tracing::debug!(
-        model = % info.model, auth_type = ? auth_type, "resolved credentials"
+        model = %info.model,
+        provider = %provider.as_str(),
+        base_url = %base_url,
+        has_api_key = api_key.is_some(),
+        session_oauth_allowed = route.session_oauth_allowed,
+        auth_type = ?auth_type,
+        "resolved credentials"
     );
     ResolvedCredentials {
         api_key,
         base_url,
         auth_type,
         auth_scheme,
+    }
+}
+
+fn warn_missing_env_key(model: &ModelEntry) {
+    if let Some(ref env_keys) = model.env_key
+        && !env_keys.is_empty()
+    {
+        tracing::warn!(
+            model = %model.info.model,
+            env_key = %env_keys,
+            "model has env_key configured but none of the environment variables are set — \
+             requests will have no API key",
+        );
     }
 }
 /// `disable_api_key_auth` at the credential seam: swap a first-party xAI API
@@ -4619,7 +4725,13 @@ pub fn try_resolve_model_credentials(
         .ok()?;
     let models = resolve_model_list(&cfg, None);
     let entry = find_model_by_id(&models, model_id)?;
-    let mut credentials = resolve_credentials(entry, session_key);
+    // Provider-slot session key only; dual-slot prepare path is Plan 04.
+    let (xai_key, codex_key) = match entry.info.provider {
+        ModelProvider::Xai => (session_key, None),
+        ModelProvider::Codex => (None, session_key),
+    };
+    let mut credentials =
+        resolve_credentials_for_provider(entry, &cfg.endpoints, xai_key, codex_key);
     enforce_disable_api_key_auth(
         &mut credentials,
         cfg.grok_com_config.api_key_auth_disabled(),
@@ -4925,6 +5037,7 @@ pub fn resolve_model_to_sampling_config(
     let entry = find_model_by_id(models, model_id)
         .cloned()
         .or(fallback_entry)?;
+    // Provider-aware single-slot: Codex never receives XAI_API_KEY via wrapper.
     let credentials = resolve_credentials(&entry, session_key);
     Some(sampling_config_for_model(
         &entry,
@@ -5897,7 +6010,8 @@ reasoning_effort = "low"
         let alias = "GROK_TEST_EMPTY_ENV_LC_ALIAS";
         let _primary = EnvGuard::set(primary, "");
         let _alias = EnvGuard::set(alias, "");
-        let mut model = test_model_entry("m", "https://inference.example/v1", None, None, None);
+        // First-party xAI host required for session OAuth attachment.
+        let mut model = test_model_entry("m", CLI_CHAT_PROXY_BASE_URL_DEFAULT, None, None, None);
         model.env_key = Some(EnvKeys::new([primary, alias]));
         assert!(!model.has_own_credentials());
         let creds = resolve_credentials(&model, Some("session-jwt"));
@@ -5927,7 +6041,13 @@ reasoning_effort = "low"
     #[test]
     fn resolve_credentials_empty_api_key_falls_through_to_session() {
         use xai_chat_state::AuthType;
-        let model = test_model_entry("m", "https://inference.example/v1", Some(""), None, None);
+        let model = test_model_entry(
+            "m",
+            CLI_CHAT_PROXY_BASE_URL_DEFAULT,
+            Some(""),
+            None,
+            None,
+        );
         assert!(!model.has_own_credentials());
         let creds = resolve_credentials(&model, Some("session-jwt"));
         assert_eq!(creds.auth_type, AuthType::SessionToken);
@@ -5957,7 +6077,7 @@ reasoning_effort = "low"
     #[test]
     fn resolve_credentials_sets_auth_type() {
         use xai_chat_state::AuthType;
-        let model = test_model_entry("m", "https://example.com/v1", None, None, None);
+        let model = test_model_entry("m", CLI_CHAT_PROXY_BASE_URL_DEFAULT, None, None, None);
         let creds = resolve_credentials(&model, Some("tok"));
         assert_eq!(creds.auth_type, AuthType::SessionToken);
         let byok = test_model_entry("m", "https://example.com/v1", Some("key"), None, None);

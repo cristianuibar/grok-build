@@ -1007,7 +1007,9 @@ fn resolve_model_override_to_config(
     model_id: &str,
     ctx: &SubagentSpawnContext,
 ) -> Option<(xai_grok_sampler::SamplerConfig, acp::ModelId)> {
-    use crate::agent::config::{resolve_credentials, sampling_config_for_model};
+    use crate::agent::config::{
+        resolve_credentials_for_provider, sampling_config_for_model, EndpointsConfig, ModelProvider,
+    };
     let entry = crate::agent::config::find_model_by_id(&ctx.available_models, model_id).cloned()?;
     let canonical_model_id = if ctx.available_models.contains_key(model_id) {
         acp::ModelId::new(model_id)
@@ -1016,7 +1018,17 @@ fn resolve_model_override_to_config(
     };
     let session_key = ctx.auth.as_ref().map(|a| a.key.as_str());
     let has_session_key = session_key.is_some();
-    let mut credentials = resolve_credentials(&entry, session_key);
+    // Phase 4 minimum: provider-aware resolve so Codex models never pick up
+    // XAI_API_KEY. Full dual-slot subagent isolation is Phase 7 — parent session
+    // auth is still xAI-only today, so do not cross-apply that token into the
+    // Codex slot (codex_session_key = None).
+    let endpoints = EndpointsConfig::default();
+    let (xai_key, codex_key) = match entry.info.provider {
+        ModelProvider::Xai => (session_key, None),
+        ModelProvider::Codex => (None, None),
+    };
+    let mut credentials =
+        resolve_credentials_for_provider(&entry, &endpoints, xai_key, codex_key);
     credentials.auth_type = subagent_auth_type(Some(&entry), &ctx.auth_method_id);
     let resolved_auth_type = credentials.auth_type;
     let config = sampling_config_for_model(
