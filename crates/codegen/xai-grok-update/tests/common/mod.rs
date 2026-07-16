@@ -1,11 +1,11 @@
 //! Shared helpers for integration tests.
 //!
 //! Each `tests/*.rs` integration test is its own binary, so each binary has
-//! its own `OnceLock<GROK_HOME>`. The helpers below ensure the per-binary
+//! its own `OnceLock` for product home. The helpers below ensure the per-binary
 //! initialization is identical: same env-var set, same isolation guarantees,
 //! same reset between tests.
 //!
-//! Mirrors the GROK_HOME isolation pattern used in other integration tests.
+//! Mirrors the BUM_HOME isolation pattern used in other integration tests.
 //!
 //! ## Usage
 //!
@@ -16,7 +16,7 @@
 //! #[tokio::test]
 //! #[serial_test::serial]
 //! async fn my_test() {
-//!     let _ = test_home();   // initializes GROK_HOME once per binary
+//!     let _ = test_home();   // initializes BUM_HOME once per binary
 //!     reset_home();          // wipes state between tests
 //!     // ...
 //! }
@@ -32,12 +32,12 @@ use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
 
 // ─────────────────────────────────────────────────────────────────────────────
-// GROK_HOME isolation
+// BUM_HOME isolation
 // ─────────────────────────────────────────────────────────────────────────────
 
-/// Returns a process-wide test `GROK_HOME`, initialized exactly once per test
-/// binary. Once initialized, `xai_grok_config::grok_home()` will resolve to
-/// this directory for the lifetime of the process.
+/// Returns a process-wide test product home (`BUM_HOME`), initialized exactly
+/// once per test binary. Once initialized, `xai_grok_config::grok_home()` will
+/// resolve to this directory for the lifetime of the process.
 ///
 /// Also clears env vars that the auto-update code consults so a parent shell's
 /// values can't pollute the baseline (e.g. running tests from `npm run` would
@@ -50,7 +50,7 @@ pub fn test_home() -> &'static PathBuf {
         // SAFETY: called once at OnceLock init, before any other thread touches
         // these env vars. Tests using this helper must be `#[serial]`.
         unsafe {
-            std::env::set_var("GROK_HOME", &path);
+            std::env::set_var("BUM_HOME", &path);
             std::env::remove_var("GROK_TEST_VERSION");
             std::env::remove_var("NPM_TOKEN");
             std::env::remove_var("GROK_INSTALLER");
@@ -61,7 +61,7 @@ pub fn test_home() -> &'static PathBuf {
     })
 }
 
-/// Wipe state in `GROK_HOME` between tests so each test sees a clean home.
+/// Wipe state in product home between tests so each test sees a clean home.
 /// Removes the well-known files and subdirectories the update path writes,
 /// and clears env vars that individual tests may set.
 pub fn reset_home() {
