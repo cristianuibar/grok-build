@@ -102,10 +102,11 @@ Plans:
   2. Requests for GPT/Codex models use the OpenAI/Codex (ChatGPT backend) path with ChatGPT OAuth credentials — not the xAI proxy
   3. Switching the active model changes resolved base URL / credential slot for the next sample (verifiable in logs or tests with fake tokens)
 
-**Plans:** 5 plans (replanned 2026-07-16 from Codex review cycle 1)
+**Plans:** 1/5 plans executed
 
 Plans:
-- [ ] 04-01-PLAN.md — Wave 0 harness + RED dual-route; dual-token never_cross_slot scaffold; switch contract reserved for production transforms A/B
+
+- [x] 04-01-PLAN.md — Wave 0 harness + RED dual-route; dual-token never_cross_slot scaffold; switch contract reserved for production transforms A/B
 - [ ] 04-02-PLAN.md — Codex endpoints + resolve_provider_route production authority + first-party session_oauth_allowed
 - [ ] 04-03-PLAN.md — default_models via resolver + rebind + dual-key credentials with EndpointsConfig trust provenance
 - [ ] 04-04-PLAN.md — PreparedSamplingConfig/auth_type carrier + Option ModelAuthFacts.provider + production transforms A/B + reconstruct
@@ -199,7 +200,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 →
 | 1. Product identity & isolated home | 5/5 | In Progress|  |
 | 2. Multi-slot credentials & xAI OAuth | 0/4 | Not started | - |
 | 3. Model catalog & GPT-5.6 entries | 3/3 | Complete    | 2026-07-16 |
-| 4. Provider-aware request routing | 0/5 | Planned | - |
+| 4. Provider-aware request routing | 1/5 | In Progress|  |
 | 5. Codex OAuth & dual auth lifecycle | 0/TBD | Not started | - |
 | 6. Mid-session switch & missing-provider gate | 0/TBD | Not started | - |
 | 7. Cross-provider multi-agent orchestration | 0/TBD | Not started | - |

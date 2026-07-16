@@ -3,7 +3,7 @@ phase: 4
 slug: provider-aware-request-routing
 status: draft
 nyquist_compliant: false
-wave_0_complete: false
+wave_0_complete: true
 created: 2026-07-16
 updated: 2026-07-16
 reviews_replanned: true
@@ -92,14 +92,14 @@ reviews_cycle: 2
 
 | Req ID | Behavior | Test Type | Automated Command | File Exists? |
 |--------|----------|-----------|-------------------|--------------|
-| MOD-04 | xAI model → proxy/xAI base + xAI credential | integration | `cargo test -p xai-grok-shell --test provider_routing xai_model_routes -- --nocapture` | ❌ Wave 0 |
-| MOD-05 | Codex model → Codex base + Codex credential (fake) | integration | `cargo test -p xai-grok-shell --test provider_routing codex_model_routes -- --nocapture` | ❌ Wave 0 |
-| MOD-04/05 | Explicit model base_url override wins | integration | `… model_override_base_url_wins` | ❌ Wave 0 |
+| MOD-04 | xAI model → proxy/xAI base + xAI credential | integration | `cargo test -p xai-grok-shell --test provider_routing xai_model_routes -- --nocapture` | ✅ Wave 0 (green today) |
+| MOD-05 | Codex model → Codex base + Codex credential (fake) | integration | `cargo test -p xai-grok-shell --test provider_routing codex_model_routes -- --nocapture` | ✅ Wave 0 (RED until Plan 02–03) |
+| MOD-04/05 | Explicit model base_url override wins | integration | `… model_override_base_url_wins` | ✅ Wave 0 (green) |
 | MOD-04/05 | Custom host denies session OAuth | integration | `… resolve_provider_route_custom_host` / custom_host_skips | ❌ Plan 02/03 |
 | MOD-04/05 | Configured EndpointsConfig Codex host allows session OAuth | integration | `… configured_codex_endpoint_allows_session_oauth` | ❌ Plan 03 |
-| SC-3 | Switch via production transforms A+B (prepare carrier → chat-state → reconstruct) | integration | `… switch_changes_next_sample_route` | ❌ Wave 0 scaffold / Plan 04 GREEN |
-| Safety | Dual-token never_cross_slot (both present) | integration | `… never_cross_slot` | ❌ Wave 0 scaffold / Plan 03 GREEN |
-| Safety | No X-XAI proxy headers on Codex base | integration | `… no_proxy_headers_on_codex` | ❌ Wave 0 |
+| SC-3 | Switch via production transforms A+B (prepare carrier → chat-state → reconstruct) | integration | `… switch_changes_next_sample_route` | ✅ Wave 0 scaffold RED / Plan 04 GREEN |
+| Safety | Dual-token never_cross_slot (both present) | integration | `… never_cross_slot` | ✅ Wave 0 scaffold RED / Plan 03 GREEN |
+| Safety | No X-XAI proxy headers on Codex base | integration | `… no_proxy_headers_on_codex` | ✅ Wave 0 (green) |
 | Safety | Option provider attach policy (None/Codex never attach) | integration | `… should_attach_xai_auth_manager_bearer_resolver` / `model_auth_facts` | ❌ Plan 04 |
 | Safety | Local fail-closed no HTTP (None+None) | integration | `… missing_credentials_fail_closed` | ❌ Plan 05 |
 | Safety | Empty live resolver fail-closed | integration | `… empty_live_resolver` | ❌ Plan 05 |
@@ -114,8 +114,8 @@ reviews_cycle: 2
 
 | Task ID | Plan | Wave | Requirement | Threat Ref | Secure Behavior | Test Type | Automated Command | File Exists | Status |
 |---------|------|------|-------------|-----------------|-----------------|-----------|-------------------|-------------|--------|
-| 04-01-01 | 01 | 1 | MOD-04, MOD-05 | T-04-01 | Wave 0: binary compiles; --list; smoke green; RED dual-route + honest switch scaffold | integration scaffold | `cargo test -p xai-grok-shell --test provider_routing -- --list && cargo test -p xai-grok-shell --test provider_routing provider_routing_harness_smoke -- --nocapture` | ❌ W0 | ⬜ pending |
-| 04-01-02 | 01 | 1 | MOD-04, MOD-05 | T-04-02 | dual-token never_cross_slot scaffold + proxy header locks | integration | `cargo test -p xai-grok-shell --test provider_routing -- --list && cargo test -p xai-grok-shell --test provider_routing xai_proxy_headers_still_apply -- --nocapture` | ❌ W0 | ⬜ pending |
+| 04-01-01 | 01 | 1 | MOD-04, MOD-05 | T-04-01 | Wave 0: binary compiles; --list; smoke green; RED dual-route + honest switch scaffold | integration scaffold | `cargo test -p xai-grok-shell --test provider_routing -- --list && cargo test -p xai-grok-shell --test provider_routing provider_routing_harness_smoke -- --nocapture` | ✅ | ✅ green (smoke) / RED contracts |
+| 04-01-02 | 01 | 1 | MOD-04, MOD-05 | T-04-02 | dual-token never_cross_slot scaffold + proxy header locks | integration | `cargo test -p xai-grok-shell --test provider_routing -- --list && cargo test -p xai-grok-shell --test provider_routing xai_proxy_headers_still_apply -- --nocapture` | ✅ | ✅ green (headers) / RED never_cross_slot |
 | 04-02-01 | 02 | 2 | MOD-05 | T-04-04 | CODEX_BASE_URL_DEFAULT + resolve_codex_base_url | integration | `cargo check -p xai-grok-shell && cargo test -p xai-grok-shell --test provider_routing resolve_codex_base_url -- --nocapture` | ❌ | ⬜ pending |
 | 04-02-02 | 02 | 2 | MOD-04, MOD-05 | T-04-03/11 | Pure resolve_provider_route + session_oauth_allowed | integration | `cargo test -p xai-grok-shell --test provider_routing resolve_provider_route -- --nocapture && cargo check -p xai-grok-shell` | ❌ | ⬜ pending |
 | 04-03-01 | 03 | 3 | MOD-05 | T-04-12 | default_models via resolve_provider_route + rebind | integration | `cargo test -p xai-grok-shell --test provider_routing codex_model_routes -- --nocapture && cargo test -p xai-grok-shell --test provider_routing xai_model_routes -- --nocapture` | ❌ | ⬜ pending |
@@ -131,9 +131,9 @@ reviews_cycle: 2
 
 ## Wave 0 Requirements
 
-- [ ] `crates/codegen/xai-grok-shell/tests/provider_routing.rs` — MOD-04/MOD-05 route + dual-token + switch scaffold + header contracts
-- [ ] Dual-endpoint Codex expectations live in provider_routing (not shell --lib `default_models_dual_endpoint_routing`)
-- [ ] Framework install: none
+- [x] `crates/codegen/xai-grok-shell/tests/provider_routing.rs` — MOD-04/MOD-05 route + dual-token + switch scaffold + header contracts
+- [x] Dual-endpoint Codex expectations live in provider_routing (not shell --lib `default_models_dual_endpoint_routing`)
+- [x] Framework install: none
 
 ---
 
