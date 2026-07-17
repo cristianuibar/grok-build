@@ -241,6 +241,10 @@ pub struct EnsureLatestOutcome {
 /// pointer (downloading **only** when the disk is actually behind it), then
 /// report whether the running process should relaunch onto the on-disk binary.
 ///
+/// Quiet fork: returns a no-op outcome when
+/// [`effective_auto_update_enabled`] is false (`None` or `Some(false)`),
+/// before any network or install work.
+///
 /// Unlike [`run_update`] this never uses the compiled-in version for the
 /// download decision — a binary already installed by another process (TUI
 /// background download, explicit `grok update`) is reused as-is. This both
@@ -259,6 +263,13 @@ pub async fn ensure_latest_on_disk(update_config: &UpdateConfig) -> Result<Ensur
         installed: None,
         relaunch_needed: false,
     };
+    // Quiet fork (OPS-01 / D-07): refuse network/install when auto_update is
+    // unset or explicitly false. Matches run_update_if_available /
+    // check_update_background so library callers cannot bypass the policy.
+    let current_config = config::load_config().await;
+    if !effective_auto_update_enabled(current_config.cli.auto_update) {
+        return Ok(outcome);
+    }
     let Some(installer) = get_installer().await else {
         return Ok(outcome);
     };

@@ -39,8 +39,8 @@ use serial_test::serial;
 
 use common::artifact_server::ArtifactServer;
 use common::{
-    FakeBinGuard, can_exec_shell_scripts, host_platform, make_update_config, reset_home,
-    set_test_version, small_good_artifact, test_home,
+    FakeBinGuard, can_exec_shell_scripts, enable_stock_auto_update, host_platform,
+    make_update_config, reset_home, set_test_version, small_good_artifact, test_home,
 };
 use xai_grok_update::auto_update::{ensure_latest_on_disk, install_internal_from_base, run_update};
 use xai_grok_update::version::installed_on_disk_version;
@@ -162,6 +162,7 @@ async fn ensure_latest_downloads_once_then_converges_without_redownload() {
     }
     let g = setup_gh_release("0.2.5");
     g.set_stable_only_stdout("v0.2.7\n");
+    enable_stock_auto_update();
     let cfg = make_update_config("stable");
 
     // Pass 1: disk is empty → downloads and installs.
@@ -297,6 +298,7 @@ async fn ensure_latest_npm_ignores_leftover_internal_symlink() {
     let g = setup_npm("0.2.5");
     g.set_stdout("\"0.2.7\"\n");
     fake_managed_install("0.2.9");
+    enable_stock_auto_update();
     let cfg = make_update_config("stable");
 
     let outcome = ensure_latest_on_disk(&cfg).await.unwrap();
@@ -377,6 +379,7 @@ async fn ensure_latest_repairs_dangling_symlink_by_downloading() {
             .join(format!("grok-0.2.7-{platform}")),
     )
     .unwrap();
+    enable_stock_auto_update();
     let cfg = make_update_config("stable");
 
     let outcome = ensure_latest_on_disk(&cfg).await.unwrap();

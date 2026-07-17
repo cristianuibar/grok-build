@@ -86,6 +86,18 @@ pub fn set_test_version(v: &str) {
     unsafe { std::env::set_var("GROK_TEST_VERSION", v) };
 }
 
+/// Opt into stock auto-update for integration tests that exercise
+/// [`xai_grok_update::auto_update::ensure_latest_on_disk`].
+///
+/// The library gate requires explicit `[cli].auto_update = true` (quiet fork
+/// defaults `None` → off). Call after [`reset_home`] / setup helpers that wipe
+/// `config.toml`.
+pub fn enable_stock_auto_update() {
+    let home = test_home();
+    std::fs::write(home.join("config.toml"), "[cli]\nauto_update = true\n")
+        .expect("write [cli].auto_update=true for integration test");
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Install-test fixtures (shared by the blitz + convergence suites)
 // ─────────────────────────────────────────────────────────────────────────────

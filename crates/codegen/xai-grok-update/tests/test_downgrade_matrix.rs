@@ -19,7 +19,9 @@ use serial_test::serial;
 use wiremock::matchers::{method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
-use common::{FakeBinGuard, reset_home, set_test_version, test_home};
+use common::{
+    FakeBinGuard, enable_stock_auto_update, reset_home, set_test_version, test_home,
+};
 use xai_grok_update::UpdateConfig;
 use xai_grok_update::auto_update::{
     auto_update_target, check_update_status, ensure_latest_on_disk, install_internal_from_base,
@@ -488,6 +490,7 @@ async fn ensure_latest_skips_download_when_disk_current_but_still_relaunches() {
     let g = setup_gh("0.2.5");
     g.set_stable_only_stdout("v0.2.7\n");
     fake_managed_install("0.2.7");
+    enable_stock_auto_update();
 
     let outcome = ensure_latest_on_disk(&make_config("stable")).await.unwrap();
     assert_eq!(outcome.installed, None, "must not re-download");
@@ -505,6 +508,7 @@ async fn ensure_latest_noop_when_running_and_disk_current() {
     let g = setup_gh("0.2.7");
     g.set_stable_only_stdout("v0.2.7\n");
     fake_managed_install("0.2.7");
+    enable_stock_auto_update();
 
     let outcome = ensure_latest_on_disk(&make_config("stable")).await.unwrap();
     assert_eq!(outcome.installed, None);
@@ -520,6 +524,7 @@ async fn ensure_latest_relaunches_onto_rolled_back_disk() {
     let g = setup_gh("0.2.26");
     g.set_stable_only_stdout("v0.2.22\n");
     fake_managed_install("0.2.22");
+    enable_stock_auto_update();
 
     let outcome = ensure_latest_on_disk(&make_config("stable")).await.unwrap();
     assert_eq!(outcome.installed, None, "disk already at pointer");
