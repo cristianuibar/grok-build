@@ -4,17 +4,17 @@ milestone: v1.0
 milestone_name: milestone
 current_phase: 8
 current_phase_name: Quiet fork & rebrand polish
-current_plan: Not started
-status: planning
-stopped_at: Completed 07-06-PLAN.md
-last_updated: "2026-07-17T09:51:16.046Z"
+current_plan: 2
+status: executing
+stopped_at: Completed 08-01-PLAN.md
+last_updated: "2026-07-17T10:47:05.163Z"
 last_activity: 2026-07-17
-last_activity_desc: Phase 7 complete, transitioned to Phase 8
+last_activity_desc: "Completed 08-01-PLAN.md (p8_ green harness)"
 progress:
   total_phases: 9
   completed_phases: 7
-  total_plans: 35
-  completed_plans: 35
+  total_plans: 41
+  completed_plans: 36
 ---
 
 # Project State
@@ -24,27 +24,28 @@ progress:
 See: .planning/PROJECT.md (updated 2026-07-17)
 
 **Core value:** One CLI (`bum`) can log into both xAI and Codex and freely switch between Grok and GPT-5.6 models in a real coding session — including cross-provider subagent orchestration.
-**Current focus:** Phase 8 — Quiet fork & rebrand polish (ready to plan)
+**Current focus:** Phase 8 — Quiet fork & rebrand polish (Plan 02 next)
 
 ## Current Position
 
 Phase: 8 of 9 (Quiet fork & rebrand polish)
-Plan: Not started
-Status: Ready to plan
-Last activity: 2026-07-17 — Phase 7 complete (AGENT-01..06), transitioned to Phase 8
-Current Plan: Not started
-Total Plans in Phase: TBD
+Plan: 2 of 6
+Status: In progress — Plan 01 complete
+Last activity: 2026-07-17 — Completed 08-01-PLAN.md (p8_ green harness + VALIDATION)
+Current Plan: 2
+Total Plans in Phase: 6
 
-Progress: [████████░░] 78% (7/9 phases)
+Progress: [████████░░] 84% (36/41 plans; 7/9 phases complete)
 
 ## Performance Metrics
 
 **Velocity:**
 
-- Total plans completed: 35 (phases 1–7)
+- Total plans completed: 36 (phases 1–7 complete; Phase 8 Plan 01)
 - Phase 5: 6 plans (Wave 0 RED → storage → OAuth → logout/status → refresh → gate)
 - Phase 6: 6 plans (shell gate → QV → dual free switch → badges → deferred login → phase gate)
 - Phase 7: 6 plans (harness → effort → spawn gate → async preflight → isolation → phase gate)
+- Phase 8: 1/6 plans (wave-1 p8_ harness)
 
 **By Phase:**
 
@@ -57,6 +58,7 @@ Progress: [████████░░] 78% (7/9 phases)
 | 05 | 6/6 | complete — AUTH-02..05 |
 | 06 | 6/6 | complete — MOD-03, MOD-06 |
 | 07 | 6/6 | complete — AGENT-01..06 |
+| 08 | 1/6 | in progress — Plan 01 green harness |
 
 ---
 **Per-Plan Metrics:**
@@ -75,6 +77,7 @@ Progress: [████████░░] 78% (7/9 phases)
 | Phase 07 P04 | 15min | 2 tasks | 7 files |
 | Phase 07 P05 | 10min | 2 tasks | 3 files |
 | Phase 07 P06 | 4min | 2 tasks | 2 files |
+| Phase 08 P01 | 15min | 2 tasks | 3 files |
 
 ## Decisions
 
@@ -110,9 +113,11 @@ Progress: [████████░░] 78% (7/9 phases)
 - [Phase ?]: Both Grok→Codex and Codex→Grok Authorization proofs mandatory — no one-direction waiver
 - [Phase ?]: Plan 06: green-only phase gate; AGENT-01 lifecycle cited existing tests; p7_preflight covers credential gate
 - [Phase ?]: Plan 06: no product code — Plans 01-05 greened all p7_ filters; VALIDATION nyquist_compliant
+- [Phase 8]: Plan 01: green p8_ scaffolds only; no product chrome asserts (clap still grok until Plan 02)
+- [Phase 8]: OPS-02 telemetry default Disabled locked green under p8_telemetry; remote restrictive deferred to Plan 05
 
 ## Session
 
-**Last session:** 2026-07-17T09:31:00.276Z
-**Stopped at:** Completed 07-06-PLAN.md
+**Last session:** 2026-07-17T10:47:05.155Z
+**Stopped at:** Completed 08-01-PLAN.md
 **Resume file:** None
