@@ -7,7 +7,7 @@ wave_0_complete: false
 created: 2026-07-17
 updated: 2026-07-17
 plans_verified: []
-reviews_cycle: 2
+reviews_cycle: 3
 ---
 
 # Phase 7 — Validation Strategy
@@ -32,6 +32,12 @@ reviews_cycle: 2
 > code. Phase gate claims all green — never “green except expected-red.”
 > **AGENT-05 PASS** requires Plan 04 async eager path green (`p7_eager` + shell
 > `p7_preflight`/`p7_credential_gate`) — not filter names alone (C2-M5).
+>
+> **Review convergence (cycle 3 plan patch):** C3-M1 (Plan 04 preflight full
+> spawn-resolution inputs / shared resolve helper) and C3-M2 (Plan 06 Task 2
+> discover+execute shell preflight + isolation both dirs + `p7_missing` +
+> `p7_parent_model` + `p7_tool`) are folded into PLAN.md. `current_actionable=0`
+> MEDIUMs; LOWs only. Accepted without full replan — execute Phase 7.
 >
 > **Scaffold note:** This file is created at plan time (Nyquist Dimension 8e) from RESEARCH
 > Validation Architecture + planned `p7_` filters. Plan 06 **updates** filter names after

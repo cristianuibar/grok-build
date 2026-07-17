@@ -8,7 +8,8 @@ prior_cycle: 2
 prior_reviewed_at: 2026-07-17T08:03:38Z
 replan_commit: 3b27a6a
 current_high: 0
-current_actionable: 2
+current_actionable: 0
+plan_patch: c3-m1-m2-fold
 ---
 
 # Cross-AI Plan Review — Phase 7
@@ -39,15 +40,17 @@ current_actionable: 2
 | C2-M2 | 2 | MEDIUM | 03 | **RESOLVED** | Gate before `insert_pending`; named no-pending/active assert |
 | C2-M3 | 2 | MEDIUM | 04 | **RESOLVED** | Mandatory inventory + fail-closed missing backend |
 | C2-M4 | 2 | MEDIUM | 05 | **RESOLVED** | Minimal harness contract spawn→sample→cancel/join |
-| C2-M5 | 2 | MEDIUM | 06 | **PARTIAL → C3-M2** | Must-haves/action require async eager path; Task 2 `<verify>` still incomplete vs full subgroup list |
+| C2-M5 | 2 | MEDIUM | 06 | **RESOLVED** via C3-M2 fold | Must-haves/action + Task 2 `<verify>` discover+execute full subgroup list |
 | C2-L1 | 2 | LOW | 01 | **OPEN** | Dual-fixture smoke ≠ isolation proof (label only) |
 | C2-L2 | 2 | LOW | 06 | **OPEN** | Lifecycle must be named/cited real coordinator path (not resolve-only helpers) |
 | C2-L3 | 2 | LOW | 02 | **RESOLVED** | `none`/`minimal` allowed when parser accepts |
-| C3-M1 | 3 | MEDIUM | 04 | **OPEN** | Preflight request field list underspecifies resume/overrides vs authoritative resolve |
-| C3-M2 | 3 | MEDIUM | 06 | **OPEN** | Plan 06 Task 2 automated verify omits shell preflight + most Plan 05 filters |
+| C3-M1 | 3 | MEDIUM | 04 | **RESOLVED** (plan patch) | Preflight request = full spawn-resolution input (`resume_from` + runtime overrides/persona) or shared resolve helper |
+| C3-M2 | 3 | MEDIUM | 06 | **RESOLVED** (plan patch) | Task 2 `<verify>` discover+execute shell preflight, both isolation dirs, `p7_missing`, `p7_parent_model`, `p7_tool` |
 
 **Counts for convergence (unresolved HIGH + actionable MEDIUM only):**  
-`current_high=0` · `current_actionable=2` (C3-M1, C3-M2; C2-M5 folded into C3-M2 residual; LOWs tracked but not in actionable count)
+`current_high=0` · `current_actionable=0` (C3-M1/C3-M2 folded into PLAN.md; LOWs tracked but not in actionable count)
+
+**Convergence accepted (post cycle-3 plan patch):** residual MEDIUMs folded into `07-04-PLAN.md` / `07-06-PLAN.md` without a full replan cycle. Safe to execute Phase 7.
 
 ---
 
@@ -73,11 +76,11 @@ This matches source reality: inherit path is async (`subagent/mod.rs:840+`, `rea
 | C2-M2 | **Yes** | 07-03 must_haves + action ordering + `p7_spawn_missing_provider_leaves_no_pending_or_active_child` |
 | C2-M3 | **Yes** | 07-04 inventory step + SUMMARY table requirement |
 | C2-M4 | **Yes** | 07-05 “Minimal harness contract” + mandatory first deliverable |
-| C2-M5 | **Mostly** | 07-06 must_haves + C2-M5 section + action hard bars for `p7_eager` / shell preflight; **residual** Task 2 `<verify>` does not execute all hard bars (see C3-M2) |
+| C2-M5 | **Yes** (via C3-M2 fold) | 07-06 must_haves + Task 2 `<verify>` discover+execute shell preflight + Plan 05 filters |
 
 ### 3. Remaining HIGH or actionable MEDIUM?
 
-**No HIGH.** Two residual **MEDIUM**s (C3-M1, C3-M2) — plan-hygiene / completeness, not design blockers. Safe to execute with awareness of these during Plan 04/06 implementation; optional micro-edit of PLAN.md before execute is recommended but not a new replan cycle of the cycle-2 magnitude.
+**No HIGH. No actionable MEDIUM.** C3-M1/C3-M2 folded into Plan 04/06 via plan patch (not full replan). LOWs only (C2-L1, C2-L2). **Execute Phase 7.**
 
 ---
 
@@ -107,9 +110,9 @@ The revised Phase 7 plan is substantially stronger and is ready to execute with 
 
 ## Concerns
 
-- **MEDIUM (C3-M1) — Plan 04’s preflight request must carry the complete resolution inputs, not merely the stated minimum fields.** The plan says its request has, at minimum, type, explicit model, parent session, and responder (`07-04-PLAN.md:155`). But real resolution also depends on `resume_from` and the full runtime overrides/persona: resume source lookup and model pin occur at `handle_request.rs:182`, while role/persona overrides affect the effective model at `handle_request.rs:143`. If the preflight carries only its listed minimum, it can permit an eventual spawn that the authoritative path should deny, or deny a resume against the wrong provider.
+- **MEDIUM (C3-M1) — RESOLVED (plan patch).** Plan 04 Task 1/2 now require full spawn-resolution input: `resume_from` + runtime overrides/persona/provenance, preferred shared `resolve_effective_child_model_for_spawn` with `handle_subagent_request`, plus resume/persona deny tests.
 
-- **MEDIUM (C3-M2) — Plan 06’s explicit verification command does not execute all of its required subgroups.** The plan requires `p7_isolation`, `p7_missing`, `p7_parent_model`, `p7_tool`, and shell async preflight as hard bars (`07-06-PLAN.md:204`), but its concrete Task 2 verify command only runs tools filters, spawn-missing, and the existing role/resume/persona filters (`07-06-PLAN.md:216`). Document `rg` checks prove the PHASE-GATE *mentions* filters; they do not *execute* shell preflight or isolation. Residual of C2-M5 automation completeness.
+- **MEDIUM (C3-M2) — RESOLVED (plan patch).** Plan 06 Task 2 `<verify>` discover+executes shell `p7_preflight`/`p7_credential_gate`, both isolation direction names, `p7_missing`, `p7_parent_model`, `p7_tool` (not rg-only mentions).
 
 - **LOW — the existing “resume pin” regression is not a real lifecycle test.** Current `resume_model_pinning_overrides_default_resolution` only compares strings (`rest.rs:2038`). Plan 06 recognizes this and requires a real lifecycle test or a specific cited equivalent; ensure the final citation is an actual coordinator spawn/completion/resume test, not this helper-level test.
 
@@ -135,11 +138,11 @@ The revised Phase 7 plan is substantially stronger and is ready to execute with 
 | C2-M2: gate before pending/worktree with no-pending assertion | **RESOLVED** | Plan 03 requires resolve → gate → `insert_pending` → worktree, including no-pending/no-active tests. Corrects current `insert_pending` before worktree/model resolution (`handle_request.rs:98`, `handle_request.rs:423`). |
 | C2-M3: backend/resource/non-shell bridge inventory | **RESOLVED** | Plan 04 requires grep-based inventory and fail-closed missing backend (`07-04-PLAN.md:161–165`). Production builder installs `ChannelBackend` centrally (`agent_rebuild.rs:318+`). |
 | C2-M4: minimal real-spawn/sample/cancel harness | **RESOLVED** | Plan 05 defines and requires the lifecycle and both directional authorization tests (`07-05-PLAN.md:103+`). |
-| C2-M5: phase gate must require async eager path | **PARTIAL** | Stated gate rules require `p7_eager` + shell async preflight (`07-06-PLAN.md:101–105`, action steps 1/4/5). Task 2 `<verify>` runs `p7_eager` but omits shell preflight execute and most Plan 05 filters (`07-06-PLAN.md:216`) — residual C3-M2. |
+| C2-M5: phase gate must require async eager path | **RESOLVED** | Task 2 `<verify>` discover+executes `p7_eager`, shell preflight, isolation both dirs, `p7_missing`, `p7_parent_model`, `p7_tool` (C3-M2 fold). |
 
 ## Risk Assessment
 
-**MEDIUM (execution hygiene), not HIGH (design).** No remaining high-risk design flaw: the async preflight, pre-side-effect authoritative gate, and two-direction real sampling proof are correctly planned. Residual risk is (1) preflight/request field drift vs authoritative resolve and (2) a phase-gate verify that documents more than it automates.
+**No remaining HIGH or actionable MEDIUM after plan patch.** Residual risk items (preflight field drift; incomplete Task 2 verify) folded into Plan 04/06.
 
 ---
 
@@ -153,7 +156,7 @@ Single reviewer (Codex only). Plan-level consensus is the Codex verdict grounded
 3. **C2-M2 Plan 03 gate-before-pending** — **RESOLVED**.
 4. **C2-M3 Plan 04 fixture inventory** — **RESOLVED**.
 5. **C2-M4 Plan 05 harness contract** — **RESOLVED**.
-6. **C2-M5 Plan 06 AGENT-05 async dependency** — **PARTIAL**: product/hard-bar text fixed; Task 2 automated verify still incomplete → residual **C3-M2**.
+6. **C2-M5 Plan 06 AGENT-05 async dependency** — **RESOLVED** via C3-M2 plan patch (Task 2 verify executes full hard-bar subgroup list).
 
 ### Agreed Strengths
 - Dual-layer design: shell authoritative gate (Plan 03) + Task async eager preflight (Plan 04).
@@ -165,8 +168,10 @@ Single reviewer (Codex only). Plan-level consensus is the Codex verdict grounded
 **None.**
 
 ### Current Actionable Non-HIGH Concerns
-1. **C3-M1 / Plan 04** — Expand preflight request beyond minimum (include `resume_from` + runtime overrides/persona/provenance, or share one resolve helper with `handle_subagent_request`) so UX preflight cannot diverge from authoritative spawn on resume/role pins.
-2. **C3-M2 / Plan 06 (C2-M5 residual)** — Task 2 `<verify>` should `discover`/execute shell `p7_preflight`/`p7_credential_gate`, both isolation names, `p7_missing`, `p7_parent_model`, `p7_tool` (or run the generated PHASE-GATE script as the sole automated verify), not only document `rg` presence.
+**None** — C3-M1/C3-M2 folded into PLAN.md (plan patch, not full replan).
+
+1. **C3-M1 / Plan 04** — **RESOLVED:** full spawn-resolution input (`resume_from` + runtime overrides/persona) or shared resolve helper with `handle_subagent_request`.
+2. **C3-M2 / Plan 06 (C2-M5 residual)** — **RESOLVED:** Task 2 `<verify>` discover+executes shell preflight, both isolation dirs, `p7_missing`, `p7_parent_model`, `p7_tool`.
 
 ### Tracked LOW (non-blocking)
 - C2-L1 Plan 01 smoke ≠ isolation proof.
@@ -176,10 +181,10 @@ Single reviewer (Codex only). Plan-level consensus is the Codex verdict grounded
 N/A — single reviewer (Codex).
 
 ### Bottom line
-**Cycle 3 convergence achieved on all prior HIGHs and on C2-M1..M4.** C2-H1 is fully resolved in Plan 04 text. Residual **two MEDIUMs** are implementation-completeness items (preflight request shape; phase-gate verify coverage), not architectural blockers. **Execute Phase 7** is appropriate; fold C3-M1/C3-M2 into Plan 04/06 during execute (or a tiny plan edit) rather than another full replan cycle.
+**Cycle 3 convergence accepted with C3-M1/C3-M2 folded into Plan 04/06.** All prior HIGHs and C2-M1..M5 closed in plan text. No remaining actionable MEDIUMs. **Execute Phase 7.**
 
 ---
 
 ## Cycle 1–2 archive note
 
-Cycle 1 (2026-07-17T07:55:02Z) established five HIGHs; replan `d9a9a51` closed four and left C2-H1. Cycle 2 (2026-07-17T08:03:38Z) confirmed C2-H1 OPEN + C2-M1..M5. Replan `3b27a6a` addressed those; cycle 3 verifies resolution and records residual C3-M1/C3-M2 only. Full historical bodies live in git history for this file.
+Cycle 1 (2026-07-17T07:55:02Z) established five HIGHs; replan `d9a9a51` closed four and left C2-H1. Cycle 2 (2026-07-17T08:03:38Z) confirmed C2-H1 OPEN + C2-M1..M5. Replan `3b27a6a` addressed those; cycle 3 verifies resolution and records residual C3-M1/C3-M2. Plan patch folds C3-M1 into `07-04-PLAN.md` and C3-M2 into `07-06-PLAN.md` Task 2 verify — convergence accepted, `current_actionable=0`. Full historical bodies live in git history for this file.
