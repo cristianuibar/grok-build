@@ -1,253 +1,255 @@
 ---
 phase: 7
 reviewers: [codex]
-reviewed_at: 2026-07-17T07:55:02Z
+reviewed_at: 2026-07-17T08:03:38Z
 plans_reviewed: ['07-01-PLAN.md', '07-02-PLAN.md', '07-03-PLAN.md', '07-04-PLAN.md', '07-05-PLAN.md', '07-06-PLAN.md']
-cycle: 1
+cycle: 2
+prior_cycle: 1
+prior_reviewed_at: 2026-07-17T07:55:02Z
+replan_commit: d9a9a51
+current_high: 1
+current_actionable: 5
 ---
 
 # Cross-AI Plan Review — Phase 7
 
 **Phase:** 07-cross-provider-multi-agent-orchestration  
 **Reviewers:** Codex only (`--codex`)  
-**Reviewed at:** 2026-07-17T07:55:02Z  
+**Cycle:** 2 (convergence after replan `d9a9a51`)  
+**Reviewed at:** 2026-07-17T08:03:38Z  
 **Plans:** 07-01-PLAN.md, 07-02-PLAN.md, 07-03-PLAN.md, 07-04-PLAN.md, 07-05-PLAN.md, 07-06-PLAN.md
 
 ---
 
-## Codex Review
+## Cycle status (open vs resolved)
 
-# Phase 7 Plan Review
+| ID | Cycle | Severity | Plan | Status | Notes |
+|----|-------|----------|------|--------|-------|
+| C1-H1 | 1 | HIGH | 01 | **RESOLVED** | Green compile-safe scaffold; no `TaskToolInput.reasoning_effort`; no intentional-red under `p7_` |
+| C1-H2 | 1 | HIGH | 01 | **RESOLVED** | Expected-green protocol; Plans 02–05 add green tests with behavior |
+| C1-H3 | 1 | HIGH | 03 | **RESOLVED** | Pre-worktree gate + side-effect-free effective-model preflight in plan text |
+| C1-H4 | 1 | HIGH | 04 | **PARTIAL → C2-H1** | Effective-model request is specified, but default sync `Fn` cannot match async shell resolve |
+| C1-H5 | 1 | HIGH | 05 | **RESOLVED** | In-crate/public test seam mandatory; both-direction Authorization mandatory |
+| C1-M1 | 1 | MEDIUM | 02 | **RESOLVED** | Full `TaskToolInput {` migration + `max→xhigh` canonical store in plan |
+| C1-M2 | 1 | MEDIUM | 03 | **RESOLVED** | Pure `provider_slot_usable` with explicit inputs (not MvpAgent-only) |
+| C1-M3 | 1 | MEDIUM | 03 | **RESOLVED** | Tool unknown-model scoped to existing `task_model_override_error` regression |
+| C1-M4 | 1 | MEDIUM | 05 | **RESOLVED** | Both-direction Authorization hard bar; no one-direction waiver |
+| C1-M5 | 1 | MEDIUM | 05 | **RESOLVED** | Parent stability after real spawn (not resolve-only) |
+| C1-M6 | 1 | MEDIUM | 03 | **RESOLVED** | Supported Sol + unsupported effort fixtures required |
+| C1-M7 | 1 | MEDIUM | 04 | **PARTIAL** | Fixture migration required; full constructor inventory still weak (see C2-M3) |
+| C1-M8 | 1 | MEDIUM | 06 | **PARTIAL** | Lifecycle “if cheap” remains soft (see C2-L2) |
+| C1-L1 | 1 | LOW | 02 | **OPEN** | Verify still has `\|\|` swallow on xai-tool-types (C2-M1) |
+| C2-H1 | 2 | HIGH | 04 | **OPEN** | Sync credential-gate resource cannot deliver live “same effective model” as async shell |
+| C2-M1 | 2 | MEDIUM | 02 | **OPEN** | Task 1 verify still uses `\|\|` fallback that can hide intended test failure |
+| C2-M2 | 2 | MEDIUM | 03 | **OPEN** | Gate-before-pending must be explicit in task ordering + no-pending entry assert |
+| C2-M3 | 2 | MEDIUM | 04 | **OPEN** | Enumerate all Task resource builders / non-shell bridges for fail-closed resource |
+| C2-M4 | 2 | MEDIUM | 05 | **OPEN** | Seam still choice-shaped; need minimal harness contract (spawn → one sample → cancel) |
+| C2-M5 | 2 | MEDIUM | 06 | **OPEN** | Phase gate inherits Plan 04 feasibility gap for AGENT-05 eager UX proof |
+| C2-L1 | 2 | LOW | 01 | **OPEN** | Dual-fixture smoke must not be mistaken for routing/Authorization proof |
+| C2-L2 | 2 | LOW | 06 | **OPEN** | Same-provider lifecycle “if cheap” too weak — require named test or cite existing |
+| C2-L3 | 2 | LOW | 02 | **OPEN** | Clarify whether parser tokens `none`/`minimal` are allowed Tool values |
 
-## Overall summary
-
-The phase direction is sound: it extends the existing Task → coordinator → child-session path, preserves catalog-driven provider routing, and explicitly addresses the background-success race. The biggest planning issues are execution feasibility and test validity: Plan 01’s proposed RED tests cannot compile against a field that does not yet exist, Plan 03 places the authoritative credential gate after worktree side effects, and Plan 05 does not currently include the source/test visibility changes needed for an external integration test to drive the private subagent resolver or a real child sample.
-
-## 07-01 — RED harness
-
-### Summary
-
-The plan correctly identifies the desired contracts, but its “intentional RED” mechanism conflicts with Rust compilation and the phase’s own discovery requirements.
-
-### Strengths
-
-- It correctly targets the actual Task construction point, which currently hardcodes `reasoning_effort: None` in [`task/mod.rs:305-316`](/home/cristian/bum/grok-build/crates/codegen/xai-grok-tools/src/implementations/grok_build/task/mod.rs:305).
-- It correctly recognizes that background Tasks return success before coordinator completion: [`task/mod.rs:328-355`](/home/cristian/bum/grok-build/crates/codegen/xai-grok-tools/src/implementations/grok_build/task/mod.rs:328).
-- Creating a dedicated `cross_provider_subagent.rs` target is appropriate; that file does not currently exist.
-
-### Concerns
-
-- **HIGH — proposed tests cannot compile.** `TaskToolInput` has no `reasoning_effort` member today; its fields end at `model` then `task_id` in [`xai-tool-types/src/task.rs:96-104`](/home/cristian/bum/grok-build/crates/common/xai-tool-types/src/task.rs:96). A test literal referencing the planned field will fail compilation, so `cargo test -- --list` cannot discover any tests. This defeats the stated Wave-1 requirement.
-- **HIGH — deliberately failing tests will poison broad `p7_` execution.** The later plans run `cargo test ... p7_`; if Plan 01 adds normally compiled assertions that fail, this command remains red until all successors land. That is workable only if execution tooling explicitly supports expected-red commits, which the plan does not establish.
-- **MEDIUM — the “Tool unknown model fallback” contract is inaccurate for the Task path.** The shell already rejects Tool-provenance unknown models before the later fallback block through `task_model_override_error` in [`handle_request.rs:28-43`](/home/cristian/bum/grok-build/crates/codegen/xai-grok-shell/src/agent/subagent/handle_request.rs:28), and Task validates explicit models even earlier in [`task/mod.rs:276-290`](/home/cristian/bum/grok-build/crates/codegen/xai-grok-tools/src/implementations/grok_build/task/mod.rs:276). The fallback at [`handle_request.rs:436-451`](/home/cristian/bum/grok-build/crates/codegen/xai-grok-shell/src/agent/subagent/handle_request.rs:436) is principally relevant to non-Tool/internal resolution paths.
-
-### Suggestions
-
-- Make Plan 01 a **green compile-only scaffold**: add test helpers and a smoke test, but defer assertions requiring the new field until Plan 02, or land the field/schema in Plan 01 and keep behavioral wiring for Plan 02.
-- Separate “discovery scaffold” from “behavioral assertion” filters, so the phase gate never executes intentionally failing tests.
-- Reframe the unknown-model test as a regression test of the existing Tool-provenance rejection, and reserve fallback changes for harness/internal provenance only if actually required.
-
-### Risk assessment
-
-**HIGH.** As written, Plan 01 can prevent the tools crate from compiling and blocks the intended validation flow.
+**Counts for convergence (unresolved only):**  
+`current_high=1` · `current_actionable=5` (C2-M1..C2-M5; LOWs tracked but not in actionable count unless blocking)
 
 ---
 
-## 07-02 — Task schema, effort wire, NL guidance
+## Codex Review (Cycle 2)
 
-### Summary
+# Phase 7 Plan Review — Convergence Cycle 2
 
-This is the most direct plan and aligns well with current code, but it needs a complete call-site migration and stricter verification hygiene.
+## Summary
 
-### Strengths
+The revision materially improves the plan set: it fixes the compile-poisoning RED strategy, explicitly moves the authoritative gate ahead of worktree work, and makes real child-sampling tests a stated requirement. The remaining blocker is Plan 04’s eager-preflight implementation shape: its proposed synchronous resource cannot, as written, resolve the same live effective model as the async shell path for omit-model and role-pin cases.
 
-- It addresses the exact gap: `TaskToolInput` lacks effort while Task hardcodes `None` ([`task.rs:96-104`](/home/cristian/bum/grok-build/crates/common/xai-tool-types/src/task.rs:96), [`task/mod.rs:305-316`](/home/cristian/bum/grok-build/crates/codegen/xai-grok-tools/src/implementations/grok_build/task/mod.rs:305)).
-- It reuses the established parser rather than inventing a vocabulary. `ReasoningEffort::from_str` supports `none`, `minimal`, `low`, `medium`, `high`, `xhigh`, and `max` ([`types.rs:829-845`](/home/cristian/bum/grok-build/crates/codegen/xai-grok-sampling-types/src/types.rs:829)).
-- Adding model-facing guidance via `build_task_description` is correctly scoped: the builder already appends model guidance after the shared Task description ([`builder.rs:1280-1300`](/home/cristian/bum/grok-build/crates/codegen/xai-grok-agent/src/builder.rs:1280)).
+## Cycle 1 Resolution Check
 
-### Concerns
+| Prior HIGH | Status | Evidence |
+|---|---|---|
+| Plan 01 tests could not compile before schema exists; intentional RED poisoned `p7_` | **RESOLVED** | 07-01 explicitly forbids `TaskToolInput.reasoning_effort` references and all intentional-red/ignored `p7_` tests; Plan 02 owns field + behavior tests together. This matches the current missing field at `crates/common/xai-tool-types/src/task.rs:96-104`. |
+| Plan 03 gate ran after worktree effects | **RESOLVED** | 07-03 requires a side-effect-free effective-model preflight and gate before worktree creation/rehydration and pending insertion. This targets the current ordering: pending insertion at `handle_request.rs:98-118`, worktree work at `handle_request.rs:245-366`, model resolution only at `handle_request.rs:423-429`. |
+| Plan 04 slug-only preflight missed inheritance/role pins | **PARTIAL** | 07-04 correctly requires an effective-model-aware request with omitted-model and role-pin coverage. However, its specified `Arc<dyn Fn(...) -> Option<String>>` resource is synchronous, while the canonical inherit path reads live parent chat state asynchronously at `subagent/mod.rs:897-902` and `resolve_effective_model_config` is async at `subagent/mod.rs:775-850`. |
+| Plan 05 lacked a callable test seam | **RESOLVED** | 07-05 now mandates an in-crate or deliberately exposed harness before claiming wire assertions. This is necessary because `handle_subagent_request` is `pub(crate)` at `handle_request.rs:59` and `resolve_model_override_to_config` is private at `subagent/mod.rs:1006`. |
+| Plan 01 needed green scaffold and separate discovery from future tests | **RESOLVED** | 07-01’s expected-green protocol requires all `p7_` tests to compile and pass today, then requires Plans 02–05 to add green behavior tests only alongside implementation. |
 
-- **MEDIUM — adding a struct field requires updating all Rust literals.** There are 42 `TaskToolInput { ... }` literals, largely in [`task/mod.rs`](/home/cristian/bum/grok-build/crates/codegen/xai-grok-tools/src/implementations/grok_build/task/mod.rs) plus [`xai-tool-types/src/task.rs:1126-1137`](/home/cristian/bum/grok-build/crates/common/xai-tool-types/src/task.rs:1126). The plan says to update selected tests but does not explicitly require a workspace search and full call-site migration.
-- **MEDIUM — canonicalization is underspecified.** The parser maps `max` to `Xhigh` ([`types.rs:829-845`](/home/cristian/bum/grok-build/crates/codegen/xai-grok-sampling-types/src/types.rs:829)); carrying the raw `"max"` into overrides means the shell parses it again. Prefer storing `parsed.to_string()` so the runtime contract is canonical.
-- **LOW — the proposed verify command masks failures.** It uses `... || cargo test ... || cargo test ...`, contrary to the phase’s own no-swallow policy. A failed first intended test could be hidden by a later command matching another test.
-
-### Suggestions
-
-- Add `rg -n "TaskToolInput \{"` to the implementation checklist and update every literal with `reasoning_effort: None`.
-- Store canonical effort tokens after parsing, and test `max → xhigh`.
-- Replace chained fallback verification with separate discovery-and-execute commands for the exact added builder test.
-
-### Risk assessment
-
-**MEDIUM.** The implementation is localized and uses good primitives, but incomplete literal migration will fail compilation.
-
----
-
-## 07-03 — authoritative shell gate
-
-### Summary
-
-The plan chooses the right authority boundary, but its proposed placement is too late for its stated side-effect goal and it partially duplicates already-existing Tool model validation.
+## 07-01 — Green scaffold
 
 ### Strengths
 
-- Shell authority is appropriate because `handle_subagent_request` owns final child configuration and calls `spawn_session_on_thread` ([`handle_request.rs:1042-1055`](/home/cristian/bum/grok-build/crates/codegen/xai-grok-shell/src/agent/subagent/handle_request.rs:1042)).
-- Reusing `missing_provider_gate_error` preserves the Phase 6 BYOK/usable-slot policy ([`config.rs:5602-5613`](/home/cristian/bum/grok-build/crates/codegen/xai-grok-shell/src/agent/config.rs:5602)).
-- The plan correctly fixes the current invalid-effort behavior: malformed effort is merely logged and ignored today ([`handle_request.rs:472-486`](/home/cristian/bum/grok-build/crates/codegen/xai-grok-shell/src/agent/subagent/handle_request.rs:472)).
-- The model resolver already isolates provider keys: Codex gets only `codex_session_owned`, while xAI gets only `session_key` ([`subagent/mod.rs:1006-1052`](/home/cristian/bum/grok-build/crates/codegen/xai-grok-shell/src/agent/subagent/mod.rs:1006)).
+- **LOW risk:** The revised scaffold is genuinely compile-safe. It avoids the nonexistent field while locking the current `reasoning_effort: None` behavior that exists at `crates/codegen/xai-grok-tools/src/implementations/grok_build/task/mod.rs:303-316`.
+- It correctly treats Tool unknown-model rejection as a regression, not a new fallback fix. The shell already checks Tool-provenance overrides before the fallback block at `handle_request.rs:234-243`; fallback occurs later at `handle_request.rs:435-449`.
+- The planned external harness appropriately limits itself to public APIs until Plan 05 establishes an internal seam.
 
 ### Concerns
 
-- **HIGH — credential gating after “effective model resolve” is after worktree work.** `handle_subagent_request` creates/rehydrates an isolated worktree before it resolves the effective model; worktree setup starts around [`handle_request.rs:217`](/home/cristian/bum/grok-build/crates/codegen/xai-grok-shell/src/agent/subagent/handle_request.rs:217), while model resolve is at [`handle_request.rs:424-432`](/home/cristian/bum/grok-build/crates/codegen/xai-grok-shell/src/agent/subagent/handle_request.rs:424). Thus the proposed gate is before child session launch but not before expensive/durable pre-spawn effects as claimed.
-- **MEDIUM — extracting the Phase 6 helper is not a trivial move.** `provider_oauth_slot_usable` is private and depends on `MvpAgent`, including its live xAI `AuthManager` fallback ([`model_switch.rs:24-47`](/home/cristian/bum/grok-build/crates/codegen/xai-grok-shell/src/agent/handlers/model_switch.rs:24)). `SubagentSpawnContext` has `auth` and `auth_manager`-related state but is not an `MvpAgent`; the plan should specify a pure helper with explicit disk path/live-auth inputs.
-- **MEDIUM — Tool unknown-model handling is already present.** As noted above, [`task_model_override_error`](/home/cristian/bum/grok-build/crates/codegen/xai-grok-shell/src/agent/subagent/handle_request.rs:28) already rejects Tool explicit unknown models. The plan should avoid changing that area merely to satisfy a test based on a stale premise.
-- **MEDIUM — unsupported effort behavior needs catalog-level validation.** `model_supports_reasoning_effort` is only consulted today when an effort is present ([`handle_request.rs:472-477`](/home/cristian/bum/grok-build/crates/codegen/xai-grok-shell/src/agent/subagent/handle_request.rs:472)); the plan’s hard-fail decision is reasonable, but tests need a supported Codex fixture and an unsupported fixture to ensure it doesn’t reject valid Sol launches.
+- **LOW — “dual-fixture smoke” is not a routing proof.** Current child route construction is private at `subagent/mod.rs:1006-1043`; Plan 01 should label its fixture test only as infrastructure smoke, as it cannot yet demonstrate child configuration or headers.
 
 ### Suggestions
 
-- Split model resolution into a side-effect-free preflight helper and run provider gating before pending insertion/worktree creation. Reuse its output later rather than resolving twice.
-- Extract a `provider_slot_usable(auth_path, provider, live_xai_auth)` helper in auth/config, then adapt both switch and spawn callers.
-- Scope the unknown-model work to a regression test of existing Tool behavior unless a concrete harness path proves a remaining fallback.
-- Add a test that a missing provider creates neither a worktree nor a child session.
+- Keep Plan 01’s `p7_` names scoped to scaffold/current behavior, and reserve isolation names for Plan 05’s real child-sampling tests.
 
-### Risk assessment
+### Risk Assessment
 
-**HIGH.** The security direction is right, but ordering currently permits unnecessary local side effects before a deliberate fail-closed decision.
+**LOW.** The prior compile/discovery blocker is addressed.
 
----
-
-## 07-04 — eager Task credential preflight
-
-### Summary
-
-This correctly closes the background “started” race, but its contract cannot fully cover omitted-model spawns with the resource shape proposed.
+## 07-02 — Task effort contract
 
 ### Strengths
 
-- It targets the actual race: background mode spawns a task and immediately returns the “started” text ([`task/mod.rs:328-355`](/home/cristian/bum/grok-build/crates/codegen/xai-grok-tools/src/implementations/grok_build/task/mod.rs:328)).
-- Injecting a shell-owned resource is preferable to having `xai-grok-tools` read `auth.json`; current Task model validation is injected from shell in [`agent_rebuild.rs:310-319`](/home/cristian/bum/grok-build/crates/codegen/xai-grok-shell/src/session/agent_rebuild.rs:310).
-- It preserves shell authority as a second line of defense.
+- It targets the exact product gap: `TaskToolInput` currently has `model` but no effort field at `crates/common/xai-tool-types/src/task.rs:96-104`, while Task hardcodes `reasoning_effort: None` at `task/mod.rs:308`.
+- Canonicalizing aliases before sending the override is sound; the current shell reparses raw strings and warns/ignores failures at `handle_request.rs:472-485`.
+- It explicitly requires every struct literal to be migrated. There are currently 45 Rust locations matching `TaskToolInput {` across five source files.
 
 ### Concerns
 
-- **HIGH — `Fn(model_slug)` cannot validate omitted-model inheritance.** Task intentionally turns omitted `model` into `None` ([`task/mod.rs:166-181`](/home/cristian/bum/grok-build/crates/codegen/xai-grok-tools/src/implementations/grok_build/task/mod.rs:166)), while the proposed gate only accepts a slug. This leaves the stated “same-provider-if-somehow-missing” and omit-model requirement unenforceable at Task time unless the resource also carries the current parent/effective model.
-- **MEDIUM — potential semantic drift from the shell gate.** Plan 04’s closure independently resolves catalog/auth status while Plan 03 owns final model resolution, including role/config model pins. The actual child model may differ from explicit Task model because the shell precedence rules include agent/config pins and inheritance ([`subagent/mod.rs:768-829`](/home/cristian/bum/grok-build/crates/codegen/xai-grok-shell/src/agent/subagent/mod.rs:768)). Preflighting only `Task.model` can approve one provider while the authoritative child resolves to another.
-- **MEDIUM — failure for a missing resource needs compatibility analysis.** Existing unit setups only insert `TaskModelValidator` ([`task/mod.rs:837`](/home/cristian/bum/grok-build/crates/codegen/xai-grok-tools/src/implementations/grok_build/task/mod.rs:837)); making an absent credential resource fail closed will require updating every Task test fixture and any non-shell tool bridge.
+- **MEDIUM — verification still contains an exit-code-swallowing fallback.** Plan 02’s Task 1 verify ends with `cargo test -p xai-tool-types --lib ... || cargo test -p xai-tool-types ...`. That can hide a failure of the intended library test invocation, despite the plan’s stated no-OR policy.
 
 ### Suggestions
 
-- Define a preflight request/resource that receives the full Task context and returns the **effective target provider/model**, not merely an explicit slug.
-- Prefer an async backend `preflight_spawn` RPC if the effective model requires shell-only role/pin resolution; it avoids duplicating precedence in the tools crate.
-- Explicitly migrate all resource fixtures and non-interactive construction paths.
+- Replace the fallback with one confirmed command after inspecting whether `xai-tool-types` has a lib target; if alternate commands are necessary, run both independently under `set -e`.
+- State whether `none` and `minimal`, which the existing `ReasoningEffort` parser accepts, are intentionally allowed Tool values or should be rejected despite parser support.
 
-### Risk assessment
+### Risk Assessment
 
-**HIGH.** Without effective-model-aware preflight, the UX gate can disagree with the authoritative gate—the exact divergence the plan is trying to prevent.
+**MEDIUM.** The implementation is localized and well-scoped, but verification hygiene needs correction.
 
----
-
-## 07-05 — dual-token routing proofs
-
-### Summary
-
-The required observable Authorization proof is exactly the right bar, but the plan needs an explicit test seam and stronger acceptance language.
+## 07-03 — Authoritative shell gate
 
 ### Strengths
 
-- It correctly rejects resolve-only checks as insufficient. Existing routing integration tests already demonstrate mock HTTP and distinct fixture tokens ([`provider_routing.rs:1-35`](/home/cristian/bum/grok-build/crates/codegen/xai-grok-shell/tests/provider_routing.rs:1), [`provider_routing.rs:40-79`](/home/cristian/bum/grok-build/crates/codegen/xai-grok-shell/tests/provider_routing.rs:40)).
-- It appropriately tests both directions and missing-child-slot no-request behavior.
-- It retains the important invariant that the resolver never assigns parent xAI credentials to Codex ([`subagent/mod.rs:1027-1035`](/home/cristian/bum/grok-build/crates/codegen/xai-grok-shell/src/agent/subagent/mod.rs:1027)).
+- This directly fixes the prior gate-placement flaw: the plan explicitly requires the effective-model decision and credential gate before the current worktree creation/rehydration block at `handle_request.rs:245-366`.
+- Extracting a shared slot-usability helper is appropriate because the current switch helper is private and `MvpAgent`-bound at `agent/handlers/model_switch.rs:24-47`.
+- It preserves the correct provider-routing primitive: Codex override resolution intentionally passes no parent xAI key at `subagent/mod.rs:1019-1034`.
+- It includes the necessary supported and unsupported reasoning-effort fixtures. Current behavior only attempts parsing when the model supports effort, and otherwise silently skips the override at `handle_request.rs:472-485`.
 
 ### Concerns
 
-- **HIGH — the planned integration target cannot directly call the relevant helpers.** `resolve_model_override_to_config` is private ([`subagent/mod.rs:1006`](/home/cristian/bum/grok-build/crates/codegen/xai-grok-shell/src/agent/subagent/mod.rs:1006)), and `handle_subagent_request` is `pub(crate)` ([`handle_request.rs:59`](/home/cristian/bum/grok-build/crates/codegen/xai-grok-shell/src/agent/subagent/handle_request.rs:59)). An external `tests/cross_provider_subagent.rs` crate cannot use either. The plan modifies only test files, so it does not establish a public/test-only seam or move the tests inside the crate.
-- **MEDIUM — “at least one direction mandatory” conflicts with the stated D-12 requirement.** The phase decision and plan must-haves require both Grok→Codex and Codex→Grok. Allowing one outbound-header direction weakens AGENT-04 and should be a blocker, not an acceptable completion path.
-- **MEDIUM — parent stability cannot be shown by a “resolve-only parent handle unchanged” test.** That proves no mutation in a helper, not that real spawn leaves parent model state untouched. The test needs an actual spawn path.
+- **MEDIUM — the required preflight must also occur before pending registration, not merely before worktree work.** The current coordinator inserts a pending child at `handle_request.rs:98-118`, well before worktree creation. The plan’s must-haves say this correctly, but the implementation checklist should make moving this boundary explicit; otherwise a rejected child can leave transient pending-state/notifications.
 
 ### Suggestions
 
-- Add a test seam to Plan 03/05: either a crate-internal integration-style test module under `src/agent/subagent/tests`, or a deliberate public test harness that exposes a real child spawn/sampling operation.
-- Make outbound Authorization and base URL assertions mandatory in **both** directions.
-- Require a real parent `ChatState`/session assertion after spawn, not a resolver-only proxy.
+- Make the first executable steps: resolve definition/role/resume source → resolve effective model → gate → insert pending → worktree/session work.
+- Add a test that missing credentials leave both no worktree and no pending/active child entry.
 
-### Risk assessment
+### Risk Assessment
 
-**HIGH.** The desired proof is good, but the planned files cannot currently execute it.
+**MEDIUM.** The former HIGH is resolved in plan text, but correctness depends on fully moving the gate ahead of both pending state and filesystem side effects.
 
----
-
-## 07-06 — regression gate and documentation
-
-### Summary
-
-The final gate is well structured and properly treats same-provider behavior as a hard regression boundary, but it inherits the earlier test-seam and red-test problems.
+## 07-04 — Eager Task preflight
 
 ### Strengths
 
-- It uses existing focused regression tests rather than an expensive unfiltered shell suite. The referenced names exist: `reasoning_effort_explicit_overrides_role` ([`tests/mod.rs:1294`](/home/cristian/bum/grok-build/crates/codegen/xai-grok-shell/src/agent/subagent/tests/mod.rs:1294)), `role_default_used_when_no_explicit_override` ([`tests/mod.rs:1236`](/home/cristian/bum/grok-build/crates/codegen/xai-grok-shell/src/agent/subagent/tests/mod.rs:1236)), `persona_resolved_from_config` ([`tests/mod.rs:1351`](/home/cristian/bum/grok-build/crates/codegen/xai-grok-shell/src/agent/subagent/tests/mod.rs:1351)), and `resume_model_pinning_overrides_default_resolution` ([`tests/rest.rs:2038`](/home/cristian/bum/grok-build/crates/codegen/xai-grok-shell/src/agent/subagent/tests/rest.rs:2038)).
-- The per-filter discovery helper is a strong defense against vacuous filters.
-- It appropriately excludes live OAuth from the phase gate.
+- It correctly recognizes that the Task background path returns immediately after `tokio::spawn` at `task/mod.rs:328-355`, so a shell-only rejection cannot meet the UX requirement.
+- It explicitly requires omit-model and role-pin coverage, rather than accepting the previous slug-only closure.
+- It correctly keeps tools away from direct auth-store I/O and retains the shell as authority.
 
 ### Concerns
 
-- **MEDIUM — the gate’s completion claim is stronger than the planned proof.** AGENT-04 requires child turns to use child credentials/backend. Unless Plan 05 adds the needed in-crate seam, the documented `p7_isolation` filter will not be a real child-turn proof.
-- **MEDIUM — “all AGENT-01..06 automated proofs green” is incompatible with Plan 01’s intentional-red approach unless the test strategy is corrected first.**
-- **LOW — role/persona tests verify precedence resolution, not full same-provider spawn/resume/parent-child routing.** They are valuable regressions, but AGENT-01 also needs at least one actual same-provider spawn/resume lifecycle assertion.
+- **HIGH — the selected resource contract cannot currently deliver “same effective model” semantics.** The plan proposes `TaskProviderCredentialGate` as `Arc<dyn Fn(TaskCredentialPreflightRequest) -> Option<String>>`, modeled on the synchronous validator at `task/types.rs:772-784`. But the authoritative inherited-model path reads `ChatStateHandle` asynchronously (`subagent/mod.rs:897-902`), and full effective resolution is async (`subagent/mod.rs:775-850` / `resolve_effective_model_config`). A synchronous closure installed during `AgentRebuildSpec::build_agent`—where the existing validator is installed at `session/agent_rebuild.rs:310-317`—cannot query the live parent session at call time. It also has no demonstrated access to the shell’s role/model override state used by `handle_subagent_request`. Plan text still **defaults** to Resources gate and treats `SubagentBackend.preflight_spawn` as discretionary fallback only.
+- **MEDIUM — fail-closed on an absent new resource can break non-session tool construction.** Existing Task test setup inserts the backend and session resources but not the model validator in some paths, e.g. `task/mod.rs:1120-1127`; only selected harnesses install `TaskModelValidator` at `task/mod.rs:837` and `946`. The plan says to migrate validator fixtures, but must enumerate all Task resource builders and non-shell bridge paths.
 
 ### Suggestions
 
-- Make Plan 06 contingent on a checklist that verifies both-direction wire tests are real child samples, not resolver tests.
-- Add one same-provider lifecycle test that exercises coordinator spawn plus resume/result routing.
-- Do not mark Nyquist compliant until Plan 01’s scaffolding is converted to normal green, compiling tests.
+- Make an async `SubagentBackend::preflight_spawn` RPC the **required** design, not a discretionary fallback. It can use the exact coordinator context, live parent model, resume source, role/persona resolution, and shared slot-usability function.
+- If retaining a resource, make it an async trait/function returning a future and prove it receives a live model source—not a model snapshot captured at agent-build time.
+- Add an explicit compatibility inventory for every Task bridge/resource constructor.
 
-### Risk assessment
+### Risk Assessment
 
-**MEDIUM.** The phase-gate design is strong, but it can only certify what the earlier plans genuinely test.
+**HIGH.** The desired behavior is correct, but the planned synchronous mechanism does not yet have a credible path to match the authoritative async resolver.
 
-## Bottom line
+## 07-05 — Dual-token isolation proofs
 
-Approve the architecture, but revise before execution. The minimum changes are:
+### Strengths
 
-1. Replace Plan 01’s non-compiling/intentional-red tests with compiling scaffolds.
-2. Move or precompute the authoritative credential gate before worktree side effects.
-3. Make Task eager preflight resolve the actual effective child model, including omitted-model/role-pin cases.
-4. Add an in-crate or public test seam so Plan 05 can run real child sampling and assert outbound Authorization in both directions.
+- It now makes both directions mandatory and requires real outbound Authorization plus route assertions, which is the right proof bar.
+- It correctly requires a test seam before using private shell code; this aligns with the present visibility boundaries at `handle_request.rs:59` and `subagent/mod.rs:1006`.
+- The plan’s desired behavior aligns with session reconstruction: xAI bearer resolution is only attached for xAI catalog facts at `sampler_turn.rs:278-284`, while Codex refresh is provider- and first-party-host-gated at `sampler_turn.rs:294-313`.
+- It properly treats `SamplingConfig` key-prefix checks as supplemental, not sufficient. Child credentials are seeded from the effective sampling config at `handle_request.rs:761-773`.
+
+### Concerns
+
+- **MEDIUM — the seam is still an implementation choice rather than a specified test API/lifecycle.** “In-crate tests or a public harness” is enough direction, but the plan should specify the minimal harness contract: spawn child, wait until a single sample reaches a mock server, return parent model state, and cleanly cancel/join the child. Without that, the real-spawn proof may degrade into resolver-only testing due to harness complexity.
+
+### Suggestions
+
+- Define the exact in-crate helper signature and timeout/cancellation behavior in Plan 05.
+- Ensure mock URLs are configured through the same model route/endpoints used by the child, rather than replacing the route after resolution.
+
+### Risk Assessment
+
+**MEDIUM.** The prior seam blocker is resolved; execution risk remains in building a reliable real-child sampling harness.
+
+## 07-06 — Regression and phase gate
+
+### Strengths
+
+- It correctly makes same-provider regression a hard gate, anchored in existing effort, role, persona, and resume tests.
+- Per-filter discovery guards are strong and prevent an empty filter from producing a false green.
+- It correctly requires both named directional isolation tests before AGENT-04 can pass.
+
+### Concerns
+
+- **MEDIUM — Plan 06 inherits Plan 04’s unresolved feasibility issue.** A green phase gate cannot establish AGENT-05’s background UX behavior if the eager preflight cannot actually resolve the live effective child model.
+- **LOW — the “lifecycle if cheap” qualifier is too weak for AGENT-01.** Existing tests can validate precedence, but the real coordinator has stateful behavior such as pending insertion at `handle_request.rs:98-118` and child spawning at `handle_request.rs:1049-1058`. Require one lifecycle test or document a concrete existing lifecycle test that already exercises this path.
+
+### Suggestions
+
+- Make Phase Gate PASS contingent on Plan 04 using an authoritative-equivalent async preflight mechanism.
+- Upgrade same-provider lifecycle coverage from “if cheap” to a required named test, unless a cited existing test covers coordinator spawn, completion, and resume routing.
+
+### Risk Assessment
+
+**MEDIUM.** Gate design is strong, but it should not certify the phase until the eager-preflight design is made implementable.
+
+## Overall Risk Assessment
+
+**HIGH until Plan 04 is revised.** Four of the five prior HIGH findings are addressed in the revised plan text. The remaining effective-model-aware eager preflight is conceptually correct but not executable with the specified synchronous resource against the current async parent-state and model-resolution architecture. The minimum convergence change is to require an async coordinator/backend preflight—or an equivalently async resource—sharing the authoritative effective-model resolver.
 
 ---
 
-## Consensus Summary
+## Consensus Summary (Cycle 2)
 
-Single reviewer (Codex only). Plan-level consensus is the Codex verdict; treat HIGH items as blocking for `/gsd-plan-phase 7 --reviews`.
+Single reviewer (Codex only). Plan-level consensus is the Codex verdict grounded against current source.
+
+### Cycle 1 HIGHs — resolution verdict
+1. **Plan 01 compile / intentional-RED** — **RESOLVED** in PLAN.md (green-only protocol + no pre-schema field refs).
+2. **Plan 03 gate-after-worktree** — **RESOLVED** in PLAN.md (preflight + gate before worktree; source still inserts pending early — residual MEDIUM C2-M2).
+3. **Plan 04 slug-only preflight** — **PARTIAL**: request is effective-model-aware on paper; **mechanism still HIGH** (C2-H1 sync vs async).
+4. **Plan 05 test seam** — **RESOLVED** (in-crate/public seam required; both-dir Authorization mandatory).
+5. **Plan 01 dual RED / discovery** — **RESOLVED**.
 
 ### Agreed Strengths
-- Phase extends existing Task → coordinator → child-session path rather than inventing a parallel multi-agent API.
-- Correctly targets background Task "started" race and catalog-driven provider routing.
-- Shell authority for spawn gate is the right boundary; reuses Phase 6 `missing_provider_gate_error` / usable-slot policy.
-- Plan 06 Nyquist discovery helper and same-provider regression anchors are well structured.
-- Dual fake-token Authorization + base URL proofs are the right bar for AGENT-04/05.
+- Wave-1 green scaffold no longer poisons later `p7_` gates.
+- Authoritative shell gate + pure `provider_slot_usable` extraction is the right authority boundary.
+- Dual fake-token Authorization both directions remains the correct AGENT-04 bar; Plan 05 no longer allows one-direction waiver.
+- Plan 06 per-subgroup discovery + green-only language is solid once product proofs exist.
 
-### Agreed Concerns (blocking / high priority)
-1. **Plan 01 intentional-RED vs Rust compile/discovery** — tests referencing `TaskToolInput.reasoning_effort` cannot compile before Plan 02; failing `p7_` tests poison later wave verification.
-2. **Plan 03 gate placement after worktree side effects** — authoritative credential gate must run before worktree create/rehydrate, not only before `spawn_session_on_thread`.
-3. **Plan 04 eager preflight is slug-only** — cannot cover omit-model inheritance / role pins; risks UX gate ≠ authoritative shell gate.
-4. **Plan 05 missing test seam** — `resolve_model_override_to_config` is private and `handle_subagent_request` is `pub(crate)`; external `tests/cross_provider_subagent.rs` cannot drive real child sampling/Authorization assertions without an in-crate or public harness.
-5. **Plan 01 dual HIGH on red strategy** — need green compile-only scaffold (or land schema early) and separate discovery filters from intentional failures.
+### Current HIGH Concerns (unresolved)
+1. **C2-H1 / Plan 04 — sync `TaskProviderCredentialGate` cannot match async shell effective-model resolve.**  
+   Evidence: `read_parent_sampling_config` / inherit path uses `ChatStateHandle` async at `subagent/mod.rs:897-902`; `resolve_effective_model_config` is async at `subagent/mod.rs:840+`; Task resource pattern is sync `Arc<Fn>` like `TaskModelValidator` at `task/types.rs:772-784`; install site is agent rebuild snapshot (`agent_rebuild.rs:310-317`). Plan still **defaults** to sync Resources gate and treats `SubagentBackend.preflight_spawn` as optional.  
+   **Required replan:** make async backend/coordinator preflight (or async resource with live parent state) the **required** design so omit-model + role pins agree with shell authority.
 
-### Actionable Non-HIGH (incorporate in PLAN.md)
-- Full `TaskToolInput { ... }` call-site migration + canonical effort tokens (`max` → `xhigh`) in Plan 02.
-- Extract pure `provider_slot_usable(...)` helper (not MvpAgent-bound private switch helper).
-- Scope Tool unknown-model work to regression of existing rejection, not stale fallback premise.
-- Mandatory both-direction Authorization proofs (do not weaken D-12 to "one direction").
-- Parent stability after real spawn, not resolve-only proxy.
-- Unsupported-effort fixtures (supported Sol + unsupported model).
-- Resource-fixture migration when credential preflight resource becomes required.
-- One same-provider spawn/resume lifecycle assertion beyond pure precedence unit tests.
-- Drop `||` verification chains that swallow failures.
-- Plan 02 verification must not use fallback OR chains that hide the intended test failure.
+### Current Actionable Non-HIGH Concerns (unresolved)
+1. **C2-M1 / Plan 02** — Task 1 verify still ends with `cargo test -p xai-tool-types --lib ... || cargo test -p xai-tool-types ...` (line ~139); drop OR-chain; pick one command under `set -e`.
+2. **C2-M2 / Plan 03** — Make gate-before-`insert_pending` explicit in task ordering steps; add named assert that missing credentials leave **no pending/active child entry** (not only no worktree).
+3. **C2-M3 / Plan 04** — Inventory every Task resource builder / non-shell bridge that must install the new gate under fail-closed-on-missing-resource (not only “grep validator fixtures”).
+4. **C2-M4 / Plan 05** — Specify minimal harness contract: spawn → one outbound sample against mock → capture Authorization/host + parent model → cancel/join; avoid resolve-only degradation.
+5. **C2-M5 / Plan 06** — Phase-gate PASS for AGENT-05 must depend on Plan 04’s implementable eager path (async-equivalent), not only green filter names.
+
+### Tracked LOW (non-blocking)
+- C2-L1 Plan 01 smoke ≠ isolation proof (label only).
+- C2-L2 Plan 06 same-provider lifecycle: require named test or cite existing coordinator path.
+- C2-L3 Plan 02: document `none`/`minimal` Tool acceptance policy.
 
 ### Divergent Views
 N/A — single reviewer (Codex).
 
 ### Bottom line
-Architecture is sound; **revise Plans 01, 03, 04, and 05 before execution**. Minimum fixes: compiling scaffolds, pre-worktree gate, effective-model-aware Task preflight, and real dual-direction wire test seam.
+**Do not execute yet.** Architecture remains sound; cycle-1 structural blockers on Plans 01/03/05 are fixed in text. **Replan Plan 04** so eager preflight is async/authoritative-equivalent (not sync Fn + discretionary RPC). Fold C2-M1..M5 into Plans 02/03/04/05/06 in the same replan pass, then re-run cycle 3.
 
+---
+
+## Cycle 1 archive (for audit)
+
+Cycle 1 full write-up (2026-07-17T07:55:02Z) established five HIGHs (Plan 01 compile/RED ×2, Plan 03 worktree order, Plan 04 slug-only, Plan 05 test seam). Replan commit `d9a9a51` addressed those in PLAN.md text; cycle 2 verified four RESOLVED and one PARTIAL escalated to C2-H1 on mechanism feasibility. Historical cycle-1 body is retained in git history for this file prior to cycle 2 rewrite; the resolution table above is authoritative for open vs closed.
