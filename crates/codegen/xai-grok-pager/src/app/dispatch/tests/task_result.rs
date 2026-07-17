@@ -1542,7 +1542,7 @@ fn p6_refresh_provider_auth_status_updates_cache() {
     assert!(app.provider_auth.xai);
     assert!(!app.provider_auth.codex);
 
-    // Full failure (both None) keeps last known cache.
+    // Soft failure (both None, e.g. join error) keeps last known cache.
     dispatch(
         Action::TaskComplete(TaskResult::ProviderAuthStatusRefreshed {
             xai_usable: None,
@@ -1552,6 +1552,18 @@ fn p6_refresh_provider_auth_status_updates_cache() {
         &mut app,
     );
     assert!(app.provider_auth.xai);
+    assert!(!app.provider_auth.codex);
+
+    // Hard auth-file failure (WR-06): effects emit Some(false)/Some(false).
+    dispatch(
+        Action::TaskComplete(TaskResult::ProviderAuthStatusRefreshed {
+            xai_usable: Some(false),
+            codex_usable: Some(false),
+            generation: None,
+        }),
+        &mut app,
+    );
+    assert!(!app.provider_auth.xai);
     assert!(!app.provider_auth.codex);
 }
 
@@ -1994,12 +2006,98 @@ fn p6_auth_complete_applies_deferred_when_required_provider_usable() {
         "AuthComplete must re-issue SwitchModel with deferred persist_default: {effects:?}"
     );
     assert!(app.agents[&AgentId(0)].session.model_switch_pending);
+    // CR-01: deferred stays until SwitchModelComplete(Ok) so Other can retry.
+    assert!(
+        app.agents[&AgentId(0)]
+            .session
+            .deferred_model_switch
+            .as_ref()
+            .is_some_and(|d| d.model_id == target),
+        "deferred kept until Ok complete"
+    );
+}
+
+#[test]
+fn p6_other_switch_failure_keeps_deferred_for_retry() {
+    // CR-01: transient Other after try_apply must not drop Login-now recovery.
+    let mut app = test_app_with_agent();
+    let prev = acp::ModelId::new(std::sync::Arc::from("grok-build"));
+    let target = acp::ModelId::new(std::sync::Arc::from("gpt-5.6-sol"));
+    p6_seed_missing_provider_gate(&mut app, &prev, &target, "codex", true);
+    dispatch(
+        Action::MissingProviderLoginAnswered {
+            login: true,
+            model_id: target.clone(),
+            effort: None,
+            provider: "codex".into(),
+        },
+        &mut app,
+    );
+    // Usable refresh arms SwitchModel but keeps deferred (try_apply).
+    let poll_generation = app.provider_login_poll.as_ref().unwrap().generation;
+    dispatch(
+        Action::TaskComplete(TaskResult::ProviderAuthStatusRefreshed {
+            xai_usable: Some(true),
+            codex_usable: Some(true),
+            generation: Some(poll_generation),
+        }),
+        &mut app,
+    );
+    assert!(app.agents[&AgentId(0)].session.model_switch_pending);
+    assert!(
+        app.agents[&AgentId(0)]
+            .session
+            .deferred_model_switch
+            .as_ref()
+            .is_some_and(|d| d.model_id == target)
+    );
+
+    let effects = dispatch(
+        Action::TaskComplete(TaskResult::SwitchModelComplete {
+            agent_id: AgentId(0),
+            model_id: target.clone(),
+            effort: None,
+            result: Err(SwitchModelError::Other("network blip".into())),
+            prev_model_id: Some(prev.clone()),
+            persist_default: true,
+        }),
+        &mut app,
+    );
+    assert!(
+        app.agents[&AgentId(0)]
+            .session
+            .deferred_model_switch
+            .as_ref()
+            .is_some_and(|d| d.model_id == target && d.persist_default),
+        "Other must keep deferred for retry"
+    );
+    assert!(!app.agents[&AgentId(0)].session.model_switch_pending);
+    assert!(
+        effects.iter().any(|e| matches!(
+            e,
+            Effect::RefreshProviderAuthStatus { generation: Some(_) }
+        )),
+        "Other with required_provider should re-arm poll refresh: {effects:?}"
+    );
+
+    // Ok then clears deferred.
+    dispatch(
+        Action::TaskComplete(TaskResult::SwitchModelComplete {
+            agent_id: AgentId(0),
+            model_id: target.clone(),
+            effort: None,
+            result: Ok(()),
+            prev_model_id: Some(prev),
+            persist_default: true,
+        }),
+        &mut app,
+    );
     assert!(
         app.agents[&AgentId(0)]
             .session
             .deferred_model_switch
             .is_none(),
-        "deferred taken on apply"
+        "Ok must clear matching deferred"
     );
 }
 
