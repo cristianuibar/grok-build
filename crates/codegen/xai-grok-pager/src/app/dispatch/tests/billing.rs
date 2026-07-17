@@ -257,7 +257,7 @@ fn upsell_non_max_unified_shows_buy_credits() {
     assert_eq!(q.options[1].label, "Buy more credits");
     assert_eq!(
         q.options[1].description,
-        "Purchase credits to keep using Grok Build"
+        "Purchase credits to keep using bum"
     );
 }
 
@@ -791,6 +791,27 @@ fn billing_error_non_silent_pushes_error_message() {
 
 // ── Free-usage paywall tests ────────────────────────────────────────
 
+/// Phase 8 Plan 02 (D-01): free-usage product chrome uses bum; SuperGrok + host kept.
+#[test]
+fn p8_billing_free_usage_product_is_bum() {
+    assert!(
+        FREE_USAGE_USER_MESSAGE.contains("free bum usage"),
+        "free-usage message must name product bum: {FREE_USAGE_USER_MESSAGE}"
+    );
+    assert!(
+        !FREE_USAGE_USER_MESSAGE.contains("Grok Build"),
+        "free-usage message must not stock product: {FREE_USAGE_USER_MESSAGE}"
+    );
+    assert!(
+        FREE_USAGE_USER_MESSAGE.contains("SuperGrok"),
+        "must keep SuperGrok commercial name: {FREE_USAGE_USER_MESSAGE}"
+    );
+    assert!(
+        FREE_USAGE_USER_MESSAGE.contains("https://grok.com/supergrok"),
+        "must keep external billing host: {FREE_USAGE_USER_MESSAGE}"
+    );
+}
+
 #[test]
 fn free_usage_error_detected_by_embedded_code() {
     // parse_error_bytes flattens the 429 body to "<code>: <message>".
@@ -832,7 +853,7 @@ fn free_usage_upsell_shows_two_options_with_exact_labels() {
         ),
         (
             "Upgrade to SuperGrok Heavy",
-            "Get the most out of Grok Build. Highest usage limits.",
+            "Get the most out of bum. Highest usage limits.",
             Some(UPSELL_URL_UPGRADE),
         ),
     ];

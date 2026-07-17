@@ -507,14 +507,14 @@ fn auto_respond_to_permissions(
 /// "Not signed in" error message, tailored to the session type.
 fn auth_required_message(interactive: bool) -> String {
     if interactive {
-        "Not signed in. Run `grok login` to authenticate \
-         (or `grok login --device-code` if no browser is available)."
+        "Not signed in. Run `bum login` to authenticate \
+         (or `bum login --device-code` if no browser is available)."
             .to_string()
     } else {
         "Not signed in. To authenticate without a browser, run:\n  \
-         grok login --device-code\n\n\
+         bum login --device-code\n\n\
          Alternatively, set the XAI_API_KEY environment variable \
-         or run `grok login` on a machine with a browser."
+         or run `bum login` on a machine with a browser."
             .to_string()
     }
 }
@@ -1752,6 +1752,31 @@ fn handle_ext_notification(
 
 #[cfg(test)]
 mod tests {
+    /// Phase 8 Plan 02 (C1-H1): headless auth errors instruct `bum login`.
+    #[test]
+    fn p8_runtime_cli_headless_auth_instructs_bum_login() {
+        let interactive = super::auth_required_message(true);
+        let non_interactive = super::auth_required_message(false);
+        for msg in [&interactive, &non_interactive] {
+            assert!(
+                msg.contains("bum login"),
+                "must instruct bum login: {msg}"
+            );
+            assert!(
+                !msg.contains("grok login"),
+                "must not instruct stock grok login: {msg}"
+            );
+        }
+        assert!(
+            interactive.contains("bum login --device-code"),
+            "interactive path should mention device-code: {interactive}"
+        );
+        assert!(
+            non_interactive.contains("bum login --device-code"),
+            "non-interactive path should mention device-code: {non_interactive}"
+        );
+    }
+
     #[test]
     fn lifecycle_tracking_is_independent_of_wait_flag() {
         let mut pending = std::collections::HashSet::new();
