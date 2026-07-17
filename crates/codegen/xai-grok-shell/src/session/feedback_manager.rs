@@ -492,20 +492,22 @@ impl FeedbackManager {
         Some(heuristics.evaluate(&signals))
     }
 
-    /// Force-generate a feedback request for local testing, bypassing all
-    /// heuristics, sampling, cooldown, and enabled checks.
+    /// Force-generate a feedback request for local testing, bypassing
+    /// heuristics, sampling, and cooldown.
     ///
     /// Engineers developing clients can call this via the
     /// `x.ai/debug/trigger_feedback` ACP extension method to exercise
-    /// the full feedback notification ↔ response flow without needing a
-    /// real session that meets tier criteria.
+    /// the feedback notification ↔ response flow without a real tier hit.
     ///
-    /// When a `feedback_client` is configured, the request is also recorded
-    /// via the feedback API — exactly like a real trigger — so that the
-    /// subsequent `complete_request` / `dismiss_request` round-trip from the
-    /// client works end-to-end.
+    /// **Quiet fork (OPS-02 / C1-M1):** when `feedback_enabled` is false
+    /// (default), this returns a local-only synthetic request and does
+    /// **not** call the feedback API — even if a `feedback_client` is
+    /// configured. Explicit opt-in (`GROK_FEEDBACK_ENABLED` / config so
+    /// the manager is constructed with `feedback_enabled: true`) is
+    /// required before the debug path may record against the network.
     #[tracing::instrument(name = "feedback.force_feedback_request", skip_all, fields(
         session_id = %self.session_id,
+        feedback_enabled = self.config.feedback_enabled,
     ))]
     pub async fn force_feedback_request(
         &self,
@@ -538,6 +540,14 @@ impl FeedbackManager {
             true,
             None,
         );
+
+        if !self.config.feedback_enabled {
+            tracing::info!(
+                session_id = %self.session_id,
+                "force_feedback_request: feedback disabled — local synthetic only, no API write"
+            );
+            return request;
+        }
 
         self.record_feedback_request(&request, &condition, mode, None)
             .await;
@@ -1429,5 +1439,117 @@ mod tests {
 
         am.set_refresher(std::sync::Arc::new(NoOpRefresher));
         assert!(with_am.has_token_refresher());
+    }
+
+    /// OPS-02 / C1-M1: when feedback is disabled (quiet-fork default),
+    /// `force_feedback_request` must not POST to the feedback API even if a
+    /// client is configured.
+    #[tokio::test]
+    async fn p8_feedback_force_request_noop_when_disabled() {
+        use crate::agent::feedback_client::FeedbackClient;
+        use crate::session::feedback::{FeedbackMode, FeedbackTier};
+        use axum::{Router, routing::post};
+        use std::sync::atomic::{AtomicUsize, Ordering as AtomicOrdering};
+        use tokio::net::TcpListener;
+
+        let hits = Arc::new(AtomicUsize::new(0));
+        let hits_handler = hits.clone();
+        let router = Router::new().route(
+            "/v1/feedback/requests",
+            post(move || {
+                let hits = hits_handler.clone();
+                async move {
+                    hits.fetch_add(1, AtomicOrdering::SeqCst);
+                    axum::Json(serde_json::json!({
+                        "requestId": "should-not-be-created",
+                    }))
+                }
+            }),
+        );
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let _server = tokio::spawn(async move {
+            axum::serve(listener, router).await.unwrap();
+        });
+
+        let client = FeedbackClient::new(format!("http://{addr}/v1"), Some("test-token".into()));
+        let config = FeedbackManagerConfig {
+            feedback_enabled: false,
+            ..FeedbackManagerConfig::default()
+        };
+        let manager = FeedbackManager::new("p8-force-disabled", Some(client), config);
+        assert!(!manager.is_enabled());
+
+        let request = manager
+            .force_feedback_request(FeedbackTier::Tier1, FeedbackMode::ThumbsText)
+            .await;
+
+        // Local synthetic request is still returned for client UI exercise.
+        assert!(!request.request_id.is_empty());
+        // Give any accidental in-flight HTTP a moment (should not fire).
+        tokio::time::sleep(Duration::from_millis(50)).await;
+        assert_eq!(
+            hits.load(AtomicOrdering::SeqCst),
+            0,
+            "force_feedback_request must not record against the feedback API when disabled"
+        );
+
+        manager.shutdown(None).await;
+    }
+
+    /// When feedback is explicitly enabled, force path may still network-record.
+    #[tokio::test]
+    async fn p8_feedback_force_request_records_when_enabled() {
+        use crate::agent::feedback_client::FeedbackClient;
+        use crate::session::feedback::{FeedbackMode, FeedbackTier};
+        use axum::{Router, routing::post};
+        use std::sync::atomic::{AtomicUsize, Ordering as AtomicOrdering};
+        use tokio::net::TcpListener;
+
+        let hits = Arc::new(AtomicUsize::new(0));
+        let hits_handler = hits.clone();
+        let router = Router::new().route(
+            "/v1/feedback/requests",
+            post(move || {
+                let hits = hits_handler.clone();
+                async move {
+                    hits.fetch_add(1, AtomicOrdering::SeqCst);
+                    axum::Json(serde_json::json!({
+                        "requestId": "created-ok",
+                    }))
+                }
+            }),
+        );
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let _server = tokio::spawn(async move {
+            axum::serve(listener, router).await.unwrap();
+        });
+
+        let client = FeedbackClient::new(format!("http://{addr}/v1"), Some("test-token".into()));
+        let config = FeedbackManagerConfig {
+            feedback_enabled: true,
+            ..FeedbackManagerConfig::default()
+        };
+        let manager = FeedbackManager::new("p8-force-enabled", Some(client), config);
+
+        let _request = manager
+            .force_feedback_request(FeedbackTier::Tier1, FeedbackMode::ThumbsText)
+            .await;
+
+        // Wait for the best-effort API record.
+        for _ in 0..20 {
+            if hits.load(AtomicOrdering::SeqCst) > 0 {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(25)).await;
+        }
+        assert_eq!(
+            hits.load(AtomicOrdering::SeqCst),
+            1,
+            "enabled force_feedback_request should record once"
+        );
+
+        manager.shutdown(None).await;
     }
 }

@@ -1,10 +1,14 @@
 //! `x.ai/debug/*` extension handlers for local client testing.
 //!
-//! These methods bypass heuristics, sampling, cooldowns, and enabled checks
-//! so client engineers can exercise notification → response flows without
-//! needing real experiments, real sessions, or real model inference.
+//! These methods bypass heuristics, sampling, and cooldowns so client
+//! engineers can exercise notification → response flows without needing
+//! real experiments, real sessions, or real model inference.
 //!
 //! - `trigger_feedback`: fire a synthetic `FeedbackRequestNotification`.
+//!   Quiet fork (OPS-02 / C1-M1): does **not** bypass the feedback-enabled
+//!   gate — when feedback is disabled (default), the session emits a
+//!   local-only synthetic request and does not write to the feedback API.
+//!   Explicit `GROK_FEEDBACK_ENABLED` / config opt-in is required for network.
 //! - `arm_auto_compact`: arm the next turn to unconditionally trigger
 //!   auto-compaction, regardless of context window usage.
 

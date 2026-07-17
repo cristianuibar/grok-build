@@ -193,3 +193,122 @@ fn recap_request_transport_failure_with_turns_uses_generic_toast() {
         Some("Couldn't generate recap")
     );
 }
+
+// ── OPS-02 / D-15 quiet-fork /feedback short-circuit ────────────────────────
+
+fn scrollback_system_texts(agent: &AgentView) -> Vec<String> {
+    agent
+        .scrollback
+        .iter_entries()
+        .filter_map(|(_, e)| match &e.block {
+            RenderBlock::System(s) => Some(s.text.clone()),
+            _ => None,
+        })
+        .collect()
+}
+
+#[test]
+fn p8_feedback_enter_shows_disabled_message() {
+    let mut app = test_app_with_agent();
+    let id = AgentId(0);
+
+    let effects = dispatch(Action::EnterFeedbackMode, &mut app);
+
+    assert!(
+        effects.is_empty(),
+        "enter must not emit effects: {effects:?}"
+    );
+    let texts = scrollback_system_texts(app.agents.get(&id).unwrap());
+    assert!(
+        texts.iter().any(|t| t.contains("Feedback is disabled in bum")),
+        "expected disabled message in scrollback, got {texts:?}"
+    );
+    assert!(
+        texts
+            .iter()
+            .any(|t| t.contains("no phone-home") || t.contains("Local logs under ~/.bum")),
+        "expected phone-home or local-logs hint, got {texts:?}"
+    );
+    assert!(
+        !texts
+            .iter()
+            .any(|t| t.contains("Grok Build team") || t.contains("Thanks for the feedback")),
+        "stock team thank-you must not appear: {texts:?}"
+    );
+}
+
+#[test]
+fn p8_feedback_enter_returns_no_effects() {
+    let mut app = test_app_with_agent();
+    let effects = dispatch(Action::EnterFeedbackMode, &mut app);
+    assert!(
+        effects.is_empty(),
+        "EnterFeedbackMode must return empty Effect vec, got {effects:?}"
+    );
+    assert!(
+        !effects
+            .iter()
+            .any(|e| matches!(e, Effect::SendFeedback { .. })),
+        "must never emit SendFeedback: {effects:?}"
+    );
+}
+
+#[test]
+fn p8_feedback_enter_stays_normal_mode() {
+    use crate::app::agent_view::PromptInputMode;
+
+    let mut app = test_app_with_agent();
+    let id = AgentId(0);
+    {
+        let agent = app.agents.get_mut(&id).unwrap();
+        agent.prompt_input_mode = PromptInputMode::Normal;
+    }
+
+    dispatch(Action::EnterFeedbackMode, &mut app);
+
+    let agent = app.agents.get(&id).unwrap();
+    assert_eq!(
+        agent.prompt_input_mode,
+        PromptInputMode::Normal,
+        "must not leave Normal for Feedback collect mode"
+    );
+    assert_ne!(agent.prompt_input_mode, PromptInputMode::Feedback);
+}
+
+#[test]
+fn p8_feedback_send_returns_no_send_effect() {
+    let mut app = test_app_with_agent();
+    let id = AgentId(0);
+
+    let effects = dispatch(
+        Action::SendFeedback("great product, love the fork".into()),
+        &mut app,
+    );
+
+    assert!(
+        effects.is_empty(),
+        "send path must return empty effects: {effects:?}"
+    );
+    assert!(
+        !effects
+            .iter()
+            .any(|e| matches!(e, Effect::SendFeedback { .. })),
+        "must never emit Effect::SendFeedback: {effects:?}"
+    );
+
+    let texts = scrollback_system_texts(app.agents.get(&id).unwrap());
+    assert!(
+        texts.iter().any(|t| t.contains("Feedback is disabled in bum")),
+        "send path should show disabled message: {texts:?}"
+    );
+    assert!(
+        !texts
+            .iter()
+            .any(|t| t.contains("Grok Build team") || t.contains("Thanks for the feedback")),
+        "stock thank-you must not appear: {texts:?}"
+    );
+    assert_eq!(
+        app.agents.get(&id).unwrap().prompt_input_mode,
+        crate::app::agent_view::PromptInputMode::Normal
+    );
+}

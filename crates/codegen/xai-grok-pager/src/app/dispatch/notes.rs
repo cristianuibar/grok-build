@@ -18,12 +18,27 @@ fn next_rewrite_nonce() -> u64 {
     REWRITE_NONCE.fetch_add(1, Ordering::Relaxed)
 }
 
-/// Enter feedback mode: visual change to prompt bar (teal accent, pencil prefix).
-/// No side effects — the user types feedback text and presses Enter to send.
+/// Quiet-fork feedback primary copy (UI-SPEC / OPS-02 D-15).
+pub(crate) const FEEDBACK_DISABLED_MESSAGE: &str =
+    "Feedback is disabled in bum (no phone-home).";
+
+/// Optional second-line hint for local observability (D-11).
+pub(crate) const FEEDBACK_DISABLED_LOCAL_LOGS_HINT: &str =
+    "Local logs under ~/.bum remain available for debugging.";
+
+/// Quiet-fork `/feedback`: show disabled system message, stay in Normal mode,
+/// never open collect mode or emit network effects.
 pub(super) fn dispatch_enter_feedback_mode(app: &mut AppView) -> Vec<Effect> {
     with_active_agent(app, |agent| {
-        agent.prompt_input_mode = PromptInputMode::Feedback;
+        // Do not enter PromptInputMode::Feedback — collect mode is blocked.
+        agent.prompt_input_mode = PromptInputMode::Normal;
         agent.prompt.set_text("");
+        agent
+            .scrollback
+            .push_block(RenderBlock::system(FEEDBACK_DISABLED_MESSAGE.to_string()));
+        agent.scrollback.push_block(RenderBlock::system(
+            FEEDBACK_DISABLED_LOCAL_LOGS_HINT.to_string(),
+        ));
     });
     vec![]
 }
@@ -38,9 +53,9 @@ pub(super) fn dispatch_enter_remember_mode(app: &mut AppView) -> Vec<Effect> {
     vec![]
 }
 
-/// Send feedback text to the server. Shows a thank-you message immediately
-/// and fires the HTTP POST as a background effect.
-pub(super) fn dispatch_send_feedback(app: &mut AppView, text: String) -> Vec<Effect> {
+/// Quiet-fork feedback submit: same disabled message as enter; never
+/// `Effect::SendFeedback` and never the stock team thank-you phone-home.
+pub(super) fn dispatch_send_feedback(app: &mut AppView, _text: String) -> Vec<Effect> {
     let ActiveView::Agent(id) = app.active_view else {
         return vec![];
     };
@@ -53,30 +68,13 @@ pub(super) fn dispatch_send_feedback(app: &mut AppView, text: String) -> Vec<Eff
     // Submitting feedback retires any edit-contextual ephemeral tip.
     agent.ephemeral_tip.clear_on_submit();
 
-    let trimmed = text.trim().to_string();
-    if trimmed.is_empty() {
-        agent.scrollback.push_block(RenderBlock::system(
-            "Please provide feedback text.".to_string(),
-        ));
-        return vec![];
-    }
+    agent
+        .scrollback
+        .push_block(RenderBlock::system(FEEDBACK_DISABLED_MESSAGE.to_string()));
 
-    let Some(session_id) = agent.session.session_id.clone() else {
-        agent
-            .scrollback
-            .push_block(RenderBlock::system("No active session.".to_string()));
-        return vec![];
-    };
-
-    agent.scrollback.push_block(RenderBlock::system(
-        "Thanks for the feedback! The Grok Build team is on it.".to_string(),
-    ));
-
-    vec![Effect::SendFeedback {
-        agent_id: id,
-        session_id,
-        feedback_text: trimmed,
-    }]
+    // Never emit Effect::SendFeedback on the quiet-fork path (OPS-02 / D-15).
+    let _ = id;
+    vec![]
 }
 
 /// Send a raw remember note for LLM-powered rewriting via `x.ai/memory/rewrite`.
