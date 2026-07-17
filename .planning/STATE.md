@@ -4,17 +4,17 @@ milestone: v1.0
 milestone_name: milestone
 current_phase: 9
 current_phase_name: Daily-driver end-to-end validation
-current_plan: Not started
-status: planning
-stopped_at: Completed Phase 8 (quiet fork & rebrand polish)
-last_updated: "2026-07-17T12:25:00.000Z"
+current_plan: 2
+status: executing
+stopped_at: Completed 09-01-PLAN.md
+last_updated: "2026-07-17T15:13:00Z"
 last_activity: 2026-07-17
-last_activity_desc: Phase 8 complete, transitioned to Phase 9
+last_activity_desc: "Completed 09-01: p9_ residual + VALIDATION dual map"
 progress:
   total_phases: 9
   completed_phases: 8
-  total_plans: 41
-  completed_plans: 41
+  total_plans: 49
+  completed_plans: 43
 ---
 
 # Project State
@@ -24,28 +24,29 @@ progress:
 See: .planning/PROJECT.md (updated 2026-07-17)
 
 **Core value:** One CLI (`bum`) can log into both xAI and Codex and freely switch between Grok and GPT-5.6 models in a real coding session — including cross-provider subagent orchestration.
-**Current focus:** Phase 9 — Daily-driver end-to-end validation (ready to plan)
+**Current focus:** Phase 9 — Daily-driver end-to-end validation (Plan 02 next)
 
 ## Current Position
 
 Phase: 9 of 9 (Daily-driver end-to-end validation)
-Plan: Not started
-Status: Ready to plan
-Last activity: 2026-07-17 — Phase 8 complete (ID-02, OPS-01, OPS-02), transitioned to Phase 9
-Current Plan: Not started
-Total Plans in Phase: TBD
+Plan: 2 of 5
+Status: Executing
+Last activity: 2026-07-17 — Completed 09-01 (p9_ residual + VALIDATION inventory)
+Current Plan: 2 of 5
+Total Plans in Phase: 5
 
-Progress: [█████████░] 89% (8/9 phases)
+Progress: [█████████░] 86%
 
 ## Performance Metrics
 
 **Velocity:**
 
-- Total plans completed: 41 (phases 1–8)
+- Total plans completed: 43 (phases 1–8 + 09-01)
 - Phase 5: 6 plans
 - Phase 6: 6 plans
 - Phase 7: 6 plans
 - Phase 8: 6 plans (harness → chrome → residual → auto-update → telemetry/feedback → phase gate) + review-fix
+- Phase 9: 1/5 plans (VALIDATION + p9_ residual)
 
 **By Phase:**
 
@@ -59,7 +60,7 @@ Progress: [█████████░] 89% (8/9 phases)
 | 06 | 6/6 | complete — MOD-03, MOD-06 |
 | 07 | 6/6 | complete — AGENT-01..06 |
 | 08 | 6/6 | complete — ID-02, OPS-01, OPS-02 |
-| 09 | 0/? | not started |
+| 09 | 1/5 | 09-01 done — inventory + p9_; live UAT pending |
 
 ---
 **Per-Plan Metrics:**
@@ -72,8 +73,14 @@ Progress: [█████████░] 89% (8/9 phases)
 | Phase 08 P04 | 11min | 3 tasks | 9 files |
 | Phase 08 P05 | 11min | 3 tasks | 9 files |
 | Phase 08 P06 | 20min | 3 tasks | 3 files |
+| Phase 09 P01 | 2min | 2 tasks | 2 files |
 
 ## Decisions
+
+### Phase 9 (Daily-driver end-to-end validation)
+
+- [Phase 9]: Plan 01: single p9_ composition residual (dual-slot + empty-Codex login-hint); not dual p7 clones (C1-M1)
+- [Phase 9]: Plan 01: skip optional p9_route_metadata; host/slot stays p7_resolve_route; bearer stays p7_isolation_* (C1-L1)
 
 ### Phase 8 (Quiet fork & rebrand polish)
 
@@ -94,7 +101,7 @@ Progress: [█████████░] 89% (8/9 phases)
 
 ## Session
 
-**Last session:** 2026-07-17
-**Stopped at:** Phase 8 verification passed; autonomous `--only 8` complete
+**Last session:** 2026-07-17T15:12:30.832Z
+**Stopped at:** Completed 09-01-PLAN.md
 **Resume file:** None
-**Next:** `/gsd-autonomous --only 9 --converge --codex` or plan Phase 9
+**Next:** Execute 09-02-PLAN.md (PHASE-GATE automated half + prior-gate re-runs)
