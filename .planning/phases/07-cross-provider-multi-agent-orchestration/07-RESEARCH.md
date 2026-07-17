@@ -413,22 +413,25 @@ Reuse `crates/codegen/xai-grok-shell/tests/provider_routing.rs` style: mock HTTP
 
 **If empty table:** N/A — three discretion-facing assumptions logged.
 
-## Open Questions
+## Open Questions (RESOLVED)
 
-1. **Typed error code for spawn missing provider**
+1. **Typed error code for spawn missing provider** — **RESOLVED (Plan 03)**
    - What we know: Phase 6 uses `MODEL_SWITCH_MISSING_PROVIDER` for model switch ACP.
    - What's unclear: Whether spawn should reuse that code, introduce `SUBAGENT_SPAWN_MISSING_PROVIDER`, or tool-string-only.
    - Recommendation: Reuse pure gate + login suggestion string; prefer a distinct spawn code if ACP clients need to branch; tool path can embed the same suggestion text either way.
+   - **Resolution:** Tool/string `send_failure` + Phase 6-aligned login suggestion (`bum login --provider {id}`) is sufficient. No new ACP typed code required this phase. Optional distinct spawn code deferred if a future client needs branching.
 
-2. **Explicit effort on models that do not support reasoning effort**
+2. **Explicit effort on models that do not support reasoning effort** — **RESOLVED (Plan 03)**
    - What we know: apply is gated on `model_supports_reasoning_effort`.
    - What's unclear: Hard fail vs soft-ignore for supported-token-on-unsupported-model.
    - Recommendation: Hard fail with clear message when Task sets effort explicitly; soft-ignore only when effort comes from role default and model lacks support.
+   - **Resolution:** Tool provenance **hard-fails** invalid effort strings **and** hard-fails explicit effort when the model lacks reasoning-effort support. Harness/role-default soft-skip may remain only when effort is not Tool-explicit.
 
-3. **How "eager" Task credential preflight gets auth truth without shell coupling**
+3. **How "eager" Task credential preflight gets auth truth without shell coupling** — **RESOLVED (Plan 04)**
    - What we know: Task already uses Resources (`TaskModelValidator`, backend).
    - What's unclear: New resource (`TaskProviderCredentialGate`) vs backend RPC preflight vs temporary await of spawn pre-ack.
    - Recommendation: Pure gate function in shell/auth re-exported; inject thin `Fn(model_slug) -> Option<String>` resource parallel to `TaskModelValidator` so tools stay free of auth.json I/O details.
+   - **Resolution:** Inject `TaskProviderCredentialGate` Resources `Fn` parallel to `TaskModelValidator` from shell (`agent_rebuild`); tools never open `auth.json`. Shell `handle_subagent_request` remains authoritative; Task eager is UX timing for background default.
 
 ## Environment Availability
 
