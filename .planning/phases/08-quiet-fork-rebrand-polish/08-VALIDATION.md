@@ -1,12 +1,13 @@
 ---
 phase: 8
 slug: quiet-fork-rebrand-polish
-status: draft
-nyquist_compliant: false
-wave_0_complete: false
+status: green
+nyquist_compliant: true
+wave_0_complete: true
 created: 2026-07-17
 updated: 2026-07-17
-plans_verified: [01, 02]
+plans_verified: [01, 02, 03, 04, 05, 06]
+gate: 08-PHASE-GATE.md
 ---
 
 # Phase 8 — Validation Strategy
@@ -21,7 +22,7 @@ plans_verified: [01, 02]
 >   billing product strings, pager-bin banner, pager-minimal) **plus residual runtime CLI
 >   copy** (auth/error, device_code, mcp_doctor, plugin_cmd, headless, shell plugin,
 >   pager-bin crash/server). Model catalog labels like `Grok Build (xAI)` / id `grok-build`
->   must **not** regress.
+>   must **not** regress (D-02).
 > - OPS-01 — auto-update chokepoints (`should_check_for_updates`, effective default false,
 >   no first-run true persist, `run_update` / CLI no-op message, min-version enforcer no-op,
 >   hermetic no-network including `finish_update_on_exit` / Ctrl+U).
@@ -30,12 +31,12 @@ plans_verified: [01, 02]
 >   default**, **remote settings restrictive-only** for telemetry/feedback, debug
 >   `force_feedback_request` gated when feedback disabled.
 >
-> **Green-only protocol:** Plan 01 lands compile-safe **green** `p8_` scaffolds only — no
-> intentional-red under `p8_`. Plans 02–05 add green product proofs. Phase gate claims
-> **all required subgroups green** — never “green except expected-red.”
+> **Green-only protocol:** Plan 01 landed compile-safe **green** `p8_` scaffolds only — no
+> intentional-red under `p8_`. Plans 02–05 added green product proofs. Phase gate (Plan 06)
+> claims **all required subgroups green** — never “green except expected-red.”
 >
-> **Plan-time scaffold:** This file is authored at plan time (Nyquist 8e). Plan 01 updates
-> filter inventory as scaffolds land; Plan 06 finalizes greened filters + PHASE-GATE.
+> **Plan 06 finalize:** This file maps every requirement to concrete greened filters + residual
+> greps. Runnable sequence: `08-PHASE-GATE.md`.
 
 ---
 
@@ -43,10 +44,10 @@ plans_verified: [01, 02]
 
 | Property | Value |
 |----------|-------|
-| **Framework** | Cargo built-in `cargo test` (pager lib, update, shell config, pager-bin tests) |
+| **Framework** | Cargo built-in `cargo test` (pager lib, update, shell, telemetry, pager-bin, minimal) |
 | **Config file** | none global — per-crate; `rust-toolchain.toml` (1.92.0) |
 | **Quick run command** | `cargo test -p xai-grok-pager --lib p8_ -- --nocapture` |
-| **Full suite command** | See Plan 06 / `08-PHASE-GATE.md` (discover+execute all `p8_` subgroups) |
+| **Full suite command** | See `08-PHASE-GATE.md` (discover+execute all required subgroups) |
 | **Estimated runtime** | ~60–180 seconds after first compile (targeted crates only) |
 
 ### Cargo verify hygiene (locked)
@@ -54,7 +55,7 @@ plans_verified: [01, 02]
 | Rule | Detail |
 |------|--------|
 | One TESTNAME filter | Cargo accepts **one** positional TESTNAME filter per invocation |
-| Multi-test coverage | Chain single-filter invocations with `&&` |
+| Multi-test coverage | Chain single-filter invocations with `&&` only (C1-L3) |
 | Exit status | Prefer **no pipe** on cargo execute path that masks failures |
 | Chains | Use `&&` only — never `;` or trailing `\|\| true` that masks failures |
 | Discovery assert | **Every** required subgroup: `discover()` → `test "$n" -ge 1` then execute |
@@ -93,55 +94,60 @@ discover() {
 
 ---
 
-## Requirements → Test Map
+## Requirements → Test Map (final greened)
 
-| Req ID | Behavior | Test Type | Planned filter / command | Exists? | Owning plan |
-|--------|----------|-----------|--------------------------|---------|-------------|
-| ID-02 | clap `name`/`about` present as bum | unit | `p8_cli_brand` | ✅ Plan 02 green | 02 |
-| ID-02 | hero badge / subtitle “bum” | unit | `p8_welcome` | ✅ Plan 02 green | 02 |
-| ID-02 | project picker product copy | unit | `p8_project_picker` | ✅ Plan 02 green | 02 |
-| ID-02 | headless + plugin_cmd residual CLI instruct bum | unit | `p8_runtime_cli` | ✅ Plan 02 green | 02 |
-| ID-02 | OAuth return “return to bum” | unit | `p8_oauth_return` | ✅ Plan 03 green | 03 |
-| ID-02 | shell auth/device/mcp/plugin residual CLI instruct bum | unit | `p8_shell_runtime_cli` | ✅ Plan 03 green | 03 |
-| ID-02 | pager-bin / minimal banner “bum” + crash/server residual | unit/e2e | `p8_bin_` / `p8_minimal_welcome` | ✅ Plan 03 green | 03 |
-| ID-02 | residual inventory greps closed (or documented deferrals) | static | PHASE-GATE residual greps (C1-H1) | ❌ | 06 |
-| ID-02 | model catalog still `Grok Build (xAI)` / `grok-build` | regression | `dynamic_enum_model_names` (+ optional `p8_model_label` later) | ✅ Plan 01 re-verify | 01, 06 |
-| ID-02 | wave-1 pager `p8_` discovery smoke (no product strings yet) | unit | `p8_wave1` / `p8_` on pager `--lib` | ✅ Plan 01 green | 01 |
-| OPS-01 | `should_check_for_updates` always false | unit | `p8_no_auto_update` / `p8_should_check` | ✅ Plan 04 green | 04 |
-| OPS-01 | auto_update effective default false; no first-run true | unit | `p8_auto_update_default` | ✅ Plan 04 green | 04 |
-| OPS-01 | min-version enforcer does not install | unit | `p8_min_version` | ✅ Plan 04 green | 04 |
-| OPS-01 | update CLI/status no-op + locked message | unit | `p8_update_cmd` | ✅ Plan 04 green | 04 |
-| OPS-01 | hermetic zero stock-helper calls (incl. finish_update_on_exit) | unit | `p8_update_no_network` | ✅ Plan 04 green | 04 |
-| OPS-01 | settings registry default auto_update false | unit | settings e2e / `p8_settings_auto_update` | ✅ Plan 04 green | 04 |
-| OPS-02 | telemetry mode default Disabled | unit | `p8_telemetry` (`p8_telemetry_resolve_mode_defaults_to_disabled`) | ✅ Plan 01 green | 01, 05 |
-| OPS-02 | explicit config still can enable (precedence doc; not remote harden) | unit | `p8_telemetry_disabled_implies_no_easy_enabled_without_explicit_config` | ✅ Plan 01 green | 01 |
-| OPS-02 | remote telemetry true + local unset stays Disabled | unit | `p8_telemetry` remote restrictive (C1-H3) | ❌ product Plan 05 | 05 |
-| OPS-02 | resolve_feedback default false | unit | flip `resolve_feedback_defaults_*` + `p8_feedback_default` | ✅ exists (must flip) | 05 |
-| OPS-02 | remote feedback true + local unset stays false | unit | `p8_feedback` remote restrictive (C1-H3) | ❌ | 05 |
-| OPS-02 | feedback dispatch no `SendFeedback` + locked message | unit | `p8_feedback` | ❌ | 05 |
-| OPS-02 | force_feedback / debug trigger no network when disabled | unit | `p8_feedback` force gate (C1-M1) | ❌ | 05 |
-| OPS-02 | internal OTLP exporter off by default (TUI + non-TUI) | unit | `p8_internal_otel` / `p8_internal_otel_off_by_default` | ❌ | 05, 06 |
-| OPS-02 | Sentry off by default | unit | `p8_sentry` (unconditional gate) | ❌ | 05, 06 |
-| ALL | hermetic isolation / no stock home writes | integration | `home_isolation` (Phase 1) | ✅ Plan 01 re-verify | 01, 06 |
+| Req ID | Behavior | Test Type | Greened filter / command | Exists? | Owning plan | D-NN |
+|--------|----------|-----------|--------------------------|---------|-------------|------|
+| ID-02 | clap `name`/`about` present as bum | unit | `p8_cli_brand` (`--lib`) | ✅ green | 02 | D-01, D-12 |
+| ID-02 | hero badge / subtitle “bum” | unit | `p8_welcome` (`--lib`) | ✅ green | 02 | D-01, D-14 |
+| ID-02 | project picker product copy | unit | `p8_project_picker` (covered by `p8_`) | ✅ green | 02 | D-01 |
+| ID-02 | headless + plugin_cmd residual CLI instruct bum | unit | `p8_runtime_cli` (`--lib`) | ✅ green | 02 | D-01, C1-H1 |
+| ID-02 | billing product strings bum (SuperGrok kept) | unit | `p8_billing` / `billing` (`--lib`) | ✅ green | 02 | D-01 |
+| ID-02 | OAuth return “return to bum” | unit | `p8_oauth_return` (shell `--lib`) | ✅ green | 03 | D-01 |
+| ID-02 | shell auth/device/mcp/plugin residual CLI instruct bum | unit | `p8_shell_runtime_cli` (shell `--lib`) | ✅ green | 03 | D-01, C1-H1 |
+| ID-02 | pager-bin banner + crash/server residual | unit | `p8_bin_` (`--bin bum`) | ✅ green | 03 | D-01 |
+| ID-02 | pager-minimal welcome product bum | unit | `p8_minimal_welcome` (`--lib`) | ✅ green | 03 | D-01 |
+| ID-02 | residual inventory greps closed (non-vacuous) | static | PHASE-GATE residual greps (C1-H1) | ✅ green | 06 | C1-H1 |
+| ID-02 | model catalog still `Grok Build (xAI)` / `grok-build` | regression | `dynamic_enum_model_names` | ✅ green | 01, 06 | D-02 |
+| ID-02 | wave-1 pager `p8_` discovery smoke | unit | `p8_wave1` / `p8_` on pager `--lib` | ✅ green | 01 | harness |
+| OPS-01 | `should_check_for_updates` always false | unit | `p8_no_auto_update` (`--bin bum`) | ✅ green | 04 | D-04, D-07 |
+| OPS-01 | auto_update effective default false; no first-run true | unit | `p8_auto_update` (update `--lib`) | ✅ green | 04 | D-07 |
+| OPS-01 | min-version enforcer does not install | unit | `p8_min_version` (update `--lib`) | ✅ green | 04 | D-06 |
+| OPS-01 | update CLI/status no-op + locked message | unit | `p8_update_cmd` (`--bin bum`) | ✅ green | 04 | D-05 |
+| OPS-01 | hermetic zero stock-helper calls (incl. finish_update_on_exit) | unit | `p8_update_no_network` (`--bin bum`) | ✅ green | 04 | D-05, C1-M2 |
+| OPS-01 | settings registry default auto_update false | unit | `p8_settings_auto_update` (pager `--lib`) | ✅ green | 04 | D-07 |
+| OPS-02 | telemetry mode default Disabled | unit | `p8_telemetry` (shell `--lib`) | ✅ green | 01, 05 | D-08 |
+| OPS-02 | explicit config still can enable (dev path) | unit | `p8_telemetry_disabled_implies_no_easy_enabled_without_explicit_config` | ✅ green | 01 | D-08 |
+| OPS-02 | remote telemetry true + local unset stays Disabled | unit | `p8_telemetry_remote_true_local_unset_stays_disabled` | ✅ green | 05 | D-08, C1-H3 |
+| OPS-02 | resolve_feedback default false | unit | `p8_feedback_resolve_defaults_to_false` | ✅ green | 05 | D-15 |
+| OPS-02 | remote feedback true + local unset stays false | unit | `p8_feedback_remote_true_local_unset_stays_false` | ✅ green | 05 | D-15, C1-H3 |
+| OPS-02 | feedback dispatch no `SendFeedback` + locked message | unit | `p8_feedback` (pager `--lib`) | ✅ green | 05 | D-15 |
+| OPS-02 | force_feedback / debug trigger no network when disabled | unit | `p8_feedback_force_request_noop_when_disabled` | ✅ green | 05 | D-15, C1-M1 |
+| OPS-02 | internal OTLP exporter off by default (TUI + non-TUI) | unit | `p8_internal_otel` (telemetry + shell + bin) | ✅ green | 05 | D-09, C1-H2 |
+| OPS-02 | Sentry off by default (unconditional gate) | unit | `p8_sentry` (`--bin bum`) | ✅ green | 05 | D-10, C1-L1 |
+| ALL | hermetic isolation / no stock home writes | integration | `home_isolation` (pager-bin) | ✅ green | 01, 06 | Phase 1 |
 
 ---
 
-## Locked decisions coverage (from CONTEXT)
+## Locked decisions coverage (from CONTEXT D-01..D-15)
 
 | Decision | Verified by |
 |----------|-------------|
-| All product chrome → bum | `p8_cli_*`, `p8_welcome*`, picker/OAuth/banner + `p8_runtime_cli` / `p8_shell_runtime_cli` + residual greps |
-| Keep model brands | `p8_model_label` + existing catalog tests |
-| Hard-off stock auto-update | `p8_should_check` / `p8_no_auto_update` |
-| Update command no-op + clear message | `p8_update_cmd` + UI-SPEC string assert |
-| Hermetic no stock update helpers | `p8_update_no_network` (incl. finish_update_on_exit) |
-| Min-version ignore | `p8_min_version` |
-| Telemetry Disabled default | `p8_telemetry` + existing |
-| Remote cannot re-enable telemetry/feedback | `p8_telemetry` / `p8_feedback` remote restrictive |
-| Internal OTLP off default | `p8_internal_otel` |
-| Feedback quiet / no phone-home | `p8_feedback` + default false + force gate |
-| Sentry off default | `p8_sentry` (unconditional discover) |
-| Leave internal crates / GROK_* env | no rename tasks; residual allowlist |
+| D-01 All product chrome → bum | `p8_cli_brand`, `p8_welcome`, picker/OAuth/banner + `p8_runtime_cli` / `p8_shell_runtime_cli` + residual greps |
+| D-02 Keep model brands | `dynamic_enum_model_names` — catalog still `Grok Build (xAI)` / `grok-build` |
+| D-03 Leave internal crates `xai-grok-*` | Static inventory — no rename tasks; residual allowlist |
+| D-04 Hard-off stock auto-update | `p8_no_auto_update` / `should_check_for_updates` always false |
+| D-05 Update command no-op + clear message | `p8_update_cmd` + UI-SPEC string assert |
+| D-06 Min-version ignore | `p8_min_version` |
+| D-07 Hermetic no stock update helpers + default false | `p8_update_no_network`, `p8_auto_update`, `p8_settings_auto_update` |
+| D-08 Telemetry Disabled default | `p8_telemetry` |
+| D-09 Mixpanel / product analytics off under Disabled | `p8_telemetry` + TelemetryMode::Disabled path |
+| D-10 Sentry off default | `p8_sentry` (unconditional discover ≥1) |
+| D-11 Local logs under ~/.bum OK | home_isolation + no gate requiring log deletion |
+| D-12 Clap name/about bum | `p8_cli_brand` |
+| D-13 Leave internal `GROK_*` env family | Static exclusion — residual allowlist; no mass rename |
+| D-14 Hero / welcome badge bum | `p8_welcome`, `p8_minimal_welcome` |
+| D-15 Quiet `/feedback` no phone-home | `p8_feedback` + default false + remote restrictive + force gate |
 
 ---
 
@@ -151,25 +157,34 @@ discover() {
 |------|-----------|
 | Agent/system prompt “Grok Build agent” strings | RESEARCH Q2 RESOLVED: defer beyond chrome gate unless Phase 9 needs |
 | Full user-guide markdown archaeology | RESEARCH Q3 RESOLVED: rebrand extracted runtime docs if touched; not full CHANGELOG |
-| Public x.ai signed install channel | PROJECT out of scope |
-| Crate renames `xai-grok-*` | Phase 1 lock |
+| Public x.ai signed install channel | PROJECT out of scope (deferred) |
+| Crate renames `xai-grok-*` | Phase 1 / D-03 lock |
+| Mass `GROK_*` → `BUM_*` env rename | D-13 leave-internal |
 | Live dual-provider E2E | Phase 9 |
 
-### Residual chrome note
+---
 
-`Open Grok Build` (shell `agent/app.rs` or similar) is **in-scope for ID-02** if still user-visible after Plans 02–03. Plan 03/06 inventory greps must either rebrand it or list it as fixed residual with owning task — not silent exclusion.
+## Residual runtime CLI inventory (C1-H1) — owned surfaces
 
-### Residual runtime CLI inventory (C1-H1) — owned surfaces
+| Surface | Owning plan | Gate proof |
+|---------|-------------|------------|
+| `pager/src/headless.rs` auth recovery | 02 | `p8_runtime_cli` + residual grep clean |
+| `pager/src/plugin_cmd.rs` help/errors | 02 | `p8_runtime_cli` + residual grep clean |
+| `shell/src/auth/error.rs` | 03 | `p8_shell_runtime_cli` + residual grep clean |
+| `shell/src/auth/device_code.rs` user bail | 03 | `p8_shell_runtime_cli` + residual grep clean |
+| `shell/src/mcp_doctor.rs` user println | 03 | `p8_shell_runtime_cli` + residual grep clean |
+| `shell/src/plugin.rs` user Display | 03 | `p8_shell_runtime_cli` + residual grep clean |
+| `pager-bin/src/main.rs` agent server / crash / banner | 03 | `p8_bin_` + residual grep clean |
 
-| Surface | Owning plan | Gate |
-|---------|-------------|------|
-| `pager/src/headless.rs` auth recovery | 02 | `p8_runtime_cli` + residual grep |
-| `pager/src/plugin_cmd.rs` help/errors | 02 | `p8_runtime_cli` + residual grep |
-| `shell/src/auth/error.rs` | 03 | `p8_shell_runtime_cli` + residual grep |
-| `shell/src/auth/device_code.rs` user bail | 03 | `p8_shell_runtime_cli` + residual grep |
-| `shell/src/mcp_doctor.rs` user println | 03 | `p8_shell_runtime_cli` + residual grep |
-| `shell/src/plugin.rs` user Display | 03 | `p8_shell_runtime_cli` + residual grep |
-| `pager-bin/src/main.rs` agent server / crash / banner | 03 | `p8_bin_` + residual grep |
+### Residual grep patterns (PHASE-GATE; must match **zero**)
+
+Stock product recovery / chrome instructions that must not remain on owned surfaces:
+
+```text
+Run `grok login` | Run `grok mcp | Run `grok plugin
+Grok agent server starting | Grok crashed during | grok (pager) -
+Open Grok Build | Grok Build TUI | Thanks for using Grok
+```
 
 ### Residual allowlist (not product chrome — do not fail greps)
 
@@ -181,16 +196,27 @@ discover() {
 | Types `GrokAuth`, headers `x-grok-client-*` | Internal API surface |
 | Agent system prompt “Grok Build agent” | Deferred beyond chrome gate |
 | Managed source label `grok.com` | Host identity, not CLI binary name |
+| Test negative-asserts (`!msg.contains("grok login")`) | Prove absence; not user-facing chrome |
+| Dev env knobs `GROK_*` (D-13) | Internal; not advertised TUI path |
 
-### OPS-02 OTLP + remote filters (C1-H2, C1-H3)
+### Static non-change proofs (D-03 / D-13)
 
-| Filter | Proves |
-|--------|--------|
-| `p8_internal_otel` / `p8_internal_otel_off_by_default` | Default instrumentation not Server export; exporter.enabled false |
-| `p8_telemetry` remote-true local-unset | Stays Disabled |
-| `p8_feedback` remote-true local-unset | Stays false |
-| `p8_feedback` force/debug disabled | No feedback API record when disabled |
-| `p8_sentry` | Unconditional phase-gate subgroup |
+| Check | How |
+|-------|-----|
+| D-03 crates still `xai-grok-*` | `rg -l 'name = "xai-grok-' crates/codegen/*/Cargo.toml \| head` — packages retain prefix |
+| D-13 `GROK_*` env family left internal | No mass rename in Plans 01–06; residual allowlist documents leave-internal |
+
+---
+
+## OPS-02 OTLP + remote filters (C1-H2, C1-H3)
+
+| Filter | Crate | Proves |
+|--------|-------|--------|
+| `p8_internal_otel` / `p8_internal_otel_off_by_default` | telemetry `--lib`, shell `--lib`, bin `bum` | Default instrumentation not Server export; exporter.enabled false |
+| `p8_telemetry` remote-true local-unset | shell `--lib` | Stays Disabled |
+| `p8_feedback` remote-true local-unset | shell `--lib` | Stays false |
+| `p8_feedback` force/debug disabled | shell `--lib` | No feedback API record when disabled |
+| `p8_sentry` | pager-bin `--bin bum` | Unconditional phase-gate subgroup (C1-L1) |
 
 ---
 
@@ -202,16 +228,16 @@ discover() {
 
 ---
 
-## Wave gaps (close during execute)
+## Wave gaps (closed)
 
-- [x] Plan 01: green `p8_` scaffolds — shell `p8_telemetry` (OPS-02 default Disabled), pager `p8_wave1` discovery smoke, model catalog + `home_isolation` re-verify. **No product chrome / OPS hard-off asserts yet** (stock clap still `name=grok`; product filters remain Plans 02–05).
-- [x] Plan 02: pager TUI product chrome + residual CLI greened (`p8_cli_brand`, `p8_welcome`, `p8_project_picker`, `p8_runtime_cli`, `p8_billing`); model catalog regression green. Plan 03 still owns OAuth/shell residual + bin/minimal filters.
-- [x] Plan 03: OAuth return + shell residual + pager-bin/minimal greened filters (`p8_oauth_return`, `p8_shell_runtime_cli`, `p8_bin_`, `p8_minimal_welcome`)
-- [x] Plan 04: auto-update / min-version / settings / `p8_update_no_network` greened filters
-- [ ] Plan 05: feedback + remote restrictive + OTLP + sentry greened filters
-- [ ] Plan 06: `nyquist_compliant: true`, `wave_0_complete: true`, PHASE-GATE doc + residual greps
+- [x] Plan 01: green `p8_` scaffolds — shell `p8_telemetry`, pager `p8_wave1`, model catalog + `home_isolation`
+- [x] Plan 02: pager TUI product chrome + residual CLI greened
+- [x] Plan 03: OAuth return + shell residual + pager-bin/minimal greened
+- [x] Plan 04: auto-update / min-version / settings / `p8_update_no_network` greened
+- [x] Plan 05: feedback + remote restrictive + OTLP + sentry greened
+- [x] Plan 06: `nyquist_compliant: true`, `wave_0_complete: true`, PHASE-GATE + residual greps
 
-### Plan 01 greened filters (discover+execute)
+### Plan 01 greened filters
 
 | Crate | Filter | Command |
 |-------|--------|---------|
@@ -220,17 +246,17 @@ discover() {
 | `xai-grok-pager` | model brand regression | `cargo test -p xai-grok-pager --test dynamic_enum_model_names -- --nocapture` |
 | `xai-grok-pager-bin` | `home_isolation` | `cargo test -p xai-grok-pager-bin --test home_isolation -- --nocapture` |
 
-### Plan 02 greened filters (discover+execute)
+### Plan 02 greened filters
 
 | Crate | Filter | Command |
 |-------|--------|---------|
 | `xai-grok-pager` | `p8_cli_brand` | `cargo test -p xai-grok-pager --lib p8_cli_brand -- --nocapture` |
 | `xai-grok-pager` | `p8_welcome` | `cargo test -p xai-grok-pager --lib p8_welcome -- --nocapture` |
-| `xai-grok-pager` | `p8_` (incl. project_picker / runtime_cli / billing) | `cargo test -p xai-grok-pager --lib p8_ -- --nocapture` |
-| `xai-grok-pager` | `billing` product string asserts | `cargo test -p xai-grok-pager --lib billing -- --nocapture` |
+| `xai-grok-pager` | `p8_runtime_cli` | `cargo test -p xai-grok-pager --lib p8_runtime_cli -- --nocapture` |
+| `xai-grok-pager` | `p8_` (aggregate incl. project_picker / billing) | `cargo test -p xai-grok-pager --lib p8_ -- --nocapture` |
 | `xai-grok-pager` | model brand regression (D-02) | `cargo test -p xai-grok-pager --test dynamic_enum_model_names -- --nocapture` |
 
-### Plan 03 greened filters (discover+execute)
+### Plan 03 greened filters
 
 | Crate | Filter | Command |
 |-------|--------|---------|
@@ -239,7 +265,7 @@ discover() {
 | `xai-grok-pager-minimal` | `p8_minimal_welcome` | `cargo test -p xai-grok-pager-minimal --lib p8_minimal_welcome -- --nocapture` |
 | `xai-grok-pager-bin` | `p8_bin_` | `cargo test -p xai-grok-pager-bin --bin bum p8_bin_ -- --nocapture` |
 
-### Plan 04 greened filters (discover+execute)
+### Plan 04 greened filters
 
 | Crate | Filter | Command |
 |-------|--------|---------|
@@ -249,13 +275,27 @@ discover() {
 | `xai-grok-update` | `p8_auto_update` | `cargo test -p xai-grok-update --lib p8_auto_update -- --nocapture` |
 | `xai-grok-update` | `p8_min_version` | `cargo test -p xai-grok-update --lib p8_min_version -- --nocapture` |
 | `xai-grok-pager` | `p8_settings_auto_update` | `cargo test -p xai-grok-pager --lib p8_settings_auto_update -- --nocapture` |
-| `xai-grok-pager` | settings e2e auto_update | `cargo test -p xai-grok-pager --test settings_e2e auto_update -- --nocapture` |
 
-### Plan 05 planned green product filter names (inventory only)
+### Plan 05 greened filters
 
-| Plan | Filters to add green with product code |
-|------|----------------------------------------|
-| 05 | `p8_feedback` (+ default / remote / force), `p8_telemetry` remote restrictive, `p8_internal_otel`, `p8_sentry` |
+| Crate | Filter | Command |
+|-------|--------|---------|
+| `xai-grok-pager` | `p8_feedback` | `cargo test -p xai-grok-pager --lib p8_feedback -- --nocapture` |
+| `xai-grok-shell` | `p8_feedback` | `cargo test -p xai-grok-shell --lib p8_feedback -- --nocapture` |
+| `xai-grok-shell` | `p8_telemetry` | `cargo test -p xai-grok-shell --lib p8_telemetry -- --nocapture` |
+| `xai-grok-telemetry` | `p8_internal_otel` | `cargo test -p xai-grok-telemetry --lib p8_internal_otel -- --nocapture` |
+| `xai-grok-shell` | `p8_internal_otel` | `cargo test -p xai-grok-shell --lib p8_internal_otel -- --nocapture` |
+| `xai-grok-pager-bin` | `p8_internal_otel` | `cargo test -p xai-grok-pager-bin --bin bum p8_internal_otel -- --nocapture` |
+| `xai-grok-pager-bin` | `p8_sentry` | `cargo test -p xai-grok-pager-bin --bin bum p8_sentry -- --nocapture` |
+
+### Plan 06 greened residual + regressions
+
+| Check | Command |
+|-------|---------|
+| Residual inventory (C1-H1) | See `08-PHASE-GATE.md` residual section |
+| Model brand (D-02) | `cargo test -p xai-grok-pager --test dynamic_enum_model_names -- --nocapture` |
+| home_isolation | `cargo test -p xai-grok-pager-bin --test home_isolation -- --nocapture` |
+| Full gate | `bash` sequence in `08-PHASE-GATE.md` |
 
 ---
 
