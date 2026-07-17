@@ -5,15 +5,15 @@ milestone_name: milestone
 current_phase: 9
 current_phase_name: Daily-driver end-to-end validation
 current_plan: 4
-status: executing
-stopped_at: Completed 09-02-PLAN.md
-last_updated: "2026-07-17T15:24:30Z"
+status: paused
+stopped_at: "Plan 04 human UAT checkpoint — dual OAuth not yet present under ~/.bum"
+last_updated: "2026-07-17T15:30:00Z"
 last_activity: 2026-07-17
-last_activity_desc: "Completed 09-02: PHASE-GATE automated half GREEN"
+last_activity_desc: "Autonomous --only 9 paused after waves 1–2; awaiting live dual-login UAT"
 progress:
   total_phases: 9
   completed_phases: 8
-  total_plans: 49
+  total_plans: 50
   completed_plans: 44
 ---
 
@@ -41,7 +41,7 @@ Progress: [█████████░] 90%
 
 **Velocity:**
 
-- Total plans completed: 45 (phases 1–8 + 09-01 + 09-02 + 09-03)
+- Total plans completed: 44 SUMMARY files (phases 1–8 + 09-01 + 09-02 + 09-03)
 - Phase 5: 6 plans
 - Phase 6: 6 plans
 - Phase 7: 6 plans
@@ -108,7 +108,11 @@ Progress: [█████████░] 90%
 
 ## Session
 
-**Last session:** 2026-07-17T15:24:00Z
-**Stopped at:** Completed 09-02-PLAN.md
+**Last session:** 2026-07-17
+**Stopped at:** Autonomous `--only 9 --converge --codex` paused at Plan 04 human UAT checkpoint (no dual OAuth under `~/.bum` yet)
 **Resume file:** None
-**Next:** Execute 09-04-PLAN.md (live dual-login UAT) then 09-05 hybrid VERIFICATION
+**Next:**
+1. Dual login: `bum login` + `bum login --provider codex` (or temp `BUM_HOME`)
+2. Fill `.planning/phases/09-daily-driver-end-to-end-validation/09-UAT.md` (OPS-03..06 live matrix)
+3. Resume: `/gsd-execute-phase 9` or `/gsd-autonomous --only 9` (plans 04–05 remain)
+4. Plan 05 hybrid close only after signed UAT PASS
