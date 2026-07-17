@@ -2,18 +2,18 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-current_phase: 7
-current_phase_name: Cross-provider multi-agent orchestration
-current_plan: 6
-status: in_progress
+current_phase: 8
+current_phase_name: Quiet fork & rebrand polish
+current_plan: Not started
+status: planning
 stopped_at: Completed 07-06-PLAN.md
-last_updated: "2026-07-17T09:31:00.284Z"
+last_updated: "2026-07-17T09:51:16.046Z"
 last_activity: 2026-07-17
-last_activity_desc: Completed 07-01-PLAN.md (p7_ tools + shell scaffold)
+last_activity_desc: Phase 7 complete, transitioned to Phase 8
 progress:
-  total_phases: 7
-  completed_phases: 6
-  total_plans: 36
+  total_phases: 9
+  completed_phases: 7
+  total_plans: 35
   completed_plans: 35
 ---
 
@@ -21,29 +21,30 @@ progress:
 
 ## Project Reference
 
-See: .planning/PROJECT.md (updated 2026-07-16)
+See: .planning/PROJECT.md (updated 2026-07-17)
 
 **Core value:** One CLI (`bum`) can log into both xAI and Codex and freely switch between Grok and GPT-5.6 models in a real coding session — including cross-provider subagent orchestration.
-**Current focus:** Phase 7 — Cross-provider multi-agent orchestration (Plan 02 next)
+**Current focus:** Phase 8 — Quiet fork & rebrand polish (ready to plan)
 
 ## Current Position
 
-Phase: 7 of 9 (Cross-provider multi-agent orchestration)
-Plan: 6 of 6
-Status: In progress — Plan 01 complete (wave 1 p7_ green harness)
-Last activity: 2026-07-17 — Completed 07-01-PLAN.md (p7_ tools + shell scaffold)
-Current Plan: 6
-Total Plans in Phase: 6
+Phase: 8 of 9 (Quiet fork & rebrand polish)
+Plan: Not started
+Status: Ready to plan
+Last activity: 2026-07-17 — Phase 7 complete (AGENT-01..06), transitioned to Phase 8
+Current Plan: Not started
+Total Plans in Phase: TBD
 
-Progress: [██████████] 97% (30/36 plans)
+Progress: [████████░░] 78% (7/9 phases)
 
 ## Performance Metrics
 
 **Velocity:**
 
-- Total plans completed: 29 (phases 1–6)
+- Total plans completed: 35 (phases 1–7)
 - Phase 5: 6 plans (Wave 0 RED → storage → OAuth → logout/status → refresh → gate)
 - Phase 6: 6 plans (shell gate → QV → dual free switch → badges → deferred login → phase gate)
+- Phase 7: 6 plans (harness → effort → spawn gate → async preflight → isolation → phase gate)
 
 **By Phase:**
 
@@ -55,6 +56,7 @@ Progress: [██████████] 97% (30/36 plans)
 | 04 | 5/5 | complete |
 | 05 | 6/6 | complete — AUTH-02..05 |
 | 06 | 6/6 | complete — MOD-03, MOD-06 |
+| 07 | 6/6 | complete — AGENT-01..06 |
 
 ---
 **Per-Plan Metrics:**
@@ -76,6 +78,9 @@ Progress: [██████████] 97% (30/36 plans)
 
 ## Decisions
 
+- [Phase 7]: Cross-provider spawn uses child model → catalog provider → credentials/backend; Task exposes reasoning_effort; missing child provider fails closed before pending/worktree via async preflight_spawn + pure oauth_provider_slot_usable
+- [Phase 7]: Effort hard-fail only when Task/harness explicitly set effort (role/persona/definition defaults soft-skip under Tool model stamp)
+- [Phase 7]: Dual-direction Authorization isolation proven with dual fake tokens; live dual-login NL E2E deferred to Phase 9
 - [Phase 6]: Missing-provider gate lives in model_switch::apply (catalog provider, store_usable/credential_usable, BYOK skip)
 - [Phase ?]: Introduce DeferredModelSwitch early with persist_default + required_provider for gate-open handoff
 - [Phase ?]: Transactional set_default_model: no current/persist/toast until SwitchModelComplete(Ok)

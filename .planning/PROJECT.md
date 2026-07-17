@@ -33,7 +33,7 @@ Capabilities already present in this Grok Build fork (baseline the product build
 - [ ] **Missing-provider gate** — Selecting a model for a provider without valid credentials blocks and prompts that provider’s OAuth login (no silent failure mid-turn)
 - [ ] **Quiet local fork** — Disable xAI auto-update channel and product telemetry so bum does not phone home to x.ai as a stock client
 - [ ] **Daily-driver bar** — After v1, bum is usable as the default coding agent for real work: auth, model switch, tools, and sessions work for both providers
-- [ ] **Cross-provider multi-agent orchestration** — Existing Grok Build subagent spawn/resume/roles keep working; improve so a parent on one provider can start a child on another (e.g. main Grok 4.5 → “Codex Sol medium effort” research subagent) with correct model, effort, credentials, and backend routing
+- ✓ **Cross-provider multi-agent orchestration** — Parent/child can use different providers with correct model, effort, credentials, and backend routing; same-provider spawn/resume/roles/personas preserved — Phase 7 (AGENT-01..06; live dual-login NL E2E → Phase 9)
 
 ### Out of Scope
 
@@ -77,7 +77,7 @@ Capabilities already present in this Grok Build fork (baseline the product build
 | Missing provider → block + prompt login | Fail closed and fixable, not mid-request surprise | — Pending (Phase 6) |
 | Disable xAI auto-update + telemetry | Private daily-driver fork must not phone home as stock client | — Pending |
 | Custom agentic workflows deferred | Keep v1 shippable: identity + models + cross-provider subagents + rebrand | — Pending |
-| Cross-provider subagents in v1 | Parent model/provider must not limit child; NL + tool spawn with model + effort | — Pending |
+| Cross-provider subagents in v1 | Parent model/provider must not limit child; NL + tool spawn with model + effort | Phase 7 — automated AGENT-01..06 green; live dual-login E2E Phase 9 |
 | v1 success = feature-complete daily driver | Not a prototype — usable as default coding CLI | — Pending |
 
 ## Evolution
