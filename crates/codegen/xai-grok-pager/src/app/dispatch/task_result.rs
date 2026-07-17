@@ -473,8 +473,9 @@ pub(super) fn dispatch_task_result(result: TaskResult, app: &mut AppView) -> Vec
             codex_usable,
             generation,
         } => {
-            // Stale-on-error: only update flags that arrived as Some.
-            // When both None, keep last known cache (badge freshness).
+            // Stale-on-soft-error: only update flags that arrived as Some.
+            // Hard auth-file failures emit Some(false)/Some(false) (WR-06).
+            // When both None (join error), keep last known cache.
             if xai_usable.is_some() || codex_usable.is_some() {
                 let cur = app.provider_auth_usable();
                 app.set_provider_auth_usable(
@@ -513,7 +514,9 @@ pub(super) fn dispatch_task_result(result: TaskResult, app: &mut AppView) -> Vec
                     app.clear_provider_login_poll();
                 } else {
                     // Exhausted attempts; leave deferred for FocusGained.
-                    app.provider_login_poll = None;
+                    // IN-01: use clear_provider_login_poll so generation bumps
+                    // match the arm/clear contract (in-flight ticks stay stale).
+                    app.clear_provider_login_poll();
                 }
             }
             effects
