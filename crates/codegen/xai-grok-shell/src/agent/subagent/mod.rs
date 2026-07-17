@@ -1009,8 +1009,31 @@ fn subagent_auth_type(
         xai_chat_state::AuthType::ApiKey
     }
 }
+/// Read a single provider slot access token from an auth.json path (test seam +
+/// override-aware resolve). Fail-closed on missing/unusable slot.
+fn provider_slot_access_key_from_path(path: &Path, provider: &str) -> Option<String> {
+    match crate::auth::read_provider_auth_store(path, provider) {
+        Ok(Some(store)) => crate::auth::select_provider_access_token(&store).map(|a| a.key),
+        Ok(None) => None,
+        Err(e) => {
+            tracing::warn!(
+                error = %e,
+                provider,
+                "subagent provider slot snapshot failed; fail-closed"
+            );
+            None
+        }
+    }
+}
+
 /// Resolve a model override string (config key or model ID) to a
 /// `(SamplerConfig, ModelId)` pair.
+///
+/// Credential slots never cross: xAI children take the xAI AuthManager /
+/// providers.xai key; Codex children take only providers.codex. When
+/// [`SubagentSpawnContext::auth_json_path_override`] is set (deterministic
+/// tests / Plan 05 seam), both slots are read from that path instead of the
+/// process-global Codex prepare-time cache alone.
 fn resolve_model_override_to_config(
     model_id: &str,
     ctx: &SubagentSpawnContext,
@@ -1024,18 +1047,29 @@ fn resolve_model_override_to_config(
     } else {
         acp::ModelId::new(entry.info().model.clone())
     };
-    let session_key = ctx.auth.as_ref().map(|a| a.key.as_str());
-    let has_session_key = session_key.is_some();
+    // Live xAI AuthManager snapshot (production parent always carries this).
+    let xai_from_auth = ctx.auth.as_ref().map(|a| a.key.clone());
+    let has_session_key = xai_from_auth.is_some();
     // Provider-aware resolve: never cross-apply parent xAI token into the Codex
-    // slot. Codex uses the same prepare-time auth.json snapshot as main prepare.
+    // slot. Codex uses the same prepare-time auth.json snapshot as main prepare
+    // unless tests override the path for dual-fixture isolation.
     // Endpoints come from the parent's ModelsManager (catalog stamp provenance),
     // not a fresh EndpointsConfig::default() that can diverge from the catalog.
     let endpoints = ctx.models_manager.endpoints();
-    let codex_session_owned =
-        crate::agent::config::snapshot_codex_session_key_from_auth_store();
+    let (xai_owned, codex_owned) = if let Some(ref path) = ctx.auth_json_path_override {
+        let xai_disk = provider_slot_access_key_from_path(path, crate::auth::PROVIDER_XAI);
+        let codex_disk = provider_slot_access_key_from_path(path, crate::auth::PROVIDER_CODEX);
+        // Prefer live AuthManager key when present; fall back to dual-doc disk.
+        (xai_from_auth.or(xai_disk), codex_disk)
+    } else {
+        (
+            xai_from_auth,
+            crate::agent::config::snapshot_codex_session_key_from_auth_store(),
+        )
+    };
     let (xai_key, codex_key) = match entry.info.provider {
-        ModelProvider::Xai => (session_key, None),
-        ModelProvider::Codex => (None, codex_session_owned.as_deref()),
+        ModelProvider::Xai => (xai_owned.as_deref(), None),
+        ModelProvider::Codex => (None, codex_owned.as_deref()),
     };
     let mut credentials =
         resolve_credentials_for_provider(&entry, &endpoints, xai_key, codex_key);

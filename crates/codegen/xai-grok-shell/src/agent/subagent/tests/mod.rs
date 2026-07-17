@@ -4143,4 +4143,606 @@ async fn p7_preflight_prefers_live_parent_chat_state_over_ctx_snapshot() {
     );
 }
 
+// ── Phase 7 plan-05: dual-token isolation harness (D-09..D-12 / C2-M4) ─────
+//
+// Minimal harness contract:
+//   spawn-resolve (production resolve_effective_model_config path)
+//   → one outbound mock sample
+//   → capture Authorization + resolved base_url host + parent model
+//   → cancel/join (drain stream + drop client; timeout fails the test)
+//
+// Resolve-only key_prefix checks are complements only — D-12 requires wire
+// Authorization both directions.
+
+const P7_XAI_FAKE: &str = "xai-fake-token-p7-lib";
+const P7_CODEX_FAKE: &str = "codex-fake-token-p7-lib";
+const P7_XAI_MODEL: &str = "grok-build";
+const P7_CODEX_MODEL: &str = "gpt-5.6-sol";
+
+/// Structured capture from the Plan 05 minimal harness.
+#[derive(Debug)]
+struct P7IsolationCapture {
+    authorization: Option<String>,
+    resolved_base_url: String,
+    mock_request_host: String,
+    child_model_id: String,
+    parent_model_id_before: String,
+    parent_model_id_after: String,
+    child_api_key: Option<String>,
+    reasoning_effort: Option<xai_grok_sampling_types::ReasoningEffort>,
+    mock_request_count: usize,
+}
+
+fn p7_dual_models() -> indexmap::IndexMap<String, crate::agent::config::ModelEntry> {
+    use crate::agent::config::ModelProvider;
+    use xai_grok_sampling_types::ApiBackend;
+    let mut models = indexmap::IndexMap::new();
+    let mut xai = test_model_entry(P7_XAI_MODEL);
+    xai.info.provider = ModelProvider::Xai;
+    xai.info.api_backend = ApiBackend::ChatCompletions;
+    models.insert(P7_XAI_MODEL.to_string(), xai);
+    let mut codex = test_model_entry(P7_CODEX_MODEL);
+    codex.info.provider = ModelProvider::Codex;
+    codex.info.api_backend = ApiBackend::Responses;
+    codex.info.supports_reasoning_effort = true;
+    models.insert(P7_CODEX_MODEL.to_string(), codex);
+    models
+}
+
+fn p7_isolation_ctx(
+    models: indexmap::IndexMap<String, crate::agent::config::ModelEntry>,
+    auth_path: std::path::PathBuf,
+    parent_model: &str,
+    xai_token: Option<&str>,
+) -> SubagentSpawnContext {
+    use crate::agent::config::{
+        EndpointsConfig, CLI_CHAT_PROXY_BASE_URL_DEFAULT, CODEX_BASE_URL_DEFAULT,
+        XAI_API_BASE_URL_DEFAULT,
+    };
+    use crate::auth::{AuthMode, GrokAuth};
+
+    let mut ctx = ctx_with_toggle(std::collections::HashMap::new());
+    ctx.available_models = models.clone();
+    let mut cfg = crate::agent::config::Config::default();
+    // Deterministic dual-provider endpoints so route construction matches stock
+    // first-party hosts (session OAuth attach) without ambient env drift.
+    cfg.endpoints = EndpointsConfig {
+        cli_chat_proxy_base_url: Some(CLI_CHAT_PROXY_BASE_URL_DEFAULT.to_owned()),
+        xai_api_base_url: XAI_API_BASE_URL_DEFAULT.to_owned(),
+        codex_base_url: CODEX_BASE_URL_DEFAULT.to_owned(),
+        ..EndpointsConfig::default()
+    };
+    ctx.models_manager = crate::agent::models::ModelsManager::new(
+        None,
+        models,
+        acp::ModelId::new(parent_model),
+        ctx.auth_manager.clone(),
+        cfg,
+    );
+    ctx.model_id = acp::ModelId::new(parent_model);
+    ctx.sampling_config.model = parent_model.to_string();
+    // Parent baseline sampling key is the *parent* fixture when present so a
+    // wrong fallback would still be distinguishable on the wire.
+    if parent_model == P7_CODEX_MODEL {
+        ctx.sampling_config.api_key = Some(P7_CODEX_FAKE.to_owned());
+        ctx.sampling_config.base_url = CODEX_BASE_URL_DEFAULT.to_owned();
+    } else {
+        ctx.sampling_config.api_key = Some(P7_XAI_FAKE.to_owned());
+        ctx.sampling_config.base_url = XAI_API_BASE_URL_DEFAULT.to_owned();
+    }
+    ctx.auth_json_path_override = Some(auth_path);
+    if let Some(key) = xai_token {
+        ctx.auth = Some(GrokAuth {
+            key: key.to_owned(),
+            auth_mode: AuthMode::Oidc,
+            create_time: chrono::Utc::now(),
+            user_id: "p7-iso".into(),
+            expires_at: Some(chrono::Utc::now() + chrono::Duration::hours(1)),
+            refresh_token: Some("rt".into()),
+            ..Default::default()
+        });
+    }
+    ctx.parent_chat_state = Some(spawn_test_parent_chat_state(parent_model));
+    ctx
+}
+
+/// C2-M4 minimal harness: production child resolve → one mock sample → capture
+/// Authorization/host + parent model → cancel/join within timeout.
+///
+/// `base_url` is resolved via production route construction (ModelsManager
+/// endpoints); only the outbound sample is retargeted at the mock so session
+/// OAuth host policy still runs on first-party route bases (same pattern as
+/// Phase 4 wire proofs). Resolve-only is never returned as acceptance.
+async fn p7_isolation_spawn_sample_cancel(
+    parent_model: &str,
+    child_model: &str,
+    xai_present: bool,
+    codex_present: bool,
+    reasoning_effort: Option<&str>,
+) -> P7IsolationCapture {
+    use crate::agent::config::{resolve_provider_route, ModelProvider};
+    use crate::sampling::Client;
+    use futures_util::StreamExt;
+    use std::time::Duration;
+    use xai_grok_sampling_types::conversation::{ConversationItem, ConversationRequest};
+    use xai_grok_sampling_types::ApiBackend;
+    use xai_grok_test_support::MockInferenceServer;
+    use xai_grok_tools::implementations::grok_build::task::types::ModelOverrideProvenance;
+
+    let dir = tempfile::TempDir::new().unwrap();
+    let auth_path = dir.path().join("auth.json");
+    p7_write_auth_json(&auth_path, xai_present, codex_present);
+
+    let models = p7_dual_models();
+    let xai_tok = xai_present.then_some(P7_XAI_FAKE);
+    let mut ctx = p7_isolation_ctx(models, auth_path, parent_model, xai_tok);
+
+    let parent_model_id_before = ctx.model_id.0.to_string();
+    let parent_chat_before = ctx
+        .parent_chat_state
+        .as_ref()
+        .unwrap()
+        .get_sampling_config()
+        .await
+        .expect("parent chat sampling")
+        .model
+        .clone();
+    assert_eq!(parent_chat_before, parent_model);
+
+    // 1) Production spawn-resolve path (same helper handle_subagent_request uses).
+    let definition_model = xai_grok_agent::config::ModelOverride::Inherit;
+    let (mut child_cfg, child_mid) = resolve_effective_model_config(
+        Some(child_model),
+        "explore",
+        &definition_model,
+        &ctx,
+    )
+    .await;
+
+    if let Some(raw) = reasoning_effort {
+        let supports = ctx
+            .models_manager
+            .model_supports_reasoning_effort(child_mid.0.as_ref());
+        super::handle_request::apply_subagent_reasoning_effort(
+            raw,
+            child_mid.0.as_ref(),
+            supports,
+            ModelOverrideProvenance::Tool,
+            &mut child_cfg,
+        )
+        .expect("effort apply on isolation harness");
+    }
+
+    let resolved_base_url = child_cfg.base_url.clone();
+    let child_api_key = child_cfg.api_key.clone();
+    let reasoning = child_cfg.reasoning_effort;
+
+    // Expected route host from production endpoints (not the mock).
+    let endpoints = ctx.models_manager.endpoints();
+    let child_provider = if child_model == P7_CODEX_MODEL {
+        ModelProvider::Codex
+    } else {
+        ModelProvider::Xai
+    };
+    let expected_route = resolve_provider_route(child_provider, &endpoints, None);
+    assert_eq!(
+        resolved_base_url, expected_route.base_url,
+        "child base_url must come from production provider route construction"
+    );
+
+    // 2) One outbound sample against mock — preserve production api_key/headers.
+    let server = MockInferenceServer::start()
+        .await
+        .expect("start mock inference server");
+    server.set_response("p7-isolation-ok");
+    let mock_url = server.url();
+    let mock_host = reqwest::Url::parse(&mock_url)
+        .ok()
+        .and_then(|u| u.host_str().map(str::to_owned))
+        .unwrap_or_default();
+
+    child_cfg.base_url = mock_url;
+    // Mock is not cli-chat-proxy — drop proxy-only headers so Authorization is under test.
+    child_cfg.extra_headers.shift_remove("X-XAI-Token-Auth");
+    child_cfg.extra_headers.shift_remove("x-authenticateresponse");
+    child_cfg.max_retries = Some(0);
+
+    let api_backend = child_cfg.api_backend.clone();
+    let sample_timeout = Duration::from_secs(15);
+    let sample = async {
+        let client = Client::new(child_cfg).expect("child SamplerConfig client");
+        let req = ConversationRequest::from_items(vec![ConversationItem::user("p7 isolation probe")]);
+        match api_backend {
+            ApiBackend::Responses => {
+                let (mut stream, _, _) = client
+                    .conversation_stream_responses(req)
+                    .await
+                    .expect("child responses sample");
+                while stream.next().await.is_some() {}
+            }
+            _ => {
+                let (mut stream, _) = client
+                    .conversation_stream(req)
+                    .await
+                    .expect("child chat sample");
+                while stream.next().await.is_some() {}
+            }
+        }
+        // 3) cancel/join: stream drained; client dropped at end of async block.
+    };
+    tokio::time::timeout(sample_timeout, sample)
+        .await
+        .expect("child sample must complete within timeout (cancel/join hygiene)");
+
+    let mock_request_count = server.request_count() as usize;
+    let req = server
+        .requests()
+        .into_iter()
+        .find(|r| r.path.contains("responses") || r.path.contains("chat/completions"))
+        .expect("mock must record child inference request");
+    let authorization = req
+        .header("authorization")
+        .map(str::to_owned)
+        .or_else(|| req.authorization.clone());
+
+    // Parent model stability on the live chat-state path after resolve+sample
+    // (resolve must not mutate parent; full spawn checked in dedicated test).
+    let parent_model_id_after = ctx.model_id.0.to_string();
+    let parent_chat_after = ctx
+        .parent_chat_state
+        .as_ref()
+        .unwrap()
+        .get_sampling_config()
+        .await
+        .expect("parent chat sampling after")
+        .model
+        .clone();
+    assert_eq!(
+        parent_chat_after, parent_model,
+        "parent chat sampling model must be unchanged after child resolve+sample"
+    );
+    assert_eq!(parent_model_id_before, parent_model_id_after);
+
+    // Keep ctx alive until after asserts (auth path / models).
+    let _ = &ctx;
+
+    P7IsolationCapture {
+        authorization,
+        resolved_base_url,
+        mock_request_host: mock_host,
+        child_model_id: child_mid.0.to_string(),
+        parent_model_id_before,
+        parent_model_id_after,
+        child_api_key,
+        reasoning_effort: reasoning,
+        mock_request_count,
+    }
+}
+
+/// D-12 MANDATORY: Grok parent → Codex child Authorization = codex fixture, not xAI.
+#[tokio::test]
+async fn p7_isolation_grok_parent_codex_child_route() {
+    let cap = p7_isolation_spawn_sample_cancel(
+        P7_XAI_MODEL,
+        P7_CODEX_MODEL,
+        true,
+        true,
+        None,
+    )
+    .await;
+
+    assert!(
+        cap.mock_request_count >= 1,
+        "child must issue ≥1 outbound sample"
+    );
+    assert!(
+        !cap.mock_request_host.is_empty(),
+        "mock host captured"
+    );
+    assert!(
+        cap.resolved_base_url.contains("chatgpt.com")
+            || cap.resolved_base_url.contains("codex"),
+        "Codex child base_url host must match Codex route, got {}",
+        cap.resolved_base_url
+    );
+    let expected = format!("Bearer {P7_CODEX_FAKE}");
+    assert_eq!(
+        cap.authorization.as_deref(),
+        Some(expected.as_str()),
+        "Codex child Authorization must be codex fixture token"
+    );
+    let wrong = format!("Bearer {P7_XAI_FAKE}");
+    assert_ne!(
+        cap.authorization.as_deref(),
+        Some(wrong.as_str()),
+        "Codex child must never carry parent xAI token"
+    );
+    assert_eq!(cap.child_api_key.as_deref(), Some(P7_CODEX_FAKE));
+    assert_eq!(cap.parent_model_id_before, P7_XAI_MODEL);
+    assert_eq!(cap.parent_model_id_after, P7_XAI_MODEL);
+    assert_eq!(cap.child_model_id, P7_CODEX_MODEL);
+}
+
+/// D-12 MANDATORY: Codex parent → Grok child Authorization = xAI fixture, not Codex.
+#[tokio::test]
+async fn p7_isolation_codex_parent_grok_child_route() {
+    let cap = p7_isolation_spawn_sample_cancel(
+        P7_CODEX_MODEL,
+        P7_XAI_MODEL,
+        true,
+        true,
+        None,
+    )
+    .await;
+
+    assert!(cap.mock_request_count >= 1);
+    assert!(
+        cap.resolved_base_url.contains("x.ai")
+            || cap.resolved_base_url.contains("cli-chat-proxy")
+            || cap.resolved_base_url.contains("grok"),
+        "xAI child base_url host must match xAI route, got {}",
+        cap.resolved_base_url
+    );
+    let expected = format!("Bearer {P7_XAI_FAKE}");
+    assert_eq!(
+        cap.authorization.as_deref(),
+        Some(expected.as_str()),
+        "xAI child Authorization must be xai fixture token"
+    );
+    let wrong = format!("Bearer {P7_CODEX_FAKE}");
+    assert_ne!(
+        cap.authorization.as_deref(),
+        Some(wrong.as_str()),
+        "xAI child must never carry parent Codex token"
+    );
+    assert_eq!(cap.child_api_key.as_deref(), Some(P7_XAI_FAKE));
+    assert_eq!(cap.parent_model_id_before, P7_CODEX_MODEL);
+    assert_eq!(cap.parent_model_id_after, P7_CODEX_MODEL);
+    assert_eq!(cap.child_model_id, P7_XAI_MODEL);
+}
+
+/// Complement: dual tokens never cross-slot on child SamplingConfig seed.
+#[tokio::test]
+async fn p7_isolation_never_cross_slot_on_child_seed() {
+    let codex_child = p7_isolation_spawn_sample_cancel(
+        P7_XAI_MODEL,
+        P7_CODEX_MODEL,
+        true,
+        true,
+        None,
+    )
+    .await;
+    assert_eq!(codex_child.child_api_key.as_deref(), Some(P7_CODEX_FAKE));
+    assert_ne!(codex_child.child_api_key.as_deref(), Some(P7_XAI_FAKE));
+
+    let xai_child = p7_isolation_spawn_sample_cancel(
+        P7_CODEX_MODEL,
+        P7_XAI_MODEL,
+        true,
+        true,
+        None,
+    )
+    .await;
+    assert_eq!(xai_child.child_api_key.as_deref(), Some(P7_XAI_FAKE));
+    assert_ne!(xai_child.child_api_key.as_deref(), Some(P7_CODEX_FAKE));
+}
+
+/// AGENT-03/06: Tool effort medium lands on child SamplingConfig when supported.
+#[tokio::test]
+async fn p7_isolation_reasoning_effort_medium_on_child_config() {
+    use xai_grok_sampling_types::ReasoningEffort;
+    let cap = p7_isolation_spawn_sample_cancel(
+        P7_XAI_MODEL,
+        P7_CODEX_MODEL,
+        true,
+        true,
+        Some("medium"),
+    )
+    .await;
+    assert_eq!(cap.reasoning_effort, Some(ReasoningEffort::Medium));
+    // Wire still Codex token (effort must not disturb isolation).
+    let expected = format!("Bearer {P7_CODEX_FAKE}");
+    assert_eq!(cap.authorization.as_deref(), Some(expected.as_str()));
+}
+
+/// D-11: parent model_id / chat sampling model stable across **real**
+/// `handle_subagent_request` spawn path (not resolve-only proxy).
+#[tokio::test]
+async fn p7_parent_model_unchanged_after_cross_provider_spawn() {
+    use crate::test_support::lsp_runtime::test_gateway;
+    use xai_grok_tools::implementations::grok_build::task::types::SubagentRuntimeOverrides;
+    use xai_tool_types::SubagentIsolationMode;
+
+    let dir = tempfile::TempDir::new().unwrap();
+    let auth_path = dir.path().join("auth.json");
+    p7_write_auth_json(&auth_path, true, true);
+
+    let models = p7_dual_models();
+    let mut ctx = p7_isolation_ctx(models, auth_path, P7_XAI_MODEL, Some(P7_XAI_FAKE));
+    let parent_before = ctx.model_id.0.to_string();
+    // Clone the live parent ChatStateHandle so we can re-read after spawn consumes ctx.
+    let parent_chat = ctx
+        .parent_chat_state
+        .clone()
+        .expect("parent chat state wired for D-11");
+    let chat_before = parent_chat
+        .get_sampling_config()
+        .await
+        .expect("parent sampling before spawn")
+        .model
+        .clone();
+    assert_eq!(parent_before, P7_XAI_MODEL);
+    assert_eq!(chat_before, P7_XAI_MODEL);
+
+    let coordinator = std::cell::RefCell::new(SubagentCoordinator::new());
+    let gateway = test_gateway();
+    let (mut request, result_rx) = make_request("explore");
+    request.runtime_overrides = SubagentRuntimeOverrides {
+        model: Some(P7_CODEX_MODEL.into()),
+        model_override_provenance: ModelOverrideProvenance::Tool,
+        // Avoid worktree side effects; credential gate + model resolve still run.
+        isolation: Some(SubagentIsolationMode::None),
+        ..Default::default()
+    };
+    let subagent_id = request.id.clone();
+    let local = tokio::task::LocalSet::new();
+    local
+        .run_until(async {
+            Box::pin(handle_subagent_request(request, ctx, &coordinator, &gateway)).await;
+        })
+        .await;
+    // Result may succeed or fail later in spawn; must not be missing-provider.
+    let result = result_rx.await.expect("spawn result");
+    let err = result.error.as_deref().unwrap_or("");
+    assert!(
+        !err.contains("bum login --provider"),
+        "dual slots usable must not hit missing-provider gate: {err}"
+    );
+
+    // Cancel/join any pending/active child so the test does not leak tasks.
+    let mut coord = coordinator.borrow_mut();
+    let _ = coord.cancel_with_outcome(&subagent_id);
+    drop(coord);
+
+    // Real-spawn parent stability: live ChatStateHandle model must still be parent.
+    let chat_after = parent_chat
+        .get_sampling_config()
+        .await
+        .expect("parent sampling after spawn")
+        .model
+        .clone();
+    assert_eq!(
+        chat_after, P7_XAI_MODEL,
+        "parent chat model must be unchanged after cross-provider child spawn"
+    );
+    assert_eq!(chat_before, chat_after);
+
+    // Wire isolation still holds on the spawn-resolve → sample harness path.
+    let cap = p7_isolation_spawn_sample_cancel(
+        P7_XAI_MODEL,
+        P7_CODEX_MODEL,
+        true,
+        true,
+        None,
+    )
+    .await;
+    assert_eq!(cap.parent_model_id_before, P7_XAI_MODEL);
+    assert_eq!(cap.parent_model_id_after, P7_XAI_MODEL);
+    let expected = format!("Bearer {P7_CODEX_FAKE}");
+    assert_eq!(cap.authorization.as_deref(), Some(expected.as_str()));
+}
+
+/// AGENT-05 / D-05..D-07: missing Codex child → login error + zero mock traffic
+/// (no parent-token probe to child/wrong host).
+#[tokio::test]
+async fn p7_missing_child_codex_no_wrong_backend_request() {
+    use crate::test_support::lsp_runtime::test_gateway;
+    use xai_grok_test_support::MockInferenceServer;
+    use xai_grok_tools::implementations::grok_build::task::types::SubagentRuntimeOverrides;
+    use xai_tool_types::SubagentIsolationMode;
+
+    let server = MockInferenceServer::start()
+        .await
+        .expect("mock server");
+    server.set_response("should-not-be-reached");
+
+    let dir = tempfile::TempDir::new().unwrap();
+    let auth_path = dir.path().join("auth.json");
+    p7_write_auth_json(&auth_path, true, false); // xAI only
+
+    let models = p7_dual_models();
+    let mut ctx = p7_isolation_ctx(models, auth_path, P7_XAI_MODEL, Some(P7_XAI_FAKE));
+    // Point parent sampling at mock so any wrong fallback sample is observable.
+    ctx.sampling_config.base_url = server.url();
+
+    let coordinator = std::cell::RefCell::new(SubagentCoordinator::new());
+    let gateway = test_gateway();
+    let (mut request, result_rx) = make_request("explore");
+    request.runtime_overrides = SubagentRuntimeOverrides {
+        model: Some(P7_CODEX_MODEL.into()),
+        model_override_provenance: ModelOverrideProvenance::Tool,
+        isolation: Some(SubagentIsolationMode::None),
+        ..Default::default()
+    };
+    let subagent_id = request.id.clone();
+    let local = tokio::task::LocalSet::new();
+    local
+        .run_until(async {
+            Box::pin(handle_subagent_request(request, ctx, &coordinator, &gateway)).await;
+        })
+        .await;
+    let result = result_rx.await.expect("result");
+    assert!(!result.success, "missing Codex must fail closed");
+    let err = result.error.as_deref().unwrap_or("");
+    assert!(
+        err.contains("bum login --provider codex"),
+        "login-shaped error required, got: {err}"
+    );
+    assert!(
+        !coordinator.borrow().is_active_or_pending(&subagent_id),
+        "no pending/active child on gate failure"
+    );
+    assert_eq!(
+        server.request_count(),
+        0,
+        "missing Codex child must produce zero outbound mock requests"
+    );
+}
+
+/// AGENT-05 inverse: missing xAI child while parent Codex → login + zero mock.
+#[tokio::test]
+async fn p7_missing_child_xai_no_wrong_backend_request() {
+    use crate::test_support::lsp_runtime::test_gateway;
+    use xai_grok_test_support::MockInferenceServer;
+    use xai_grok_tools::implementations::grok_build::task::types::SubagentRuntimeOverrides;
+    use xai_tool_types::SubagentIsolationMode;
+
+    let server = MockInferenceServer::start()
+        .await
+        .expect("mock server");
+    server.set_response("should-not-be-reached");
+
+    let dir = tempfile::TempDir::new().unwrap();
+    let auth_path = dir.path().join("auth.json");
+    p7_write_auth_json(&auth_path, false, true); // Codex only
+
+    let models = p7_dual_models();
+    // No live xAI auth; Codex slot only on disk.
+    let mut ctx = p7_isolation_ctx(models, auth_path, P7_CODEX_MODEL, None);
+    ctx.sampling_config.base_url = server.url();
+
+    let coordinator = std::cell::RefCell::new(SubagentCoordinator::new());
+    let gateway = test_gateway();
+    let (mut request, result_rx) = make_request("explore");
+    request.runtime_overrides = SubagentRuntimeOverrides {
+        model: Some(P7_XAI_MODEL.into()),
+        model_override_provenance: ModelOverrideProvenance::Tool,
+        isolation: Some(SubagentIsolationMode::None),
+        ..Default::default()
+    };
+    let subagent_id = request.id.clone();
+    let local = tokio::task::LocalSet::new();
+    local
+        .run_until(async {
+            Box::pin(handle_subagent_request(request, ctx, &coordinator, &gateway)).await;
+        })
+        .await;
+    let result = result_rx.await.expect("result");
+    assert!(!result.success, "missing xAI must fail closed");
+    let err = result.error.as_deref().unwrap_or("");
+    assert!(
+        err.contains("bum login --provider xai"),
+        "login-shaped error required, got: {err}"
+    );
+    assert!(
+        !coordinator.borrow().is_active_or_pending(&subagent_id),
+        "no pending/active child on gate failure"
+    );
+    assert_eq!(
+        server.request_count(),
+        0,
+        "missing xAI child must produce zero outbound mock requests"
+    );
+}
+
 mod rest;
