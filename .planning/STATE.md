@@ -5,16 +5,16 @@ milestone_name: milestone
 current_phase: 6
 current_phase_name: Mid-session switch & missing-provider gate
 current_plan: 6
-status: executing
-stopped_at: Completed 06-03-PLAN.md
-last_updated: "2026-07-16T23:52:20.863Z"
+status: verifying
+stopped_at: Completed 06-06-PLAN.md
+last_updated: "2026-07-17T00:18:37.891Z"
 last_activity: 2026-07-16
 last_activity_desc: Completed 06-01 missing-provider shell gate
 progress:
   total_phases: 6
-  completed_phases: 5
+  completed_phases: 6
   total_plans: 29
-  completed_plans: 28
+  completed_plans: 29
 ---
 
 # Project State
@@ -30,12 +30,12 @@ See: .planning/PROJECT.md (updated 2026-07-16)
 
 Phase: 6 of 9 (Mid-session switch & missing-provider gate)
 Plan: 6 of 6
-Status: Ready to execute
+Status: Phase complete — ready for verification
 Last activity: 2026-07-16 — Completed 06-01 missing-provider shell gate
 Current Plan: 6
 Total Plans in Phase: 6
 
-Progress: [██████████] 97% (24/29 plans)
+Progress: [██████████] 100% (24/29 plans)
 
 ## Performance Metrics
 
@@ -66,6 +66,7 @@ Progress: [██████████] 97% (24/29 plans)
 | Phase 06 P05 | 12min | 2 tasks | 1 files |
 | Phase 06 P04 | 29min | 3 tasks | 30 files |
 | Phase 06 P03 | 13min | 2 tasks | 9 files |
+| Phase 06 P06 | 25min | 2 tasks | 3 files |
 
 ## Decisions
 
@@ -81,9 +82,11 @@ Progress: [██████████] 97% (24/29 plans)
 - [Phase ?]: Login now consumes gate-open DeferredModelSwitch preserving persist_default
 - [Phase ?]: Codex Login now is CLI-primary with bounded poll; never starts xAI OAuth
 - [Phase ?]: try_apply_deferred only when required provider slot usable; stale poll generation ignored
+- [Phase ?]: Phase 6 gate uses --lib discover for shell unit + pager because bare package list fails on unrelated integration targets
+- [Phase ?]: Phase 6 validation complete: per-subgroup p6_ discovery ≥1 for MOD-03/MOD-06
 
 ## Session
 
-**Last session:** 2026-07-16T23:52:20.850Z
-**Stopped at:** Completed 06-03-PLAN.md
+**Last session:** 2026-07-17T00:18:37.879Z
+**Stopped at:** Completed 06-06-PLAN.md
 **Resume file:** None
