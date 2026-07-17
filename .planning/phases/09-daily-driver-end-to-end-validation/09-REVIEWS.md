@@ -1,12 +1,12 @@
 ---
 phase: 9
 reviewers: [codex]
-reviewed_at: 2026-07-17T15:01:18Z
+reviewed_at: 2026-07-17T15:06:52Z
 plans_reviewed: ['09-01-PLAN.md', '09-02-PLAN.md', '09-03-PLAN.md', '09-04-PLAN.md', '09-05-PLAN.md']
-cycle: 2
-prior_cycle: 1
+cycle: 3
+prior_cycle: 2
 current_high: 0
-current_actionable: 0
+current_actionable: 2
 verdict: REPLAN
 replanned_at: 2026-07-17
 cycle2_replanned_at: 2026-07-17
@@ -348,3 +348,85 @@ All 3 cycle-2 actionable findings incorporated into PLAN.md executable content. 
 None.
 
 CYCLE_SUMMARY: current_high=0 current_actionable=0
+
+---
+
+## Codex review (cycle 3) — 2026-07-17T15:06:52Z
+
+Final convergence check after cycle-2 replan dispositions claimed `current_actionable=0`. Disposition audit of C2-M1 / C2-M2 / C2-L1 against executable PLAN.md content (Task action + `<automated>` verify), source-grounded. Flag only genuine remaining / NEW actionable items.
+
+### Status of prior findings
+
+| Finding | Status | Evidence |
+|---|---|---|
+| C2-M1 | PARTIAL | Required secret checks and isolated optional `git diff --check` are executable in [09-05-PLAN.md](.planning/phases/09-daily-driver-end-to-end-validation/09-05-PLAN.md:214); no broad trailing `\|\| true` on the required chain. **However** the global token-like path guard (`git ls-files \| rg -qi '(^\|/)([^/]*token[^/]*\|credentials\.json\|\.oauth)($\|/)'`) always fails against legitimate tracked source files — e.g. [token_type.rs](crates/codegen/xai-grok-shell/src/auth/token_type.rs), [token.rs](crates/common/xai-grok-compaction/src/token.rs), `xai-token-estimation/*`, skill-token PTY fixtures (8 hits repo-wide). Final GREEN cannot complete as written. |
+| C2-M2 | RESOLVED | Task action requires union-of-touched-class rechecks plus `p9_` ([09-04-PLAN.md](.planning/phases/09-daily-driver-end-to-end-validation/09-04-PLAN.md:247)); Post-fix residual map + automated verify path-detects classes and discover+executes mapped filters ([09-04-PLAN.md](.planning/phases/09-daily-driver-end-to-end-validation/09-04-PLAN.md:167), [09-04-PLAN.md](.planning/phases/09-daily-driver-end-to-end-validation/09-04-PLAN.md:252)). Referenced p6/p7/p8 mechanisms exist in source. |
+| C2-L1 | PARTIAL | Task action requires fail-closed path/diff checks ([09-03-PLAN.md](.planning/phases/09-daily-driver-end-to-end-validation/09-03-PLAN.md:153)); Task 2 verify includes mechanical token tokens + path/diff gates ([09-03-PLAN.md](.planning/phases/09-daily-driver-end-to-end-validation/09-03-PLAN.md:158)). Same unscoped `token` filename pattern matches ordinary source, so preflight cannot pass on this repo. |
+
+### HIGH
+
+None.
+
+### MEDIUM
+
+- **[C3-M1] Token-like path guard is unscoped (C2-M1 residual).** Plan 05 Task 3 secrets GREEN verify (and Plan 03 Task 2 preflight) ban any tracked path whose basename contains `token` repo-wide. That collides with first-party code (`token_type.rs`, `token.rs`, `xai-token-estimation`, skill-token fixtures). Scope the guard to credential/artifact paths (e.g. `auth.json`, `credentials.json`, `.oauth`, `*token*` only under home/config/phase artifact dirs — or basename exact-match credential names), not all source. Keep auth.json + phase-diff content scans as-is. Evidence: [09-05-PLAN.md:214](.planning/phases/09-daily-driver-end-to-end-validation/09-05-PLAN.md), [09-03-PLAN.md:158](.planning/phases/09-daily-driver-end-to-end-validation/09-03-PLAN.md); repo hits via `git ls-files | rg -i 'token'` (8 false positives).
+
+### LOW
+
+- **[C3-L1] Same unscoped token-path pattern in Plan 03 preflight (C2-L1 residual).** Mirror the scoped fix from C3-M1 into Plan 03 Task 2 action + verify and the preflight script requirements so both halves of the secrets gate use the same non-false-positive pattern. Evidence: [09-03-PLAN.md:153](.planning/phases/09-daily-driver-end-to-end-validation/09-03-PLAN.md), [09-03-PLAN.md:158](.planning/phases/09-daily-driver-end-to-end-validation/09-03-PLAN.md).
+
+### Verdict
+
+**REPLAN** — no HIGH findings; C2-M2 fully RESOLVED; C2-M1 and C2-L1 remain PARTIAL for one shared root cause (over-broad token-like filename guard). No other new plan gaps found.
+
+### Summary
+
+Cycle-2 replan landed the structural fixes (no `|| true` mask, path+phase-diff secret policy, path-mapped residual recheck). Convergence is blocked only by an executable false-positive in the token-path guard that prevents any GREEN run on this tree. Narrow the filename pattern once across Plans 03 and 05; then re-review should converge.
+
+CYCLE_SUMMARY: current_high=0 current_actionable=2
+
+### Findings index (cycle 3 residual)
+
+| ID | Sev | Plan | One-liner | Origin |
+|----|-----|------|-----------|--------|
+| C3-M1 | MEDIUM | 09-05 | Token-like `git ls-files` guard matches legitimate source (always fail) | C2-M1 residual |
+| C3-L1 | LOW | 09-03 | Same unscoped token-path pattern in preflight verify/script | C2-L1 residual |
+
+### Cycle 2 → cycle 3 disposition rollup
+
+| Bucket | Count |
+|--------|-------|
+| C2 fully RESOLVED | 1 (C2-M2) |
+| C2 PARTIAL (still actionable) | 2 (C2-M1→C3-M1, C2-L1→C3-L1) |
+| New cycle-3 findings (unrelated) | 0 |
+| **current_actionable** | **2** |
+
+## Consensus Summary (cycle 3)
+
+Single reviewer (Codex). Final convergence disposition audit.
+
+### Agreed Strengths
+
+- C2-M2 post-fix residual map + path-detect discover/execute is real executable plan content.
+- C2-M1 structural secrets chain (content + auth.json + phase-diff + no trailing soft-fail) is present; optional `git diff --check` is isolated.
+- C2-L1 mechanical preflight tokens and fail-closed intent are present in Task 2 action/verify.
+- No new gaps beyond the token-path false positive.
+
+### Agreed Concerns
+
+- Repo-wide `*token*` basename guard cannot pass on this codebase; must scope before execution.
+
+### Divergent Views
+
+N/A — single reviewer.
+
+## Current HIGH Concerns
+
+None.
+
+## Current Actionable Non-HIGH Concerns
+
+1. **C3-M1 (MEDIUM, 09-05)** — Scope token-like path guard so it does not match first-party source (`token.rs`, `token_type.rs`, etc.); retain auth.json + credential-name + phase-diff content gates.
+2. **C3-L1 (LOW, 09-03)** — Apply the same scoped path-guard pattern to Plan 03 preflight action/verify/script requirements.
+
+CYCLE_SUMMARY: current_high=0 current_actionable=2
