@@ -6,15 +6,15 @@ current_phase: 8
 current_phase_name: Quiet fork & rebrand polish
 current_plan: 6
 status: executing
-stopped_at: Completed 08-05-PLAN.md
-last_updated: "2026-07-17T11:31:44.454Z"
+stopped_at: Completed 08-06-PLAN.md
+last_updated: "2026-07-17T11:53:03.315Z"
 last_activity: 2026-07-17
 last_activity_desc: Completed 08-01-PLAN.md (p8_ green harness + VALIDATION)
 progress:
   total_phases: 8
   completed_phases: 6
   total_plans: 43
-  completed_plans: 40
+  completed_plans: 41
 ---
 
 # Project State
@@ -35,7 +35,7 @@ Last activity: 2026-07-17 — Completed 08-01-PLAN.md (p8_ green harness + VALID
 Current Plan: 6
 Total Plans in Phase: 6
 
-Progress: [█████████░] 93% (36/41 plans; 7/9 phases complete)
+Progress: [██████████] 95% (36/41 plans; 7/9 phases complete)
 
 ## Performance Metrics
 
@@ -82,6 +82,7 @@ Progress: [█████████░] 93% (36/41 plans; 7/9 phases complete
 | Phase 08 P03 | 15min | 3 tasks | 14 files |
 | Phase 08 P04 | 11min | 3 tasks | 9 files |
 | Phase 08 P05 | 11min | 3 tasks | 9 files |
+| Phase 08 P06 | 20min | 3 tasks | 3 files |
 
 ## Decisions
 
@@ -129,9 +130,12 @@ Progress: [█████████░] 93% (36/41 plans; 7/9 phases complete
 - [Phase ?]: Remote telemetry/feedback restrictive-only (C1-H3); remote true + local-unset stays off
 - [Phase ?]: InstrumentationMode default Disabled; OTEL exporter.enabled requires explicit telemetry (C1-H2)
 - [Phase ?]: Sentry hard-off at pager-bin; force_feedback gated when feedback disabled (D-10, C1-M1)
+- [Phase ?]: Phase 8 gate green-only: all p8_ subgroups discover≥1 + execute; no intentional-red
+- [Phase ?]: Unconditional p8_sentry + p8_internal_otel in phase gate (C1-L1/C1-H2)
+- [Phase ?]: C1-H1 residual greps clean on 7 owned runtime CLI surfaces; D-02 model brands allowlisted
 
 ## Session
 
-**Last session:** 2026-07-17T11:31:44.444Z
-**Stopped at:** Completed 08-05-PLAN.md
+**Last session:** 2026-07-17T11:53:03.305Z
+**Stopped at:** Completed 08-06-PLAN.md
 **Resume file:** None
