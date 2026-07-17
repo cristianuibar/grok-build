@@ -4,17 +4,17 @@ milestone: v1.0
 milestone_name: milestone
 current_phase: 7
 current_phase_name: Cross-provider multi-agent orchestration
-current_plan: 5
+current_plan: 6
 status: in_progress
-stopped_at: Completed 07-04-PLAN.md
-last_updated: "2026-07-17T09:14:05.309Z"
+stopped_at: Completed 07-05-PLAN.md
+last_updated: "2026-07-17T09:25:41.222Z"
 last_activity: 2026-07-17
 last_activity_desc: Completed 07-01-PLAN.md (p7_ tools + shell scaffold)
 progress:
   total_phases: 7
   completed_phases: 6
   total_plans: 36
-  completed_plans: 33
+  completed_plans: 34
 ---
 
 # Project State
@@ -29,13 +29,13 @@ See: .planning/PROJECT.md (updated 2026-07-16)
 ## Current Position
 
 Phase: 7 of 9 (Cross-provider multi-agent orchestration)
-Plan: 5 of 6
+Plan: 6 of 6
 Status: In progress — Plan 01 complete (wave 1 p7_ green harness)
 Last activity: 2026-07-17 — Completed 07-01-PLAN.md (p7_ tools + shell scaffold)
-Current Plan: 5
+Current Plan: 6
 Total Plans in Phase: 6
 
-Progress: [█████████░] 92% (30/36 plans)
+Progress: [█████████░] 94% (30/36 plans)
 
 ## Performance Metrics
 
@@ -71,6 +71,7 @@ Progress: [█████████░] 92% (30/36 plans)
 | Phase 07 P02 | 5min | 2 tasks | 3 files |
 | Phase 07 P03 | 32min | 2 tasks | 8 files |
 | Phase 07 P04 | 15min | 2 tasks | 7 files |
+| Phase 07 P05 | 10min | 2 tasks | 3 files |
 
 ## Decisions
 
@@ -98,9 +99,12 @@ Progress: [█████████░] 92% (30/36 plans)
 - [Phase ?]: Plan 03: Tool reasoning_effort hard-fail on parse/unsupported; Harness soft-skip
 - [Phase ?]: Production design is async SubagentBackend.preflight_spawn + shell live effective-model resolve (C2-H1); sync slug-only Fn is non-goal
 - [Phase ?]: Shared resolve_effective_child_model_for_spawn + missing_provider_spawn_gate_message for dual-layer preflight/spawn gate
+- [Phase ?]: In-crate p7_isolation_spawn_sample_cancel harness for D-12 Authorization both dirs (C2-M4)
+- [Phase ?]: auth_json_path_override dual-slot child credential resolve for deterministic isolation fixtures
+- [Phase ?]: Both Grok→Codex and Codex→Grok Authorization proofs mandatory — no one-direction waiver
 
 ## Session
 
-**Last session:** 2026-07-17T09:14:05.301Z
-**Stopped at:** Completed 07-04-PLAN.md
+**Last session:** 2026-07-17T09:25:41.208Z
+**Stopped at:** Completed 07-05-PLAN.md
 **Resume file:** None
