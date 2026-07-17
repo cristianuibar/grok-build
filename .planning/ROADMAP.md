@@ -200,14 +200,14 @@ Plans:
   2. Stock xAI auto-update channel is disabled so bum is not overwritten by official Grok Build updates
   3. Product telemetry / phone-home to xAI analytics is disabled by default for the fork
 
-**Plans**: 3/6 plans executed
+**Plans**: 4/6 plans executed
 
 Plans:
 
 - [x] 08-01-PLAN.md — Wave 1 green p8_ harness + VALIDATION inventory (telemetry default + model/isolation baseline)
 - [x] 08-02-PLAN.md — ID-02 pager TUI chrome (clap, hero, picker, billing)
 - [x] 08-03-PLAN.md — ID-02 OAuth return + pager-minimal + bin banner
-- [ ] 08-04-PLAN.md — OPS-01 hard-off auto-update (gates, defaults, CLI no-op, min-version, settings)
+- [x] 08-04-PLAN.md — OPS-01 hard-off auto-update (gates, defaults, CLI no-op, min-version, settings)
 - [ ] 08-05-PLAN.md — OPS-02 feedback short-circuit + telemetry/Sentry quiet defaults
 - [ ] 08-06-PLAN.md — Phase gate: VALIDATION + PHASE-GATE green discovery for ID-02/OPS-01/OPS-02
 
@@ -243,7 +243,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 →
 | 5. Codex OAuth & dual auth lifecycle | 6/6 | Complete    | 2026-07-16 |
 | 6. Mid-session switch & missing-provider gate | 6/6 | Complete    | 2026-07-17 |
 | 7. Cross-provider multi-agent orchestration | 6/6 | Complete    | 2026-07-17 |
-| 8. Quiet fork & rebrand polish | 3/6 | In Progress|  |
+| 8. Quiet fork & rebrand polish | 4/6 | In Progress|  |
 | 9. Daily-driver end-to-end validation | 0/TBD | Not started | - |
 
 ## Coverage map
