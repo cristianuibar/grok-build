@@ -20,12 +20,15 @@ const DEVICE_GRANT_TYPE: &str = "urn:ietf:params:oauth:grant-type:device_code";
 const DEFAULT_DEVICE_POLL_INTERVAL_SECS: i32 = 5;
 const DEVICE_SLOW_DOWN_INCREMENT_SECS: u64 = 5;
 const MIN_DEVICE_CODE_EXPIRY_FALLBACK_SECS: i64 = 10 * 60;
+/// User-facing recovery when the device code times out (product CLI name only).
+const DEVICE_CODE_EXPIRED_MSG: &str =
+    "Device code expired. Run `bum login --device-auth` again.";
 
 #[derive(Debug, Error)]
 pub enum DeviceCodeError {
     #[error(
         "Device-code login is not available for this deployment. \
-         Try `grok login` or set XAI_API_KEY instead."
+         Try `bum login` or set XAI_API_KEY instead."
     )]
     NotEnabled,
     #[error(transparent)]
@@ -233,7 +236,7 @@ pub async fn complete_device_code_login(
         tokio::time::sleep(poll_interval).await;
 
         if tokio::time::Instant::now() > deadline {
-            anyhow::bail!("Device code expired. Run `grok login --device-auth` again.");
+            anyhow::bail!(DEVICE_CODE_EXPIRED_MSG);
         }
 
         let resp = with_alpha_test_key(
@@ -274,7 +277,7 @@ pub async fn complete_device_code_login(
             }
             "expired_token" => {
                 tracing::warn!(description = detail, "device auth token expired");
-                anyhow::bail!("Device code expired. Run `grok login --device-auth` again.");
+                anyhow::bail!(DEVICE_CODE_EXPIRED_MSG);
             }
             other => {
                 tracing::warn!(
@@ -556,6 +559,29 @@ pub(crate) mod tests {
             Some(codex),
         )
         .unwrap();
+    }
+
+    #[test]
+    fn p8_shell_runtime_cli_device_code_instructs_bum_login() {
+        let not_enabled = super::DeviceCodeError::NotEnabled.to_string();
+        assert!(
+            not_enabled.contains("bum login"),
+            "device-code NotEnabled must instruct bum login: {not_enabled}"
+        );
+        assert!(
+            !not_enabled.contains("grok login"),
+            "device-code NotEnabled must not instruct stock grok login: {not_enabled}"
+        );
+
+        let expired = super::DEVICE_CODE_EXPIRED_MSG;
+        assert!(
+            expired.contains("bum login --device-auth"),
+            "expiry recovery must instruct bum login --device-auth: {expired}"
+        );
+        assert!(
+            !expired.contains("grok login"),
+            "expiry recovery must not instruct stock grok login: {expired}"
+        );
     }
 
     #[test]

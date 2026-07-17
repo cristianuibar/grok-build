@@ -1,4 +1,11 @@
-//! `grok mcp doctor` -- runtime health check for MCP servers.
+//! `bum mcp doctor` -- runtime health check for MCP servers.
+
+/// User-facing MCP doctor recovery copy (product CLI name only).
+mod recovery_copy {
+    pub(super) const AUTH_EXPIRED: &str = "auth expired — run `bum login`";
+    pub(super) const MCP_ADD_HELP: &str = "Run `bum mcp add --help` to get started.";
+    pub(super) const MCP_DOCTOR_JSON: &str = "Run `bum mcp doctor --json` for full diagnostics.";
+}
 
 use std::collections::HashMap;
 use std::path::Path;
@@ -284,7 +291,7 @@ async fn try_discover_managed_servers() -> (ConfigSourceStatus, Vec<DiscoveredSe
 
     let token = match auth_manager.get_valid_token().await {
         Ok(key) => key,
-        Err(_) => return managed_skipped("auth expired — run `grok login`"),
+        Err(_) => return managed_skipped(recovery_copy::AUTH_EXPIRED),
     };
 
     let proxy_url = crate::agent::config::EndpointsConfig::from_effective_config().proxy_url();
@@ -657,7 +664,7 @@ pub fn print_report(report: &DoctorReport) {
 
     if report.servers.is_empty() {
         println!("  No MCP servers configured.");
-        println!("  Run `grok mcp add --help` to get started.");
+        println!("  {}", recovery_copy::MCP_ADD_HELP);
         println!();
         return;
     }
@@ -687,9 +694,9 @@ pub fn print_report(report: &DoctorReport) {
         report.healthy_count,
         report.failing_count,
         if report.failing_count > 0 {
-            " Run `grok mcp doctor --json` for full diagnostics."
+            format!(" {}", recovery_copy::MCP_DOCTOR_JSON)
         } else {
-            ""
+            String::new()
         }
     );
     println!();
@@ -699,6 +706,24 @@ pub fn print_report(report: &DoctorReport) {
 mod tests {
     use super::*;
     use mcp_servers::McpError;
+
+    #[test]
+    fn p8_shell_runtime_cli_mcp_doctor_instructs_bum() {
+        for msg in [
+            recovery_copy::AUTH_EXPIRED,
+            recovery_copy::MCP_ADD_HELP,
+            recovery_copy::MCP_DOCTOR_JSON,
+        ] {
+            assert!(
+                msg.contains("bum login") || msg.contains("bum mcp"),
+                "mcp doctor recovery must use bum CLI: {msg}"
+            );
+            assert!(
+                !msg.contains("grok login") && !msg.contains("grok mcp"),
+                "mcp doctor recovery must not use stock grok CLI: {msg}"
+            );
+        }
+    }
 
     #[test]
     fn timeout_gets_specific_hint() {

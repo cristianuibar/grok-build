@@ -95,7 +95,7 @@ impl std::fmt::Display for UninstallError {
                 write!(
                     f,
                     "Plugin \"{name}\" not found.\n\
-                     Run `grok plugin list` to see installed plugins."
+                     Run `bum plugin list` to see installed plugins."
                 )
             }
             Self::NeedsConfirm {
@@ -217,7 +217,7 @@ impl std::fmt::Display for UpdateError {
                 write!(
                     f,
                     "Plugin \"{name}\" not found.\n\
-                     Run `grok plugin list` to see installed plugins."
+                     Run `bum plugin list` to see installed plugins."
                 )
             }
         }
@@ -607,7 +607,7 @@ impl std::fmt::Display for MarketplaceInstallError {
                     write!(
                         f,
                         "Unknown marketplace \"{qualifier}\". No marketplaces are registered; \
-                         add one with `grok plugin marketplace add`."
+                         add one with `bum plugin marketplace add`."
                     )
                 } else {
                     let list = bullet_list(registered);
@@ -644,8 +644,8 @@ impl std::fmt::Display for MarketplaceInstallError {
                 write!(
                     f,
                     "No marketplace plugin named \"{name}\" in any registered marketplace.\n\
-                     Install a local directory with `grok plugin install ./{name}`, or add a \
-                     source with `grok plugin marketplace add`."
+                     Install a local directory with `bum plugin install ./{name}`, or add a \
+                     source with `bum plugin marketplace add`."
                 )?;
                 if !skipped_sources.is_empty() {
                     write!(
@@ -662,7 +662,7 @@ impl std::fmt::Display for MarketplaceInstallError {
                 write!(
                     f,
                     "Multiple marketplaces provide a plugin named \"{name}\":\n{list}\n\
-                     Pin one with `grok plugin install {name}@<qualifier>`."
+                     Pin one with `bum plugin install {name}@<qualifier>`."
                 )
             }
             Self::PartialScan {
@@ -674,7 +674,7 @@ impl std::fmt::Display for MarketplaceInstallError {
                     f,
                     "Couldn't scan every marketplace while resolving \"{name}\", so it can't be \
                      resolved safely. Unscanned source(s):\n{list}\n\
-                     Retry, or pin the source explicitly with `grok plugin install {name}@<qualifier>`."
+                     Retry, or pin the source explicitly with `bum plugin install {name}@<qualifier>`."
                 )
             }
             Self::Sync {
@@ -1640,8 +1640,8 @@ mod tests {
             skipped_sources: vec![],
         };
         let msg = err.to_string();
-        assert!(msg.contains("grok plugin install ./sentry"), "{msg}");
-        assert!(msg.contains("grok plugin marketplace add"), "{msg}");
+        assert!(msg.contains("bum plugin install ./sentry"), "{msg}");
+        assert!(msg.contains("bum plugin marketplace add"), "{msg}");
         assert!(!msg.contains("could not be synced"), "{msg}");
     }
 
@@ -1674,8 +1674,51 @@ mod tests {
             "{msg}"
         );
         assert!(
-            msg.contains("grok plugin install sentry@<qualifier>"),
+            msg.contains("bum plugin install sentry@<qualifier>"),
             "{msg}"
+        );
+    }
+
+    #[test]
+    fn p8_shell_runtime_cli_plugin_instructs_bum_plugin() {
+        let uninstall = UninstallError::NotFound {
+            name: "demo".into(),
+        }
+        .to_string();
+        assert!(
+            uninstall.contains("bum plugin list"),
+            "uninstall recovery must instruct bum plugin list: {uninstall}"
+        );
+        assert!(
+            !uninstall.contains("grok plugin"),
+            "uninstall recovery must not instruct stock grok plugin: {uninstall}"
+        );
+
+        let update = UpdateError::NotFound {
+            name: "demo".into(),
+        }
+        .to_string();
+        assert!(
+            update.contains("bum plugin list"),
+            "update recovery must instruct bum plugin list: {update}"
+        );
+        assert!(
+            !update.contains("grok plugin"),
+            "update recovery must not instruct stock grok plugin: {update}"
+        );
+
+        let install = MarketplaceInstallError::NameNotFound {
+            name: "demo".into(),
+            skipped_sources: vec![],
+        }
+        .to_string();
+        assert!(
+            install.contains("bum plugin install") && install.contains("bum plugin marketplace add"),
+            "install recovery must instruct bum plugin: {install}"
+        );
+        assert!(
+            !install.contains("grok plugin"),
+            "install recovery must not instruct stock grok plugin: {install}"
         );
     }
 

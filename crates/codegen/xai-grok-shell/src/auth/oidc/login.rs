@@ -155,13 +155,19 @@ fn parse_callback_params(params: &HashMap<String, String>) -> CallbackResult {
     })
 }
 
+/// User-facing OAuth browser callback body copy (product chrome only).
+fn oauth_callback_message(success: bool) -> &'static str {
+    if success {
+        "You can close this window and return to bum."
+    } else {
+        "Close this window and try again."
+    }
+}
+
 fn callback_response(result: &CallbackResult) -> (StatusCode, Html<String>) {
     let (title, message) = match result {
-        Ok(_) => (
-            "Signed in",
-            "You can close this window and return to Grok Build.",
-        ),
-        Err(_) => ("Access denied", "Close this window and try again."),
+        Ok(_) => ("Signed in", oauth_callback_message(true)),
+        Err(_) => ("Access denied", oauth_callback_message(false)),
     };
     (
         StatusCode::OK,
@@ -689,6 +695,42 @@ mod tests {
 
         idp_server.abort();
     }
+    #[test]
+    fn p8_oauth_return_message_is_return_to_bum() {
+        assert_eq!(
+            oauth_callback_message(true),
+            "You can close this window and return to bum."
+        );
+        assert_eq!(
+            oauth_callback_message(false),
+            "Close this window and try again."
+        );
+
+        let ok = Callback {
+            code: "code".into(),
+            state: "state".into(),
+        };
+        let (_status, Html(html)) = callback_response(&Ok(ok));
+        assert!(
+            html.contains("return to bum"),
+            "success OAuth HTML must return users to bum: {html}"
+        );
+        assert!(
+            !html.contains("Grok Build"),
+            "success OAuth HTML must not name stock product: {html}"
+        );
+
+        let (_status, Html(err_html)) = callback_response(&Err("access_denied".into()));
+        assert!(
+            err_html.contains("Close this window and try again."),
+            "access-denied path must stay unchanged: {err_html}"
+        );
+        assert!(
+            !err_html.contains("return to bum"),
+            "error path must not claim signed-in return: {err_html}"
+        );
+    }
+
     /// Parser matrix: full callback URL, bare code, error URL, empty.
     /// Each case is one bug class:
     ///   - full URL: regression in URL extraction
