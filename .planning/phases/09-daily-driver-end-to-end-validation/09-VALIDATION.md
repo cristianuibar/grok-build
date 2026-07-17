@@ -16,8 +16,9 @@ plan_01_complete: true
 > subset + thin fixture `p9_`) **and** signed live dual-login human UAT.
 > GREEN ⇔ both halves. Never fixture-only for live OPS rows. No CI live OAuth secrets.
 
-**Plan 01 (this inventory):** dual auto/human map finalized + greened `p9_` residual.
-**Still pending (later plans):** PHASE-GATE / UAT / VERIFICATION / full Wave 0 close.
+**Plan 01 (inventory):** dual auto/human map finalized + greened `p9_` residual.  
+**Plan 03 (UAT runbook):** `09-UAT.md` + `scripts/uat-preflight.sh` ready; human rows point at UAT sections.  
+**Still pending:** PHASE-GATE (Plan 02) / live execute (Plan 04) / VERIFICATION (Plan 05) / full Wave 0 close.  
 **nyquist_compliant** stays `false` until hybrid gate closes in Plan 05.
 
 ---
@@ -89,16 +90,19 @@ Live UAT is **Required** (not advisory). Fixture-green alone never marks live OP
 
 | Behavior | Requirement | Why Manual | Required? | Instructions |
 |----------|-------------|------------|-----------|--------------|
-| Real xAI coding turn (read + edit/shell) | OPS-03 | Live backend + OAuth | **Required** | `09-UAT.md` §OPS-03 |
-| Real Codex/GPT-5.6 coding turn | OPS-04 | Live backend + OAuth | **Required** | `09-UAT.md` §OPS-04 |
-| Same-session provider switch | OPS-05 | Real multi-turn session | **Required** | `09-UAT.md` §OPS-05 |
-| Cross-provider Task both dirs | OPS-06 | Live dual-login spawn | **Required** | `09-UAT.md` §OPS-06 |
+| Real xAI coding turn (read + edit/shell) | OPS-03 | Live backend + OAuth | **Required** | `09-UAT.md` §OPS-03 — after preflight (`scripts/uat-preflight.sh`): disposable workspace (C1-M3) + CLI chrome (C1-M4) + dual login; live read + edit/shell on disposable path |
+| Real Codex/GPT-5.6 coding turn | OPS-04 | Live backend + OAuth | **Required** | `09-UAT.md` §OPS-04 — same preflight; GPT-5.6 catalog entry (default `gpt-5.6-sol`); document capability gaps |
+| Same-session provider switch | OPS-05 | Real multi-turn session | **Required** | `09-UAT.md` §OPS-05 — same CLI process; xAI → `/model` GPT without restart (optional reverse) |
+| Cross-provider Task both dirs | OPS-06 | Live dual-login spawn | **Required** | `09-UAT.md` §OPS-06 — **both** dirs Grok→Codex and Codex→Grok (NL or Task + model + effort) |
+
+**Preflight helper (non-secret):** `.planning/phases/09-daily-driver-end-to-end-validation/scripts/uat-preflight.sh`  
+Prints numbered steps, optional binary build, CLI chrome sample (`bum --help`), fail-closed scoped credential path guards + phase-diff secret scan. Never stores tokens or auto-marks UAT PASS.
 
 **Do not** mark live OPS rows green on fixture-only evidence.  
 **Do not** treat environment skip as phase pass.  
 If network/account fails → block human path (fix or re-auth) (D-16).
 
-Default models: current xAI daily (e.g. `grok-build`) + one GPT-5.6 catalog entry (e.g. `gpt-5.6-sol`). Prefer TUI path.
+Default models: current xAI daily (e.g. `grok-build`) + one GPT-5.6 catalog entry (e.g. `gpt-5.6-sol`). Prefer TUI path. Disposable workspace + chrome preflight required before matrix (see `09-UAT.md`).
 
 ---
 
@@ -180,13 +184,14 @@ Source of truth for Plan 02 PHASE-GATE automated half (C1-M2). Plan 01 maps filt
 
 - [x] `09-VALIDATION.md` — this file (dual auto/human map; nyquist frontmatter) — **Plan 01**
 - [ ] `09-PHASE-GATE.md` — discover+execute aggregate + human sign-off section — **Plan 02**
-- [ ] `09-UAT.md` — required live dual-login checklist (not advisory) — **Plan 03**
+- [x] `09-UAT.md` — required live dual-login checklist (not advisory) — **Plan 03**
 - [x] Thin `p9_*` green smoke (0–3 tests) — fixture dual residual / discovery — **Plan 01** (`p9_daily_driver_dual_slot_readable_and_empty_codex_login_hint`)
-- [ ] Optional `scripts/uat-preflight.sh` — non-secret helper — **Plan 03**
+- [x] `scripts/uat-preflight.sh` — non-secret helper (path + phase-diff secret gates) — **Plan 03**
 - [ ] After execute: `09-VERIFICATION.md` with OPS rows + model IDs + operator sign-off — **Plan 05**
 
 **Wave 0 inventory readiness (Plan 01):** VALIDATION + `p9_` complete.  
-**Full Wave 0 close** still needs PHASE-GATE + UAT (+ optional preflight).  
+**UAT runbook + preflight (Plan 03):** ready for operator execute (Plan 04).  
+**Full Wave 0 close** still needs PHASE-GATE (Plan 02) + live signed UAT (Plan 04) + VERIFICATION (Plan 05).  
 Frontmatter: `wave_0_inventory_ready: true`; `wave_0_complete: false`; `nyquist_compliant: false` until Plan 05 hybrid close.
 
 ---
@@ -210,10 +215,11 @@ Frontmatter: `wave_0_inventory_ready: true`; `wave_0_complete: false`; `nyquist_
 - [x] Plan 01 tasks have `<automated>` verify
 - [x] Sampling continuity: Plan 01 Task 1 cargo + Task 2 static rg
 - [x] Wave 0 inventory for VALIDATION + `p9_` closed
-- [ ] Full Wave 0 (PHASE-GATE + UAT + optional preflight) — later plans
+- [x] UAT runbook + non-secret preflight (Plan 03)
+- [ ] Full Wave 0 (PHASE-GATE + signed live UAT + VERIFICATION) — Plans 02/04/05
 - [ ] No watch-mode flags
 - [ ] Hybrid gate: automated green **and** signed UAT — Plan 05
 - [ ] `nyquist_compliant: true` set in frontmatter when gate closes
 
-**Approval:** inventory ready (Plan 01); phase gate pending
+**Approval:** inventory ready (Plan 01); UAT checklist ready (Plan 03); phase gate / live execute pending
 )
