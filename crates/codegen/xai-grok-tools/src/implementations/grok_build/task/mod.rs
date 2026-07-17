@@ -30,6 +30,65 @@ use xai_tool_types::{SubagentCompletedOutput, SubagentIsolationMode, TaskToolInp
 /// the first subagent is depth 1. Subagents cannot spawn further subagents.
 pub const MAX_SUBAGENT_DEPTH: u32 = 1;
 
+/// Accepted reasoning-effort tokens listed in Task tool errors (product + parser).
+/// Mirrors `xai_grok_sampling_types::ReasoningEffort::from_str` vocabulary.
+const TASK_REASONING_EFFORT_ACCEPTED: &str =
+    "low, medium, high, xhigh (alias max), none, minimal";
+
+/// Sanitize and parse `TaskToolInput.reasoning_effort` into a **canonical**
+/// product token for [`SubagentRuntimeOverrides`].
+///
+/// Implemented as a pure string allowlist (same tokens as
+/// `ReasoningEffort::from_str` / `as_str`) so `xai-grok-tools` does not take a
+/// dependency on `xai-grok-sampling-types` (that edge is cyclic: sampling-types
+/// already depends on tools). Blank / `"null"` / `"undefined"` are treated as
+/// omitted. Unlike model slug sanitization, `"none"` is kept (valid effort).
+/// Alias `"max"` stores as `"xhigh"`.
+fn parse_task_reasoning_effort(
+    raw: Option<String>,
+) -> Result<Option<String>, xai_tool_runtime::ToolError> {
+    let Some(token) = sanitize_reasoning_effort_arg(raw) else {
+        return Ok(None);
+    };
+    match canonicalize_reasoning_effort_token(&token) {
+        Some(canonical) => Ok(Some(canonical.to_string())),
+        None => Err(xai_tool_runtime::ToolError::invalid_arguments(format!(
+            "Invalid reasoning_effort: {token:?}. Accepted values: {TASK_REASONING_EFFORT_ACCEPTED}."
+        ))),
+    }
+}
+
+/// Canonical product token matching `ReasoningEffort::as_str` (max → xhigh).
+fn canonicalize_reasoning_effort_token(token: &str) -> Option<&'static str> {
+    match token.to_lowercase().as_str() {
+        "none" => Some("none"),
+        "minimal" => Some("minimal"),
+        "low" => Some("low"),
+        "medium" => Some("medium"),
+        "high" => Some("high"),
+        "xhigh" | "max" => Some("xhigh"),
+        _ => None,
+    }
+}
+
+/// Drop blank / model-placeholder sentinels for effort without stripping `"none"`.
+fn sanitize_reasoning_effort_arg(value: Option<String>) -> Option<String> {
+    value.and_then(|s| {
+        let trimmed = s.trim();
+        if trimmed.is_empty()
+            || trimmed.eq_ignore_ascii_case("null")
+            || trimmed.eq_ignore_ascii_case("undefined")
+        {
+            return None;
+        }
+        if trimmed.len() == s.len() {
+            Some(s)
+        } else {
+            Some(trimmed.to_string())
+        }
+    })
+}
+
 // ───────────────────────────────────────────────────────────────────────────
 // Tool implementation
 // ───────────────────────────────────────────────────────────────────────────
@@ -284,6 +343,10 @@ impl xai_tool_runtime::Tool for TaskTool {
             }
         }
 
+        // Effort: sanitize blank/null/undefined sentinels, parse allowlist, store
+        // canonical tokens (max → xhigh). Fail closed before background spawn.
+        let reasoning_effort = parse_task_reasoning_effort(input.reasoning_effort)?;
+
         // 3. Build the subagent request
         let id = input
             .task_id
@@ -305,7 +368,7 @@ impl xai_tool_runtime::Tool for TaskTool {
             runtime_overrides: SubagentRuntimeOverrides {
                 model,
                 model_override_provenance: ModelOverrideProvenance::Tool,
-                reasoning_effort: None,
+                reasoning_effort,
                 persona: None,
                 capability_mode: input.capability_mode,
                 isolation: input.isolation,
@@ -518,6 +581,7 @@ mod tests {
                 resume_from: None,
                 cwd: None,
                 model: None,
+                reasoning_effort: None,
                 task_id: None,
             },
         )
@@ -550,6 +614,7 @@ mod tests {
                 resume_from: None,
                 cwd: None,
                 model: None,
+                reasoning_effort: None,
                 task_id: None,
             },
         )
@@ -581,6 +646,7 @@ mod tests {
                 resume_from: None,
                 cwd: None,
                 model: None,
+                reasoning_effort: None,
                 task_id: None,
             },
         )
@@ -640,6 +706,7 @@ mod tests {
                 resume_from: None,
                 cwd: None,
                 model: None,
+                reasoning_effort: None,
                 task_id: None,
             },
         )
@@ -697,6 +764,7 @@ mod tests {
                 resume_from: None,
                 cwd: None,
                 model: None,
+                reasoning_effort: None,
                 task_id: None,
             },
         )
@@ -740,6 +808,7 @@ mod tests {
                 resume_from: None,
                 cwd: None,
                 model: None,
+                reasoning_effort: None,
                 task_id: None,
             },
         )
@@ -824,6 +893,7 @@ mod tests {
             resume_from: None,
             cwd: None,
             model: None,
+            reasoning_effort: None,
             task_id: None,
         }
     }
@@ -1198,6 +1268,7 @@ mod tests {
             resume_from: None,
             cwd: None,
             model: Some("test-model".into()),
+            reasoning_effort: None,
             task_id: Some("task-123".into()),
         };
         let json = serde_json::to_string(&input).unwrap();
@@ -1208,6 +1279,7 @@ mod tests {
             Some(SubagentCapabilityMode::ReadOnly)
         );
         assert_eq!(parsed.model.as_deref(), Some("test-model"));
+        assert!(parsed.reasoning_effort.is_none());
     }
 
     #[test]
@@ -1468,6 +1540,7 @@ mod tests {
             resume_from: None,
             cwd: None,
             model: None,
+            reasoning_effort: None,
             task_id: None,
         })
         .unwrap();
@@ -1518,6 +1591,7 @@ mod tests {
                 resume_from: None,
                 cwd: None,
                 model: None,
+                reasoning_effort: None,
                 task_id: None,
             },
         )
@@ -1554,6 +1628,7 @@ mod tests {
             resume_from: None,
             cwd: None,
             model: None,
+            reasoning_effort: None,
             task_id: None,
         };
         let json = serde_json::to_string(&input).unwrap();
@@ -1601,6 +1676,7 @@ mod tests {
                 resume_from: Some("prev-id".into()),
                 cwd: None,
                 model: None,
+                reasoning_effort: None,
                 task_id: None,
             },
         )
@@ -1668,6 +1744,7 @@ mod tests {
                     resume_from: Some(sentinel.into()),
                     cwd: None,
                     model: None,
+                    reasoning_effort: None,
                     task_id: None,
                 },
             )
@@ -1714,6 +1791,7 @@ mod tests {
             resume_from: None,
             cwd: None,
             model: None,
+            reasoning_effort: None,
             task_id: None,
         };
         let json = serde_json::to_string(&input).unwrap();
@@ -1742,6 +1820,7 @@ mod tests {
                 resume_from: None,
                 cwd: Some("/tmp".into()),
                 model: None,
+                reasoning_effort: None,
                 task_id: None,
             },
         )
@@ -1797,6 +1876,7 @@ mod tests {
                 resume_from: None,
                 cwd: Some("".into()),
                 model: None,
+                reasoning_effort: None,
                 task_id: None,
             },
         )
@@ -1848,6 +1928,7 @@ mod tests {
                 resume_from: None,
                 cwd: Some("null".into()),
                 model: None,
+                reasoning_effort: None,
                 task_id: None,
             },
         )
@@ -1899,6 +1980,7 @@ mod tests {
                 resume_from: None,
                 cwd: Some("  ".into()),
                 model: None,
+                reasoning_effort: None,
                 task_id: None,
             },
         )
@@ -1953,6 +2035,7 @@ mod tests {
                 resume_from: None,
                 cwd: Some("/nonexistent/path/that/does/not/exist".into()),
                 model: None,
+                reasoning_effort: None,
                 task_id: None,
             },
         )
@@ -1987,6 +2070,7 @@ mod tests {
                 resume_from: None,
                 cwd: Some("/nonexistent/path/that/does/not/exist".into()),
                 model: None,
+                reasoning_effort: None,
                 task_id: None,
             },
         )
@@ -2043,6 +2127,7 @@ mod tests {
                     resume_from: None,
                     cwd: Some(sentinel.into()),
                     model: None,
+                    reasoning_effort: None,
                     task_id: None,
                 },
             )
@@ -2097,6 +2182,7 @@ mod tests {
                 resume_from: None,
                 cwd: Some("/tmp".into()),
                 model: None,
+                reasoning_effort: None,
                 task_id: None,
             },
         )
@@ -2155,6 +2241,7 @@ mod tests {
                 resume_from: None,
                 cwd: Some("\"/tmp".into()),
                 model: None,
+                reasoning_effort: None,
                 task_id: None,
             },
         )
@@ -2208,6 +2295,7 @@ mod tests {
                 resume_from: None,
                 cwd: Some("/tmp".into()),
                 model: None,
+                reasoning_effort: None,
                 task_id: None,
             },
         )
@@ -2257,6 +2345,7 @@ mod tests {
                 resume_from: Some("prev-id".into()),
                 cwd: Some("/tmp/some-dir".into()),
                 model: None,
+                reasoning_effort: None,
                 task_id: None,
             },
         )
@@ -2518,7 +2607,7 @@ mod tests {
         }
     }
 
-    // ── Phase 7 wave-1 p7_ green scaffold (gap locks; no reasoning_effort field) ──
+    // ── Phase 7 plan-02 p7_ Task reasoning_effort schema + wire ───────────
 
     /// AGENT-02 regression: explicit Task.model still threads into SubagentRequest.
     #[tokio::test]
@@ -2562,12 +2651,159 @@ mod tests {
         }
     }
 
-    /// AGENT-03 gap lock: Task still hardcodes reasoning_effort: None until Plan 02.
-    ///
-    /// Documents current behavior so Plan 02 can replace/extend with positive wire tests
-    /// after `TaskToolInput.reasoning_effort` lands. Do not assert Some(effort) here.
+    /// AGENT-03: schema exposes reasoning_effort for model-facing Task tool.
+    #[test]
+    fn p7_task_tool_input_schema_includes_reasoning_effort() {
+        let schema = serde_json::to_value(schemars::schema_for!(TaskToolInput)).unwrap();
+        let props = schema["properties"]
+            .as_object()
+            .expect("TaskToolInput schema must expose properties");
+        assert!(
+            props.contains_key("model"),
+            "schemars properties must include model; keys: {:?}",
+            props.keys().collect::<Vec<_>>()
+        );
+        assert!(
+            props.contains_key("reasoning_effort"),
+            "schemars properties must include reasoning_effort; keys: {:?}",
+            props.keys().collect::<Vec<_>>()
+        );
+        let desc = props["reasoning_effort"]["description"]
+            .as_str()
+            .unwrap_or("");
+        assert!(
+            desc.contains("medium") && desc.contains("xhigh"),
+            "effort schema description should list product tokens; got: {desc}"
+        );
+    }
+
+    /// AGENT-03: valid product tokens wire as canonical strings on overrides.
     #[tokio::test]
-    async fn p7_reasoning_effort_override_is_none_until_schema_lands() {
+    async fn p7_reasoning_effort_threads_to_runtime_overrides() {
+        for (input_token, expected_canonical) in [
+            ("low", "low"),
+            ("medium", "medium"),
+            ("high", "high"),
+            ("xhigh", "xhigh"),
+            ("none", "none"),
+            ("minimal", "minimal"),
+        ] {
+            let (backend, mut rx) = make_backend();
+            let resources = resources_for_task(backend);
+            let shared = resources.into_shared();
+
+            let expected = expected_canonical.to_string();
+            let handle = tokio::spawn(async move {
+                let request = unwrap_spawn(rx.recv().await.unwrap());
+                assert_eq!(
+                    request.runtime_overrides.reasoning_effort.as_deref(),
+                    Some(expected.as_str()),
+                    "canonical effort must reach SubagentRuntimeOverrides"
+                );
+                request
+                    .result_tx
+                    .send(SubagentResult {
+                        success: true,
+                        output: "ok".into(),
+                        subagent_id: request.id.clone(),
+                        child_session_id: request.id.clone(),
+                        ..Default::default()
+                    })
+                    .unwrap();
+            });
+
+            let mut input = task_input("general-purpose", false);
+            input.reasoning_effort = Some(input_token.into());
+            let result = xai_tool_runtime::Tool::run(&TaskTool, test_ctx(shared), input)
+                .await
+                .unwrap_or_else(|e| panic!("token {input_token:?} should succeed: {e}"));
+            handle.await.unwrap();
+            match result {
+                ToolOutput::SubagentCompleted(sub) => assert!(sub.output.contains("ok")),
+                other => panic!("Expected SubagentCompleted, got {other:?}"),
+            }
+        }
+    }
+
+    /// AGENT-03: alias max stores as xhigh (Display/as_str canonical form).
+    #[tokio::test]
+    async fn p7_reasoning_effort_max_alias_canonicalizes_to_xhigh() {
+        let (backend, mut rx) = make_backend();
+        let resources = resources_for_task(backend);
+        let shared = resources.into_shared();
+
+        let handle = tokio::spawn(async move {
+            let request = unwrap_spawn(rx.recv().await.unwrap());
+            assert_eq!(
+                request.runtime_overrides.reasoning_effort.as_deref(),
+                Some("xhigh"),
+                "max alias must canonicalize to xhigh, not raw max; got {:?}",
+                request.runtime_overrides.reasoning_effort
+            );
+            request
+                .result_tx
+                .send(SubagentResult {
+                    success: true,
+                    output: "ok".into(),
+                    subagent_id: request.id.clone(),
+                    child_session_id: request.id.clone(),
+                    ..Default::default()
+                })
+                .unwrap();
+        });
+
+        let mut input = task_input("general-purpose", false);
+        input.reasoning_effort = Some("max".into());
+        let result = xai_tool_runtime::Tool::run(&TaskTool, test_ctx(shared), input)
+            .await
+            .unwrap();
+        handle.await.unwrap();
+        match result {
+            ToolOutput::SubagentCompleted(sub) => assert!(sub.output.contains("ok")),
+            other => panic!("Expected SubagentCompleted, got {other:?}"),
+        }
+    }
+
+    /// AGENT-03 / D-04: invalid effort rejects before background spawn.
+    #[tokio::test]
+    async fn p7_invalid_reasoning_effort_rejected_before_spawn() {
+        let (backend, mut rx) = make_backend();
+        let resources = resources_for_task(backend);
+
+        let drain = tokio::spawn(async move {
+            // Must not receive a spawn event.
+            let got = tokio::time::timeout(std::time::Duration::from_millis(100), rx.recv()).await;
+            assert!(
+                got.is_err() || got.ok().flatten().is_none(),
+                "invalid effort must not spawn a subagent"
+            );
+        });
+
+        let mut input = task_input("general-purpose", true); // background path
+        input.reasoning_effort = Some("ludicrous".into());
+        let err = xai_tool_runtime::Tool::run(
+            &TaskTool,
+            test_ctx(resources.into_shared()),
+            input,
+        )
+        .await
+        .expect_err("invalid reasoning_effort must reject before spawn");
+        let msg = err.to_string();
+        assert!(
+            msg.contains("Invalid reasoning_effort") || msg.contains("invalid"),
+            "error should name invalid effort: {msg}"
+        );
+        assert!(
+            msg.contains("medium") || msg.contains("xhigh") || msg.contains("low"),
+            "error should list accepted tokens: {msg}"
+        );
+
+        let _ = tokio::time::timeout(std::time::Duration::from_millis(500), drain).await;
+    }
+
+    /// AGENT-03: omit effort leaves overrides.reasoning_effort None (inherit defaults).
+    #[tokio::test]
+    async fn p7_omitted_reasoning_effort_stays_none_on_overrides() {
         let (backend, mut rx) = make_backend();
         let resources = resources_for_task(backend);
         let shared = resources.into_shared();
@@ -2576,12 +2812,8 @@ mod tests {
             let request = unwrap_spawn(rx.recv().await.unwrap());
             assert!(
                 request.runtime_overrides.reasoning_effort.is_none(),
-                "gap lock: Task still hardcodes reasoning_effort None (Plan 02 wires it); got {:?}",
+                "omitted effort must stay None, got {:?}",
                 request.runtime_overrides.reasoning_effort
-            );
-            assert_eq!(
-                request.runtime_overrides.model.as_deref(),
-                Some("gpt-5.6-sol"),
             );
             request
                 .result_tx
@@ -2597,7 +2829,7 @@ mod tests {
 
         let mut input = task_input("general-purpose", false);
         input.model = Some("gpt-5.6-sol".into());
-        // No TaskToolInput.reasoning_effort field exists yet — Plan 02 owns that API.
+        // reasoning_effort left None (omit path)
         let result = xai_tool_runtime::Tool::run(&TaskTool, test_ctx(shared), input)
             .await
             .unwrap();
@@ -2608,22 +2840,43 @@ mod tests {
         }
     }
 
-    /// AGENT-03/D-13 schema surface readiness: model property present (effort lands Plan 02).
-    #[test]
-    fn p7_task_tool_input_schema_includes_model_property() {
-        let schema = serde_json::to_value(schemars::schema_for!(TaskToolInput)).unwrap();
-        let props = schema["properties"]
-            .as_object()
-            .expect("TaskToolInput schema must expose properties");
-        assert!(
-            props.contains_key("model"),
-            "schemars properties must include model; keys: {:?}",
-            props.keys().collect::<Vec<_>>()
-        );
-        // Do not assert reasoning_effort property until Plan 02 adds the field.
-        assert!(
-            !props.contains_key("reasoning_effort"),
-            "gap lock: reasoning_effort must not appear on TaskToolInput schema until Plan 02"
-        );
+    /// Sentinel/blank effort strings behave like omitted.
+    #[tokio::test]
+    async fn p7_blank_reasoning_effort_treated_as_omitted() {
+        for sentinel in ["", "  ", "null", "undefined", "NULL"] {
+            let (backend, mut rx) = make_backend();
+            let resources = resources_for_task(backend);
+            let shared = resources.into_shared();
+
+            let handle = tokio::spawn(async move {
+                let request = unwrap_spawn(rx.recv().await.unwrap());
+                assert!(
+                    request.runtime_overrides.reasoning_effort.is_none(),
+                    "sentinel effort should omit; got {:?}",
+                    request.runtime_overrides.reasoning_effort
+                );
+                request
+                    .result_tx
+                    .send(SubagentResult {
+                        success: true,
+                        output: "ok".into(),
+                        subagent_id: request.id.clone(),
+                        child_session_id: request.id.clone(),
+                        ..Default::default()
+                    })
+                    .unwrap();
+            });
+
+            let mut input = task_input("general-purpose", false);
+            input.reasoning_effort = Some(sentinel.into());
+            let result = xai_tool_runtime::Tool::run(&TaskTool, test_ctx(shared), input)
+                .await
+                .unwrap_or_else(|e| panic!("sentinel {sentinel:?} should omit, not fail: {e}"));
+            handle.await.unwrap();
+            match result {
+                ToolOutput::SubagentCompleted(sub) => assert!(sub.output.contains("ok")),
+                other => panic!("Expected SubagentCompleted, got {other:?}"),
+            }
+        }
     }
 }

@@ -103,6 +103,24 @@ pub struct TaskToolInput {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub model: Option<String>,
 
+    /// Optional reasoning effort for this subagent.
+    ///
+    /// Product tokens: `low` / `medium` / `high` / `xhigh` (alias `max` maps to `xhigh`).
+    /// Parser also accepts `none` and `minimal`. Invalid values are rejected at the Task
+    /// boundary. Omit to inherit the child's role/model default. Prefer setting when the
+    /// user asks for a specific effort (e.g. medium-effort research). When `resume_from`
+    /// is set the prior model remains pinned; effort still applies if provided.
+    #[schemars(
+        description = "Optional reasoning effort for this subagent: \"low\", \"medium\", \
+            \"high\", or \"xhigh\" (alias \"max\" maps to \"xhigh\"; \"none\" and \
+            \"minimal\" are also accepted). If omitted, the child uses the role/model \
+            default. Invalid values are rejected. Prefer setting when the user asks for a \
+            specific effort (e.g. medium-effort research). When resume_from is set the prior \
+            model is pinned; effort may still be set."
+    )]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reasoning_effort: Option<String>,
+
     /// Server-injected before execution. Becomes the subagent's session ID.
     #[schemars(skip)]
     #[serde(default)]
@@ -1133,10 +1151,12 @@ mod tests {
             resume_from: None,
             cwd: None,
             model: None,
+            reasoning_effort: None,
             task_id: None,
         };
         let value = serde_json::to_value(&input).unwrap();
         assert!(value.get("model").is_none());
+        assert!(value.get("reasoning_effort").is_none());
     }
 
     #[test]
