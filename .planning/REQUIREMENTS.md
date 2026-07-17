@@ -34,10 +34,10 @@ Requirements for initial release. Each maps to roadmap phases.
 
 - [ ] **AGENT-01**: Existing Grok Build multi-agent / subagent spawn, resume, roles, personas, and parent↔child routing continue to work in bum after the fork/rebrand (no regression of in-tree subagent behavior when parent and child share a provider)
 - [ ] **AGENT-02**: User (or parent agent via tool) can spawn a subagent with an explicit **model** that may belong to a **different provider** than the parent session (e.g. parent on Grok 4.5 / grok-build; child on `gpt-5.6-sol`)
-- [ ] **AGENT-03**: User (or parent agent) can specify **reasoning effort** (or equivalent Codex effort control) when launching a subagent (e.g. “medium effort”), and the child runs with that effort
+- [x] **AGENT-03**: User (or parent agent) can specify **reasoning effort** (or equivalent Codex effort control) when launching a subagent (e.g. “medium effort”), and the child runs with that effort
 - [ ] **AGENT-04**: Cross-provider subagent turns use the **child’s** model → provider → credentials → backend routing (not the parent’s bearer or base URL)
 - [ ] **AGENT-05**: Spawning a cross-provider subagent when the child provider is not logged in fails closed with a clear prompt/error to log in that provider (does not fall back to parent credentials or wrong backend)
-- [ ] **AGENT-06**: Natural-language orchestration works end-to-end: e.g. with main model Grok, asking to “start a Codex Sol medium-effort subagent to research X” results in a child subagent on the Sol model at medium effort performing that task and returning results to the parent
+- [x] **AGENT-06**: Natural-language orchestration works end-to-end: e.g. with main model Grok, asking to “start a Codex Sol medium-effort subagent to research X” results in a child subagent on the Sol model at medium effort performing that task and returning results to the parent
 
 ### Quiet fork & daily driver
 
@@ -104,10 +104,10 @@ Which phases cover which requirements. Updated during roadmap creation.
 | MOD-06 | Phase 6 | Complete |
 | AGENT-01 | Phase 7 | Pending |
 | AGENT-02 | Phase 7 | Pending |
-| AGENT-03 | Phase 7 | Pending |
+| AGENT-03 | Phase 7 | Complete |
 | AGENT-04 | Phase 7 | Pending |
 | AGENT-05 | Phase 7 | Pending |
-| AGENT-06 | Phase 7 | Pending |
+| AGENT-06 | Phase 7 | Complete |
 | OPS-01 | Phase 8 | Pending |
 | OPS-02 | Phase 8 | Pending |
 | OPS-03 | Phase 9 | Pending |

@@ -4,17 +4,17 @@ milestone: v1.0
 milestone_name: milestone
 current_phase: 7
 current_phase_name: Cross-provider multi-agent orchestration
-current_plan: 2
+current_plan: 3
 status: in_progress
-stopped_at: Completed 07-01-PLAN.md
-last_updated: "2026-07-17T08:24:30.000Z"
+stopped_at: Completed 07-02-PLAN.md
+last_updated: "2026-07-17T08:31:07.311Z"
 last_activity: 2026-07-17
-last_activity_desc: Completed 07-01 p7_ green harness; next 07-02 Task schema effort wire
+last_activity_desc: Completed 07-01-PLAN.md (p7_ tools + shell scaffold)
 progress:
-  total_phases: 9
+  total_phases: 7
   completed_phases: 6
   total_plans: 36
-  completed_plans: 30
+  completed_plans: 31
 ---
 
 # Project State
@@ -29,13 +29,13 @@ See: .planning/PROJECT.md (updated 2026-07-16)
 ## Current Position
 
 Phase: 7 of 9 (Cross-provider multi-agent orchestration)
-Plan: 2 of 6
+Plan: 3 of 6
 Status: In progress — Plan 01 complete (wave 1 p7_ green harness)
 Last activity: 2026-07-17 — Completed 07-01-PLAN.md (p7_ tools + shell scaffold)
-Current Plan: 2
+Current Plan: 3
 Total Plans in Phase: 6
 
-Progress: [████████░░] 83% (30/36 plans)
+Progress: [█████████░] 86% (30/36 plans)
 
 ## Performance Metrics
 
@@ -68,6 +68,7 @@ Progress: [████████░░] 83% (30/36 plans)
 | Phase 06 P03 | 13min | 2 tasks | 9 files |
 | Phase 06 P06 | 25min | 2 tasks | 3 files |
 | Phase 07 P01 | 8min | 2 tasks | 3 files |
+| Phase 07 P02 | 5min | 2 tasks | 3 files |
 
 ## Decisions
 
@@ -88,9 +89,11 @@ Progress: [████████░░] 83% (30/36 plans)
 - [Phase 7]: Plan 01: no TaskToolInput.reasoning_effort until Plan 02; p7_ green-only protocol
 - [Phase 7]: Plan 01: Tool unknown-model is existing task_model_override_error reject; route isolation via public resolve_provider_route
 - [Phase 7]: Plan 01 scaffold does not mark AGENT-01..06 complete (product proofs in Plans 02–06)
+- [Phase ?]: Plan 02: Task effort parse uses local allowlist (tools↔sampling-types cycle); store canonical max→xhigh
+- [Phase ?]: Plan 02: Preserve none/minimal on Task effort sanitize; NL effort guidance via task_effort_guidance
 
 ## Session
 
-**Last session:** 2026-07-17T08:23:46.443Z
-**Stopped at:** Completed 07-01-PLAN.md
+**Last session:** 2026-07-17T08:31:07.300Z
+**Stopped at:** Completed 07-02-PLAN.md
 **Resume file:** None
