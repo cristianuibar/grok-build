@@ -1,6 +1,7 @@
 ---
 phase: 07-cross-provider-multi-agent-orchestration
 reviewed: 2026-07-17T09:35:48Z
+fixed: 2026-07-17T09:50:21Z
 depth: standard
 files_reviewed: 11
 files_reviewed_list:
@@ -16,19 +17,20 @@ files_reviewed_list:
   - crates/codegen/xai-grok-shell/src/agent/mvp_agent/subagent_coordinator.rs
   - crates/codegen/xai-grok-shell/src/test_support/lsp_runtime.rs
 findings:
-  critical: 1
-  warning: 3
+  critical: 0
+  warning: 0
   info: 2
-  total: 6
-status: findings
+  total: 2
+status: clean
 ---
 
 # Phase 7: Code Review Report
 
 **Reviewed:** 2026-07-17T09:35:48Z  
+**Fixed:** 2026-07-17T09:50:21Z  
 **Depth:** standard  
 **Files Reviewed:** 11  
-**Status:** findings  
+**Status:** clean (Critical/Warning fixed; Info remaining optional)
 
 ## Summary
 
@@ -42,145 +44,48 @@ Adversarial review of Phase 7 product changes (plans 01–06): Task `reasoning_e
 - `resolve_model_override_to_config` isolates slots (`Xai → (xai_key, None)`, `Codex → (None, codex_key)`); no parent bearer rewrite into the child provider slot on the explicit-model path.
 - Plan 05 isolation harness exercises wire `Authorization` both directions with dual fake tokens.
 
-**Key concerns**
+**Fixes applied (2026-07-17)**
 
-1. **Effort fail-closed provenance is wrong on the live Task path** — role/persona/definition effort is treated as Tool effort because Task always stamps `ModelOverrideProvenance::Tool`. That contradicts the Plan 03 “role/harness soft-skip” contract and can abort otherwise-valid spawns.
-2. Effort **support** is checked only after pending/worktree (and after bg “started”), so fail-closed is incomplete for background Task.
-3. Subagent spawn still logs **API-key prefixes at info** — conflicts with Phase 7 “secrets not logged” bar.
-4. Residual parent-model fallback after the credential gate remains a latent cross-provider footgun if catalog identity ever diverges.
+1. **CR-01** — Effort apply provenance now follows explicit runtime effort, not model stamp (`effort_apply_provenance`). Role/persona/definition effort soft-skips under Task `Tool` model stamp.
+2. **WR-01** — Explicit Tool effort × model support gated in `preflight_subagent_spawn` and before `insert_pending`.
+3. **WR-02** — Removed API key prefixes from subagent spawn/resolve logs; boolean presence only.
+4. **WR-03** — Tool/explicit unknown model fails closed (no parent sampling-config fallback); final model re-checks provider gate.
 
 ---
 
 ## Critical Issues
 
-### CR-01: Role/persona/definition effort hard-fails under Task provenance
+### CR-01: Role/persona/definition effort hard-fails under Task provenance — FIXED
 
-**File:** `crates/codegen/xai-grok-shell/src/agent/subagent/handle_request.rs:691-700`  
-**Also:** `crates/codegen/xai-grok-tools/src/implementations/grok_build/task/mod.rs:359-361`  
-**Severity:** BLOCKER (incorrect behavior vs D-04 / Plan 03 soft-skip contract)
-
-**Issue:**  
-`apply_subagent_reasoning_effort` chooses hard-fail vs soft-skip from `request.runtime_overrides.model_override_provenance`. Every model-facing Task call sets:
-
-```rust
-model_override_provenance: ModelOverrideProvenance::Tool,
-```
-
-even when `reasoning_effort` is **omitted**. Effective effort is then filled from role / persona / `AgentDefinition.effort`:
-
-```rust
-// resolve_effective_overrides merges role/persona effort
-// then definition.effort fills remaining None
-if effective_runtime.reasoning_effort.is_none() {
-    effective_runtime.reasoning_effort = definition.effort.map(|e| <&str>::from(e).to_string());
-}
-// ...
-apply_subagent_reasoning_effort(
-    raw,
-    ...,
-    request.runtime_overrides.model_override_provenance, // always Tool for Task
-    ...
-)
-```
-
-Unit tests document the intended split (`p7_invalid_effort_unsupported_model_tool_fails_closed` vs `p7_invalid_effort_harness_soft_skips_unsupported` as “role default path”), but production **never** passes `Harness` for role-sourced effort on Task spawns. Result: a Task spawn onto a model that does not support reasoning effort will **abort** if any role/persona/definition supplies a default effort — even when the model did not request `reasoning_effort`.
-
-**Fix:** Derive effort provenance from whether Task (or harness) **explicitly** set effort, not from model provenance:
-
-```rust
-// When applying effective effort:
-let effort_provenance = if request.runtime_overrides.reasoning_effort.is_some() {
-    // Explicit Task/harness override — keep Tool vs Harness semantics.
-    request.runtime_overrides.model_override_provenance
-} else {
-    // Role / persona / AgentDefinition defaults — soft-skip if unsupported.
-    ModelOverrideProvenance::Harness
-};
-match apply_subagent_reasoning_effort(
-    raw,
-    effective_model_id.0.as_ref(),
-    supports,
-    effort_provenance,
-    &mut effective_sampling_config,
-) { /* ... */ }
-```
-
-Add an integration-style unit test: Task provenance + omitted effort + role `reasoning_effort=high` + `supports=false` → soft-skip (spawn continues), whereas explicit Task `reasoning_effort=high` + `supports=false` → hard-fail.
+**File:** `crates/codegen/xai-grok-shell/src/agent/subagent/handle_request.rs`  
+**Commit:** `759fd00`  
+**Status:** Fixed via `effort_apply_provenance` + unit tests.
 
 ---
 
 ## Warnings
 
-### WR-01: Effort support fail-closed runs after pending/worktree (and after bg “started”)
+### WR-01: Effort support fail-closed runs after pending/worktree — FIXED
 
-**File:** `crates/codegen/xai-grok-shell/src/agent/subagent/handle_request.rs:435-459` (gate + `insert_pending`) vs `:691-707` (effort apply)  
-**Also:** `crates/codegen/xai-grok-tools/src/implementations/grok_build/task/mod.rs:372-465` (await preflight, then fire-and-forget + return started)
+**File:** `crates/codegen/xai-grok-shell/src/agent/subagent/handle_request.rs`  
+**Commit:** `759fd00`  
+**Status:** Preflight + pre-pending explicit Tool effort gate.
 
-**Issue:**  
-Missing-provider credentials are gated before side effects (correct). Explicit Tool effort on an **unsupported** model is only detected later — after `insert_pending`, worktree creation, and (on the Task background path) after the tool has already returned the “started” notice. Preflight covers credentials/effective model only, not effort×model support.
+### WR-02: Partial bearer tokens logged at info — FIXED
 
-**Fix:**  
-Either:
+**File:** `crates/codegen/xai-grok-shell/src/agent/subagent/{handle_request,mod}.rs`  
+**Commit:** `ca4a784`  
+**Status:** `api_key_present` booleans only; no key material.
 
-1. Extend `preflight_subagent_spawn` / `SubagentPreflightInput` to validate explicit Tool effort against `models_manager.model_supports_reasoning_effort(effective_model)` and return `Denied` before Task returns started; or  
-2. Move effort support application to the same pre-pending block as the credential gate (still before `insert_pending`).
+### WR-03: Unknown model → parent sampling config fallback — FIXED
 
-Prefer (1) so Task bg and shell spawn stay aligned.
-
-### WR-02: Partial bearer tokens logged at `unified_log::info` on every subagent spawn
-
-**File:** `crates/codegen/xai-grok-shell/src/agent/subagent/handle_request.rs:996-1011`  
-**Also:** `crates/codegen/xai-grok-shell/src/agent/subagent/mod.rs:865-897`, `:1086-1097`
-
-**Issue:**  
-`key_prefix` takes the first **8 characters** of `api_key` and emits them as `key_prefix` / `parent_key_prefix` on **info**-level `subagent spawn credentials` (and debug resolution logs). Phase 7 acceptance explicitly requires secrets not logged. Eight chars of OAuth/JWT-style tokens are still secret material (tests even assert JWT-looking prefixes like `eyJ0eXAi`). Info-level unified logs are more likely to be retained/shipped than debug traces.
-
-**Fix:**
-
-```rust
-// Prefer boolean / length-only diagnostics — never raw key material.
-"has_child_key": effective_sampling_config.api_key.as_ref().is_some_and(|k| !k.is_empty()),
-"has_parent_key": ctx.sampling_config.api_key.as_ref().is_some_and(|k| !k.is_empty()),
-"keys_match": effective_sampling_config.api_key == ctx.sampling_config.api_key,
-// If a fingerprint is required: blake3/sha256 truncated hex — not key[:8]
-```
-
-Drop `key_prefix` from info paths entirely; if debug still needs disambiguation, use a non-reversible hash.
-
-### WR-03: Post-gate “unknown model → parent sampling config” fallback can still re-home child onto parent credentials
-
-**File:** `crates/codegen/xai-grok-shell/src/agent/subagent/handle_request.rs:654-668`
-
-**Issue:**  
-After the missing-provider gate passes for `preflight_model_id`, a second resolve may still replace the child’s `SamplerConfig` with the **parent’s** config (api_key + base_url + model) when `effective_sampling_config.model` is not found in `available_models`. For Tool-validated catalog slugs this path should be rare (identity usually matches `info.model`), but it is still a fail-**open** to parent bearer after a child-provider gate — the exact anti-pattern Phase 7 forbids (“no parent bearer fallback”).
-
-**Fix:**  
-For Tool provenance (and preferably always after a cross-provider pin), fail closed instead of inheriting parent:
-
-```rust
-if model_unknown {
-    if request.runtime_overrides.model_override_provenance == ModelOverrideProvenance::Tool
-        || effective_runtime.model.is_some()
-    {
-        let msg = format!(
-            "Resolved subagent model '{model_str}' is not in the available catalog; \
-             refusing parent credential fallback."
-        );
-        send_failure(request, &msg);
-        return;
-    }
-    // Same-provider inherit-only legacy path, if still required:
-    let (parent_config, parent_mid) = read_parent_sampling_config(&ctx).await;
-    effective_sampling_config = parent_config;
-    effective_model_id = parent_mid;
-}
-```
-
-At minimum, re-run `missing_provider_spawn_gate_message` on the **final** `effective_model_id` before `spawn_session_on_thread`.
+**File:** `crates/codegen/xai-grok-shell/src/agent/subagent/handle_request.rs`  
+**Commit:** `759fd00`  
+**Status:** Fail closed for Tool/explicit model; final credential re-gate.
 
 ---
 
-## Info
+## Info (optional / not fixed this pass)
 
 ### IN-01: Preflight returns `Ok` when agent definition is missing
 
@@ -192,7 +97,7 @@ At minimum, re-run `missing_provider_spawn_gate_message` on the **final** `effec
 
 ### IN-02: Effort level not checked against model’s offered menu
 
-**File:** `crates/codegen/xai-grok-shell/src/agent/subagent/handle_request.rs:191-233`, `:691-694`
+**File:** `crates/codegen/xai-grok-shell/src/agent/subagent/handle_request.rs`
 
 **Issue:** Only `model_supports_reasoning_effort` (boolean) is consulted. A model that supports effort but only offers `{low, medium}` will still accept Task `xhigh` and stamp it onto `SamplerConfig`. Parent session switch path has richer `model_offers_reasoning_effort` logic.
 
@@ -215,17 +120,21 @@ At minimum, re-run `missing_provider_spawn_gate_message` on the **final** `effec
 
 ## Counts
 
-| Severity | Count |
+| Severity | Count (open) |
 |----------|------:|
-| Critical (P0 / BLOCKER) | 1 |
-| Warning (P1) | 3 |
+| Critical (P0 / BLOCKER) | 0 |
+| Warning (P1) | 0 |
 | Info | 2 |
-| **Total** | **6** |
+| **Open total** | **2** |
 
-**Ship recommendation:** Fix **CR-01** before treating Phase 7 effort fail-closed as complete; address **WR-01**/**WR-02** in the same pass if possible (bg false-started + secret logging).
+**Ship recommendation:** Critical/Warning items fixed. Info (unknown-type preflight, effort menu) optional follow-ups.
+
+See also: `07-REVIEW-FIX.md`.
 
 ---
 
 _Reviewed: 2026-07-17T09:35:48Z_  
+_Fixed: 2026-07-17T09:50:21Z_  
 _Reviewer: Claude (gsd-code-reviewer)_  
+_Fixer: Claude (gsd-code-fixer)_  
 _Depth: standard_  
