@@ -7,7 +7,7 @@ wave_0_complete: false
 created: 2026-07-17
 updated: 2026-07-17
 plans_verified: []
-reviews_cycle: 1
+reviews_cycle: 2
 ---
 
 # Phase 7 — Validation Strategy
@@ -18,15 +18,20 @@ reviews_cycle: 1
 > **fixture tokens only** — no live ChatGPT / xAI OAuth required for CI gates.
 >
 > **Authority:** shell `handle_subagent_request` is the authoritative spawn missing-provider
-> gate (Plan 03), running **before worktree create/rehydrate**. Task eager
-> `TaskProviderCredentialGate` (Plan 04) is **effective-model-aware** (omit-model + role pins),
-> not slug-only, and closes the background "started" UX hole. Dual-direction Authorization
-> isolation via Plan 05 **test seam** is the D-12 bar (both directions mandatory).
+> gate (Plan 03), running **before insert_pending and worktree create/rehydrate**. Task eager
+> preflight (Plan 04) is **required async** `SubagentBackend::preflight_spawn` (coordinator
+> RPC) using the **same live effective-model path** as shell (omit-model inherit via
+> ChatStateHandle + role pins) — **not** a sync slug-only Fn resource (C2-H1).
+> Dual-direction Authorization isolation via Plan 05 **minimal harness**
+> (spawn → one mock sample → capture Authorization/host + parent model → cancel/join) is the
+> D-12 bar (both directions mandatory; not resolve-only).
 >
-> **Green-only protocol (Codex review cycle 1):** Plan 01 lands compile-safe **green**
+> **Green-only protocol (Codex review cycles 1–2):** Plan 01 lands compile-safe **green**
 > scaffolds only — no intentional-red under `p7_`, no `TaskToolInput.reasoning_effort`
 > references before Plan 02 adds the field. Plans 02–05 add green `p7_*` tests with product
 > code. Phase gate claims all green — never “green except expected-red.”
+> **AGENT-05 PASS** requires Plan 04 async eager path green (`p7_eager` + shell
+> `p7_preflight`/`p7_credential_gate`) — not filter names alone (C2-M5).
 >
 > **Scaffold note:** This file is created at plan time (Nyquist Dimension 8e) from RESEARCH
 > Validation Architecture + planned `p7_` filters. Plan 06 **updates** filter names after
@@ -34,9 +39,9 @@ reviews_cycle: 1
 > Exists? column when Plan 01+ contracts land and Plan 06 re-verifies.
 >
 > **Cargo verify hygiene:** one TESTNAME filter per `cargo test`; chain with `&&` only —
-> never `||` that masks a failed cargo. Prefer `-p xai-grok-tools` / `-p xai-grok-shell`
-> with narrow filters. **Forbidden gate:** unfiltered `cargo test -p xai-grok-shell --lib`.
-> Discovery assert ≥1 match before each filtered execute group.
+> never `||` that masks a failed cargo (including `cargo test A || cargo test B`). Prefer
+> `-p xai-grok-tools` / `-p xai-grok-shell` with narrow filters. **Forbidden gate:** unfiltered
+> `cargo test -p xai-grok-shell --lib`. Discovery assert ≥1 match before each filtered execute.
 
 ---
 
@@ -88,8 +93,9 @@ discover() {
 | `cargo test -p xai-grok-tools --lib p7_<filter>` | Live ChatGPT / xAI login as required gate |
 | `cargo test -p xai-grok-shell --test cross_provider_subagent p7_<filter>` | Treating resolve-only key_prefix as sole D-12 proof |
 | `cargo test -p xai-grok-shell --lib p7_<filter>` / named AGENT-01 filters | Unfiltered shell `--lib` as phase gate |
-| In-crate Plan 05 test seam for Authorization | External-only calls to private `resolve_model_override_to_config` |
+| Plan 05 minimal harness: spawn → one sample → cancel/join | Resolve-only / private `resolve_model_override_to_config` as D-12 proof |
 | Mock HTTP Authorization asserts **both directions** (Plan 05) | One-direction Authorization waiver |
+| Plan 04 async `preflight_spawn` (live effective model) | Sync slug-only credential Fn as AGENT-05 solution |
 | Dual-slot fixture tokens | Real secrets in tree or CI |
 | Plan 01 compile-safe green scaffolds | Intentional-red under `p7_` / referencing missing `reasoning_effort` field |
 
@@ -103,7 +109,7 @@ discover() {
 | D-02 | Explicit model catalog-wide | `p7_tool` existing-reject regression + spawn resolve |
 | D-03 | Expose + wire `reasoning_effort` | tools `p7_task_tool_input_schema` / `p7_reasoning_effort` (Plan 02+) |
 | D-04 | Invalid effort reject fail-closed | tools `p7_invalid_reasoning_effort` + shell `p7_invalid_effort` (supported+unsupported fixtures) |
-| D-05 | Spawn-time usable credential check | shell `p7_spawn_missing_provider` (pre-worktree) + tools `p7_eager` |
+| D-05 | Spawn-time usable credential check | shell `p7_spawn_missing_provider` (pre-pending + pre-worktree) + tools `p7_eager` (async preflight_spawn) + shell `p7_preflight`/`p7_credential_gate` |
 | D-06 | No parent bearer/backend fallback | `p7_tool` + isolation / missing |
 | D-07 | Login CLI hint | `bum login --provider` in spawn/eager/missing messages |
 | D-08 | Same-provider no extra friction | `p7_spawn_same_provider` + `p7_same_provider` |
@@ -130,7 +136,7 @@ and greened names from SUMMARYs.
 | AGENT-01 | Resume model pin | 03/06 | shell · `--lib` · `resume_model_pinning` | pass | ✅ existing |
 | AGENT-01 | Roles / personas regression | 06 | shell · `--lib` · `role_default_used` + `persona_resolved` (+ siblings) | pass | ✅ existing |
 | AGENT-01 | Same-provider spawn no extra friction | 01/03/06 | shell · `cross_provider_subagent` · `p7_same_provider` / `p7_spawn_same_provider` | pass | ❌ Plan 01 |
-| AGENT-01 | Same-provider lifecycle spawn/resume (if cheap) | 06 | shell · `--lib` or integration · `p7_same_provider_*` lifecycle | pass | ❌ Plan 06 |
+| AGENT-01 | Same-provider lifecycle spawn/resume (named or cited) | 06 | shell · `--lib` or integration · named `p7_same_provider_*` **or** cited existing lifecycle test | pass | ❌ Plan 06 |
 | AGENT-02 | Cross-provider explicit model resolve | 01/03/05 | shell · seam · `p7_isolation` / resolve path | pass | ❌ Plan 01/05 |
 | AGENT-02 | Tool unknown model existing-reject regression | 01/03 | shell · `cross_provider_subagent` · `p7_tool` | pass | ❌ Plan 01/03 |
 | AGENT-03 | Effort schema on Task | 02 | tools · `--lib` · `p7_task_tool_input_schema` | pass | ❌ Plan 02 (not Plan 01) |
@@ -141,10 +147,10 @@ and greened names from SUMMARYs.
 | AGENT-03 | Effort medium on child config | 05 | shell · seam · `p7_isolation_reasoning_effort` | pass | ❌ Plan 05 |
 | AGENT-04 | Dual-direction child route + **Authorization** isolation | 05 | shell · seam · `p7_isolation_grok_parent_codex` + `p7_isolation_codex_parent_grok` | pass | ❌ Plan 05 |
 | AGENT-04 | Never cross-slot on child seed | 05 | shell · seam · `p7_isolation` | pass | ❌ Plan 05 |
-| AGENT-05 | Shell spawn missing-provider gate **pre-worktree** | 01/03 | shell · `cross_provider_subagent` · `p7_spawn_missing_provider` | pass | ❌ Plan 01/03 |
-| AGENT-05 | No worktree/session on missing provider | 03 | shell · `p7_spawn_missing_provider` (neither worktree nor child) | pass | ❌ Plan 03 |
-| AGENT-05 | Task eager preflight (effective model) before bg started | 04 | tools · `--lib` · `p7_eager` | pass | ❌ Plan 04 |
-| AGENT-05 | Shell injects effective-model TaskProviderCredentialGate | 04 | shell · `--lib` · `p7_credential_gate` | pass | ❌ Plan 04 |
+| AGENT-05 | Shell spawn missing-provider gate **pre-pending + pre-worktree** | 01/03 | shell · `cross_provider_subagent` · `p7_spawn_missing_provider` | pass | ❌ Plan 01/03 |
+| AGENT-05 | No worktree/session/**pending** on missing provider | 03 | shell · `p7_spawn_missing_provider` (no worktree, no pending/active child) | pass | ❌ Plan 03 |
+| AGENT-05 | Task eager **async** preflight before bg started (C2-H1/C2-M5) | 04 | tools · `--lib` · `p7_eager` | pass | ❌ Plan 04 |
+| AGENT-05 | Shell coordinator async preflight (omit-model + role pins) | 04 | shell · `--lib` · `p7_preflight` / `p7_credential_gate` | pass | ❌ Plan 04 |
 | AGENT-05 | Missing slot no wrong-backend request | 05 | shell · seam · `p7_missing` | pass | ❌ Plan 05 |
 | AGENT-06 | Schema exposes model + reasoning_effort | 02 | tools · `--lib` · `p7_task_tool_input_schema` / `p7_reasoning_effort` | pass | ❌ Plan 02 |
 | AGENT-06 | Automated spawn + effort + isolation path | 02/05 | tools + shell filters above | pass | ❌ Plans 02–05 |
@@ -155,13 +161,13 @@ and greened names from SUMMARYs.
 **Tools `xai-grok-tools --lib`:**
 - Plan 01 green scaffolds: `p7_task_model_threads_*`, `p7_reasoning_effort_override_is_none_until_schema_lands`, `p7_task_tool_input_schema_includes_model_property` (no reasoning_effort field ref)
 - Plan 02 product: `p7_task_tool_input_schema_includes_reasoning_effort`, `p7_reasoning_effort_threads_to_runtime_overrides`, `p7_reasoning_effort_max_alias_canonicalizes_to_xhigh`, `p7_invalid_reasoning_effort_rejected_before_spawn`, `p7_omitted_reasoning_effort_stays_none_on_overrides`
-- Plan 04: `p7_eager_missing_provider_rejects_before_background_started`, `p7_eager_missing_provider_allows_when_gate_none`, `p7_eager_omit_model_preflight_uses_effective_parent_model`, `p7_eager_gate_receives_subagent_type_for_role_pins`, `p7_eager_gate_unavailable_resource_policy`
+- Plan 04: `p7_eager_missing_provider_rejects_before_background_started`, `p7_eager_missing_provider_allows_when_preflight_ok`, `p7_eager_omit_model_preflight_forwards_inherit_context`, `p7_eager_preflight_forwards_subagent_type_for_role_pins`, `p7_eager_missing_backend_fail_closed`
 
 **Agent `xai-grok-agent --lib` (Plan 02):**
 - `p7_build_task_description_includes_effort_guidance` (or SUMMARY name under `p7_`)
 
 **Shell `cross_provider_subagent` and/or in-crate seam:**
-- `p7_wave0_harness_smoke_compiles_and_runs` (smoke; green forever)
+- `p7_wave0_harness_smoke_compiles_and_runs` (infrastructure smoke only — **not** routing/Authorization proof; C2-L1)
 - `p7_missing_provider_gate_error_*` / `p7_spawn_missing_provider_*` (pre-worktree)
 - `p7_spawn_same_provider_no_extra_friction_when_parent_usable`
 - `p7_tool_unknown_model_*` (existing-reject regression — not stale fallback rework)
@@ -176,7 +182,7 @@ and greened names from SUMMARYs.
 
 **Shell unit / lib:**
 - `p7_invalid_effort_tool_provenance_fails_closed` (+ supported/unsupported fixtures)
-- `p7_credential_gate_*` / injection + effective-model units (Plan 04)
+- `p7_preflight_*` / `p7_credential_gate_*` async coordinator preflight + omit-model/role-pin units (Plan 04; not sync slug Fn)
 - `p7_provider_slot_usable_*` if pure helper unit-tested (Plan 03)
 - Existing: `reasoning_effort_explicit_overrides_role`, `resume_model_pinning_overrides_default_resolution`
 - Existing roles/personas: `role_default_used_when_no_explicit_override`, `persona_resolved_from_config`
@@ -189,7 +195,7 @@ and greened names from SUMMARYs.
 | 2. Spawn child on different provider | Plans 03 + 05: `p7_spawn_missing_provider` (usable path) + `p7_isolation` both dirs |
 | 3. Effort on launch | Plans 02 + 03: tools `p7_reasoning_effort` / canonical max + shell `p7_invalid_effort` + isolation effort |
 | 4. Child model→provider→creds→backend | Plans 03 + 05: pre-worktree gate + **mock HTTP Authorization** dual-direction via test seam |
-| 5. NL orchestration + fail-closed login | Plans 02 + 04 + 05: schema/docs + effective-model `p7_eager` + `p7_missing` / spawn gate (automated path only) |
+| 5. NL orchestration + fail-closed login | Plans 02 + 04 + 05: schema/docs + **async** effective-model `p7_eager` / shell preflight + `p7_missing` / spawn gate (automated path only) |
 
 ### Explicit exclusions
 
