@@ -290,12 +290,12 @@ Open Grok Build | Grok Build TUI | Thanks for using Grok
 
 ### Plan 06 greened residual + regressions
 
-| Check | Command |
-|-------|---------|
-| Residual inventory (C1-H1) | See `08-PHASE-GATE.md` residual section |
-| Model brand (D-02) | `cargo test -p xai-grok-pager --test dynamic_enum_model_names -- --nocapture` |
-| home_isolation | `cargo test -p xai-grok-pager-bin --test home_isolation -- --nocapture` |
-| Full gate | `bash` sequence in `08-PHASE-GATE.md` |
+| Check | Command | Result |
+|-------|---------|--------|
+| Residual inventory (C1-H1) | See `08-PHASE-GATE.md` residual section | ✅ GREEN `2026-07-17T11:52:03Z` — 7/7 surfaces clean |
+| Model brand (D-02) | `cargo test -p xai-grok-pager --test dynamic_enum_model_names -- --nocapture` | ✅ 2 passed (catalog still `Grok Build (xAI)` / provider suffixes) |
+| home_isolation | `cargo test -p xai-grok-pager-bin --test home_isolation -- --nocapture` | ✅ `hermetic_temp_home_writes_only_under_bum_home` |
+| Full gate | `bash` sequence in `08-PHASE-GATE.md` | ✅ GREEN — all subgroups discover≥1 + execute; unconditional `p8_sentry` + `p8_internal_otel` |
 
 ---
 
