@@ -4,17 +4,17 @@ milestone: v1.0
 milestone_name: milestone
 current_phase: 8
 current_phase_name: Quiet fork & rebrand polish
-current_plan: 2
+current_plan: 3
 status: executing
-stopped_at: Completed 08-01-PLAN.md
-last_updated: "2026-07-17T10:47:05.163Z"
+stopped_at: Completed 08-02-PLAN.md
+last_updated: "2026-07-17T11:00:04.825Z"
 last_activity: 2026-07-17
-last_activity_desc: "Completed 08-01-PLAN.md (p8_ green harness)"
+last_activity_desc: Completed 08-01-PLAN.md (p8_ green harness + VALIDATION)
 progress:
-  total_phases: 9
-  completed_phases: 7
-  total_plans: 41
-  completed_plans: 36
+  total_phases: 8
+  completed_phases: 6
+  total_plans: 43
+  completed_plans: 37
 ---
 
 # Project State
@@ -29,13 +29,13 @@ See: .planning/PROJECT.md (updated 2026-07-17)
 ## Current Position
 
 Phase: 8 of 9 (Quiet fork & rebrand polish)
-Plan: 2 of 6
+Plan: 3 of 6
 Status: In progress — Plan 01 complete
 Last activity: 2026-07-17 — Completed 08-01-PLAN.md (p8_ green harness + VALIDATION)
-Current Plan: 2
+Current Plan: 3
 Total Plans in Phase: 6
 
-Progress: [████████░░] 84% (36/41 plans; 7/9 phases complete)
+Progress: [█████████░] 86% (36/41 plans; 7/9 phases complete)
 
 ## Performance Metrics
 
@@ -78,6 +78,7 @@ Progress: [████████░░] 84% (36/41 plans; 7/9 phases complete
 | Phase 07 P05 | 10min | 2 tasks | 3 files |
 | Phase 07 P06 | 4min | 2 tasks | 2 files |
 | Phase 08 P01 | 15min | 2 tasks | 3 files |
+| Phase 08 P02 | 11min | 3 tasks | 14 files |
 
 ## Decisions
 
@@ -115,9 +116,12 @@ Progress: [████████░░] 84% (36/41 plans; 7/9 phases complete
 - [Phase ?]: Plan 06: no product code — Plans 01-05 greened all p7_ filters; VALIDATION nyquist_compliant
 - [Phase 8]: Plan 01: green p8_ scaffolds only; no product chrome asserts (clap still grok until Plan 02)
 - [Phase 8]: OPS-02 telemetry default Disabled locked green under p8_telemetry; remote restrictive deferred to Plan 05
+- [Phase ?]: Hero Full/HeroInline product span is bum with trailing spacer; stock Beta marketing omitted (D-14)
+- [Phase ?]: Billing keeps SuperGrok + grok.com host; only product Grok Build → bum
+- [Phase ?]: pager-minimal welcome rebranded with PTY expectations for ID-02 consistency
 
 ## Session
 
-**Last session:** 2026-07-17T10:47:05.155Z
-**Stopped at:** Completed 08-01-PLAN.md
+**Last session:** 2026-07-17T11:00:04.816Z
+**Stopped at:** Completed 08-02-PLAN.md
 **Resume file:** None

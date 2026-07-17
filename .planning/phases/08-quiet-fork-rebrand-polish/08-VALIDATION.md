@@ -6,7 +6,7 @@ nyquist_compliant: false
 wave_0_complete: false
 created: 2026-07-17
 updated: 2026-07-17
-plans_verified: [01]
+plans_verified: [01, 02]
 ---
 
 # Phase 8 — Validation Strategy
@@ -97,10 +97,10 @@ discover() {
 
 | Req ID | Behavior | Test Type | Planned filter / command | Exists? | Owning plan |
 |--------|----------|-----------|--------------------------|---------|-------------|
-| ID-02 | clap `name`/`about` present as bum | unit | `p8_cli_brand` / `p8_clap` | ❌ product Plan 02 | 02 |
-| ID-02 | hero badge / subtitle “bum” | unit | `p8_welcome` / `p8_hero` | ❌ product Plan 02 | 02 |
-| ID-02 | project picker product copy | unit | `p8_project_picker` | ❌ | 02 |
-| ID-02 | headless + plugin_cmd residual CLI instruct bum | unit | `p8_runtime_cli` | ❌ | 02 |
+| ID-02 | clap `name`/`about` present as bum | unit | `p8_cli_brand` | ✅ Plan 02 green | 02 |
+| ID-02 | hero badge / subtitle “bum” | unit | `p8_welcome` | ✅ Plan 02 green | 02 |
+| ID-02 | project picker product copy | unit | `p8_project_picker` | ✅ Plan 02 green | 02 |
+| ID-02 | headless + plugin_cmd residual CLI instruct bum | unit | `p8_runtime_cli` | ✅ Plan 02 green | 02 |
 | ID-02 | OAuth return “return to bum” | unit | `p8_oauth_return` | ❌ | 03 |
 | ID-02 | shell auth/device/mcp/plugin residual CLI instruct bum | unit | `p8_shell_runtime_cli` | ❌ | 03 |
 | ID-02 | pager-bin / minimal banner “bum” + crash/server residual | unit/e2e | `p8_bin_` / `p8_minimal_welcome` | ❌ | 03 |
@@ -205,7 +205,8 @@ discover() {
 ## Wave gaps (close during execute)
 
 - [x] Plan 01: green `p8_` scaffolds — shell `p8_telemetry` (OPS-02 default Disabled), pager `p8_wave1` discovery smoke, model catalog + `home_isolation` re-verify. **No product chrome / OPS hard-off asserts yet** (stock clap still `name=grok`; product filters remain Plans 02–05).
-- [ ] Plan 02–03: product chrome + residual runtime CLI greened filters (`p8_cli_brand`, `p8_welcome`, picker/OAuth/banner, `p8_runtime_cli`, `p8_shell_runtime_cli`)
+- [x] Plan 02: pager TUI product chrome + residual CLI greened (`p8_cli_brand`, `p8_welcome`, `p8_project_picker`, `p8_runtime_cli`, `p8_billing`); model catalog regression green. Plan 03 still owns OAuth/shell residual + bin/minimal filters.
+- [ ] Plan 03: OAuth return + shell residual + pager-bin/minimal greened filters (`p8_oauth_return`, `p8_shell_runtime_cli`, `p8_bin_`, `p8_minimal_welcome`)
 - [ ] Plan 04: auto-update / min-version / settings / `p8_update_no_network` greened filters
 - [ ] Plan 05: feedback + remote restrictive + OTLP + sentry greened filters
 - [ ] Plan 06: `nyquist_compliant: true`, `wave_0_complete: true`, PHASE-GATE doc + residual greps
@@ -219,11 +220,20 @@ discover() {
 | `xai-grok-pager` | model brand regression | `cargo test -p xai-grok-pager --test dynamic_enum_model_names -- --nocapture` |
 | `xai-grok-pager-bin` | `home_isolation` | `cargo test -p xai-grok-pager-bin --test home_isolation -- --nocapture` |
 
-### Plan 02–05 planned green product filter names (inventory only — do not land failing tests in Plan 01)
+### Plan 02 greened filters (discover+execute)
+
+| Crate | Filter | Command |
+|-------|--------|---------|
+| `xai-grok-pager` | `p8_cli_brand` | `cargo test -p xai-grok-pager --lib p8_cli_brand -- --nocapture` |
+| `xai-grok-pager` | `p8_welcome` | `cargo test -p xai-grok-pager --lib p8_welcome -- --nocapture` |
+| `xai-grok-pager` | `p8_` (incl. project_picker / runtime_cli / billing) | `cargo test -p xai-grok-pager --lib p8_ -- --nocapture` |
+| `xai-grok-pager` | `billing` product string asserts | `cargo test -p xai-grok-pager --lib billing -- --nocapture` |
+| `xai-grok-pager` | model brand regression (D-02) | `cargo test -p xai-grok-pager --test dynamic_enum_model_names -- --nocapture` |
+
+### Plan 03–05 planned green product filter names (inventory only)
 
 | Plan | Filters to add green with product code |
 |------|----------------------------------------|
-| 02 | `p8_cli_brand`, `p8_welcome` / `p8_hero`, `p8_project_picker`, `p8_runtime_cli` |
 | 03 | `p8_oauth_return`, `p8_shell_runtime_cli`, `p8_bin_`, `p8_minimal_welcome` |
 | 04 | `p8_no_auto_update` / `p8_should_check`, `p8_auto_update_default`, `p8_min_version`, `p8_update_cmd`, `p8_update_no_network`, `p8_settings_auto_update` |
 | 05 | `p8_feedback` (+ default / remote / force), `p8_telemetry` remote restrictive, `p8_internal_otel`, `p8_sentry` |
