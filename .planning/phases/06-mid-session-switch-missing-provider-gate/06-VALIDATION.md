@@ -223,10 +223,10 @@ Filters below match greened names from `06-01`…`06-05` SUMMARYs (2026-07-16/17
 | `p6_byok` | `--test model_switch_gate` | OAuth-slot skip |
 | `p6_history` | `--test model_switch_gate` | D-06 history preserve |
 | `p6_mid_turn` | `--test model_switch_gate` | D-06 mid-turn non-cancel |
-| `p6_model_switch_missing_provider` | unit/lib (default) | typed error ACP |
+| `p6_model_switch_missing_provider` | `--lib` (not bare package list) | typed error ACP |
 | `switch_changes_next_sample_route` | `--test provider_routing` | pure routing; no p6_ required |
 
-### Pager
+### Pager (`--lib` target for every row)
 
 | Subgroup filter | Notes |
 |-----------------|-------|
@@ -269,27 +269,30 @@ discover xai-grok-shell p6_same_provider --test model_switch_gate
 discover xai-grok-shell p6_byok --test model_switch_gate
 discover xai-grok-shell p6_history --test model_switch_gate
 discover xai-grok-shell p6_mid_turn --test model_switch_gate
-discover xai-grok-shell p6_model_switch_missing_provider
+# --lib: bare package --list fails on unrelated signed_managed_config* compile
+discover xai-grok-shell p6_model_switch_missing_provider --lib
 cargo test -p xai-grok-shell --test provider_routing switch_changes_next_sample_route -- --nocapture
 
-# --- Pager ---
-discover xai-grok-pager p6_missing_provider
-discover xai-grok-pager p6_transactional_default
-discover xai-grok-pager p6_keep_current
-discover xai-grok-pager p6_login_now
-discover xai-grok-pager p6_deferred
-discover xai-grok-pager p6_auth_
-discover xai-grok-pager p6_external_cli
-discover xai-grok-pager p6_focus_gained
-discover xai-grok-pager p6_refresh_generation
-discover xai-grok-pager p6_needs_login
-discover xai-grok-pager p6_provider_auth
-discover xai-grok-pager p6_refresh
-cargo test -p xai-grok-pager incompatible_agent -- --nocapture
+# --- Pager (--lib: bare package --list fails on pre-existing settings_e2e syntax error) ---
+discover xai-grok-pager p6_missing_provider --lib
+discover xai-grok-pager p6_transactional_default --lib
+discover xai-grok-pager p6_keep_current --lib
+discover xai-grok-pager p6_login_now --lib
+discover xai-grok-pager p6_deferred --lib
+discover xai-grok-pager p6_auth_ --lib
+discover xai-grok-pager p6_external_cli --lib
+discover xai-grok-pager p6_focus_gained --lib
+discover xai-grok-pager p6_refresh_generation --lib
+discover xai-grok-pager p6_needs_login --lib
+discover xai-grok-pager p6_provider_auth --lib
+discover xai-grok-pager p6_refresh --lib
+discover xai-grok-pager incompatible_agent --lib
 ```
 
 > Do **not** use bare filters that already match unrelated tests as the only Phase 6 proof
 > (`auth_complete`, bare `needs_login` without `p6_`, `deferred_model_switch`).
+>
+> **Pass record:** see `06-PHASE-GATE.md` (`gate_passed: 2026-07-17T00:17:46Z`, all subgroups green).
 
 ---
 
