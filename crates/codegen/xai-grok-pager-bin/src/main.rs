@@ -1215,7 +1215,10 @@ async fn run_agent_command(
                         let uc = update_config_for_leader.clone();
                         Box::pin(async move {
                             let current_config = xai_grok_shell::util::config::load_config().await;
-                            if current_config.cli.auto_update == Some(false) {
+                            // Quiet fork (OPS-01 / D-07): None → off (not stock unwrap_or(true)).
+                            if !auto_update::effective_auto_update_enabled(
+                                current_config.cli.auto_update,
+                            ) {
                                 return false;
                             }
                             match auto_update::ensure_latest_on_disk(&uc).await {
