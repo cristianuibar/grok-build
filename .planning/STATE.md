@@ -4,17 +4,17 @@ milestone: v1.0
 milestone_name: milestone
 current_phase: 7
 current_phase_name: Cross-provider multi-agent orchestration
-current_plan: 3
+current_plan: 4
 status: in_progress
-stopped_at: Completed 07-02-PLAN.md
-last_updated: "2026-07-17T08:31:07.311Z"
+stopped_at: Completed 07-03-PLAN.md
+last_updated: "2026-07-17T08:57:31.409Z"
 last_activity: 2026-07-17
 last_activity_desc: Completed 07-01-PLAN.md (p7_ tools + shell scaffold)
 progress:
   total_phases: 7
   completed_phases: 6
   total_plans: 36
-  completed_plans: 31
+  completed_plans: 32
 ---
 
 # Project State
@@ -29,13 +29,13 @@ See: .planning/PROJECT.md (updated 2026-07-16)
 ## Current Position
 
 Phase: 7 of 9 (Cross-provider multi-agent orchestration)
-Plan: 3 of 6
+Plan: 4 of 6
 Status: In progress — Plan 01 complete (wave 1 p7_ green harness)
 Last activity: 2026-07-17 — Completed 07-01-PLAN.md (p7_ tools + shell scaffold)
-Current Plan: 3
+Current Plan: 4
 Total Plans in Phase: 6
 
-Progress: [█████████░] 86% (30/36 plans)
+Progress: [█████████░] 89% (30/36 plans)
 
 ## Performance Metrics
 
@@ -69,6 +69,7 @@ Progress: [█████████░] 86% (30/36 plans)
 | Phase 06 P06 | 25min | 2 tasks | 3 files |
 | Phase 07 P01 | 8min | 2 tasks | 3 files |
 | Phase 07 P02 | 5min | 2 tasks | 3 files |
+| Phase 07 P03 | 32min | 2 tasks | 8 files |
 
 ## Decisions
 
@@ -91,9 +92,12 @@ Progress: [█████████░] 86% (30/36 plans)
 - [Phase 7]: Plan 01 scaffold does not mark AGENT-01..06 complete (product proofs in Plans 02–06)
 - [Phase ?]: Plan 02: Task effort parse uses local allowlist (tools↔sampling-types cycle); store canonical max→xhigh
 - [Phase ?]: Plan 02: Preserve none/minimal on Task effort sanitize; NL effort guidance via task_effort_guidance
+- [Phase ?]: Plan 03: authoritative missing-provider spawn gate before insert_pending/worktree in handle_subagent_request
+- [Phase ?]: Plan 03: pure oauth_provider_slot_usable(auth_path, provider, live_xai) shared by model_switch and subagent
+- [Phase ?]: Plan 03: Tool reasoning_effort hard-fail on parse/unsupported; Harness soft-skip
 
 ## Session
 
-**Last session:** 2026-07-17T08:31:07.300Z
-**Stopped at:** Completed 07-02-PLAN.md
+**Last session:** 2026-07-17T08:57:31.401Z
+**Stopped at:** Completed 07-03-PLAN.md
 **Resume file:** None
