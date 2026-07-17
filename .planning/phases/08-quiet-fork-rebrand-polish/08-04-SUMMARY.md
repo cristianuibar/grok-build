@@ -142,7 +142,7 @@ status: complete
 2. **Task 2: Update crate defaults false + min-version no-op + product printers** - `25fa072` (feat)
 3. **Task 3: Settings registry default false + description + e2e flip** - `e46f5f5` (feat)
 
-**Plan metadata:** _(pending docs commit)_
+**Plan metadata:** `8bdfeca` (docs: complete plan)
 
 ## Files Created/Modified
 
