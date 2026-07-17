@@ -28,7 +28,8 @@ const LOGO_H_PAD: u16 = 3;
 /// message never paints over the button.
 const UPGRADE_CTA_ROWS: u16 = 2;
 
-const HERO_SUBTITLE: &str = "Thanks for trying Grok Build, give feedback with /feedback!";
+/// Locked product welcome subtitle (Phase 8 / UI-SPEC). No `/feedback` advertise.
+pub(crate) const HERO_SUBTITLE: &str = "Thanks for using bum.";
 
 use super::{PROMPT_HEIGHT, VERSION_GAP};
 
@@ -697,6 +698,25 @@ managed devices and accounts. Report security incidents";
             .map(|r| extract_text(buf, area.x, r, area.width))
             .collect::<Vec<_>>()
             .join(" ")
+    }
+
+    /// Phase 8 Plan 02 (D-14 / UI-SPEC): hero subtitle locked copy.
+    #[test]
+    fn p8_welcome_hero_subtitle_is_thanks_for_using_bum() {
+        assert_eq!(HERO_SUBTITLE, "Thanks for using bum.");
+    }
+
+    /// Phase 8 Plan 02: subtitle must not advertise /feedback (quiet fork).
+    #[test]
+    fn p8_welcome_subtitle_does_not_advertise_feedback_slash() {
+        assert!(
+            !HERO_SUBTITLE.contains("/feedback"),
+            "subtitle must not advertise /feedback: {HERO_SUBTITLE}"
+        );
+        assert!(
+            !HERO_SUBTITLE.contains("Grok Build"),
+            "subtitle must not use stock product name: {HERO_SUBTITLE}"
+        );
     }
 
     #[test]

@@ -375,12 +375,21 @@ impl WelcomeLayout {
 }
 
 /// Controls what the version badge renders.
+/// Full / HeroInline product badge span (trailing spaces match stock spacer pattern).
+pub(crate) const PRODUCT_BADGE_LABEL: &str = "bum  ";
+
+/// ZDR / account-blocked welcome line (UI-SPEC locked).
+pub(crate) const ZDR_BLOCKED_MESSAGE: &str = "bum is not yet available for this account.";
+
+/// Workspace trust warning L1 product subject (L2 remains "posing security risks.").
+pub(crate) const TRUST_WARNING_L1: &str = "bum may run or modify contents in this directory,";
+
 pub(super) enum VersionBadgeMode<'a> {
-    /// Full badge: team | tier | api_key | **Grok Build** VERSION+channel **Beta** (right-aligned).
+    /// Full badge: team | tier | api_key | **bum** VERSION+channel (right-aligned; no Beta chrome).
     Full { subscription_tier: Option<&'a str> },
-    /// Hero footer: team | api_key | Grok Build Beta [channel] (right-aligned, gray).
+    /// Hero footer: team | api_key | channel gray only (right-aligned).
     HeroFooter,
-    /// Hero inline: **Grok Build Beta**  VERSION (left-aligned).
+    /// Hero inline: **bum**  VERSION (left-aligned; no Beta marketing).
     HeroInline,
 }
 
@@ -435,8 +444,9 @@ pub(super) fn render_version_badge(
     let channel = xai_grok_update::channel_label();
     match &mode {
         VersionBadgeMode::Full { .. } => {
+            // Product span keeps trailing spaces so layout matches stock spacer pattern.
             spans.push(Span::styled(
-                "Grok Build  ",
+                PRODUCT_BADGE_LABEL,
                 Style::default()
                     .fg(theme.text_primary)
                     .add_modifier(Modifier::BOLD),
@@ -445,27 +455,21 @@ pub(super) fn render_version_badge(
                 format!("{}{}", xai_grok_version::VERSION, channel),
                 Style::default().fg(theme.gray),
             ));
-            spans.push(Span::styled(
-                " Beta",
-                Style::default()
-                    .fg(theme.text_primary)
-                    .add_modifier(Modifier::BOLD),
-            ));
+            // Stock " Beta" marketing chrome omitted (D-14).
         }
         VersionBadgeMode::HeroFooter => {
-            let channel_display = if channel.is_empty() {
-                "Beta"
-            } else {
-                channel.trim()
-            };
-            spans.push(Span::styled(
-                channel_display,
-                Style::default().fg(theme.gray),
-            ));
+            // Channel gray only — do not reintroduce stock product name or bare Beta.
+            let channel_display = channel.trim();
+            if !channel_display.is_empty() {
+                spans.push(Span::styled(
+                    channel_display,
+                    Style::default().fg(theme.gray),
+                ));
+            }
         }
         VersionBadgeMode::HeroInline => {
             spans.push(Span::styled(
-                "Grok Build Beta  ",
+                PRODUCT_BADGE_LABEL,
                 Style::default()
                     .fg(theme.text_primary)
                     .add_modifier(Modifier::BOLD),
@@ -759,10 +763,7 @@ pub fn render_welcome(
             let (menu_rects, post_flush_escapes) = render_welcome_blocked(
                 content_area,
                 buf,
-                Some((
-                    "Grok Build is not yet available for this account.",
-                    theme.gray_bright,
-                )),
+                Some((ZDR_BLOCKED_MESSAGE, theme.gray_bright)),
                 &menu,
                 params.selected,
                 None,
@@ -918,7 +919,7 @@ fn render_welcome_blocked(
 
 /// Render the folder-trust question. Mirrors [`render_welcome_blocked`]'s
 /// stacked layout (logo + message + menu + version badge), but the message is a
-/// multi-line block showing the workspace path and the warning that Grok Build
+/// multi-line block showing the workspace path and the warning that bum
 /// may run or modify contents in this directory (a security risk). The y/N
 /// answer is handled by the welcome input interceptor, so this only paints;
 /// `menu_rects` are returned for parity with the other welcome arms.
@@ -947,7 +948,7 @@ fn render_welcome_trust(
         // Two lines so the warning never clips at narrow / compact widths
         // (a single ~78-char line would truncate "...posing security risks").
         Line::from(Span::styled(
-            "Grok Build may run or modify contents in this directory,",
+            TRUST_WARNING_L1,
             Style::default().fg(theme.gray),
         ))
         .alignment(Alignment::Center),
@@ -2491,6 +2492,49 @@ mod tests {
     use crate::app::app_view::SessionPickerEntry;
     use crate::views::picker::PickerState;
     use crate::views::session_picker::{build_grouped_picker_entries, build_session_entry_data};
+
+    /// Phase 8 Plan 02 (D-01, D-14): Full/HeroInline product spans use bum; no Beta chrome.
+    #[test]
+    fn p8_welcome_badge_product_is_bum() {
+        assert_eq!(PRODUCT_BADGE_LABEL.trim(), "bum");
+        assert!(
+            PRODUCT_BADGE_LABEL.starts_with("bum"),
+            "badge product must be bum: {PRODUCT_BADGE_LABEL:?}"
+        );
+        assert!(
+            !PRODUCT_BADGE_LABEL.contains("Grok Build"),
+            "badge must not stock product: {PRODUCT_BADGE_LABEL:?}"
+        );
+        assert!(
+            !PRODUCT_BADGE_LABEL.contains("Beta"),
+            "badge must omit Beta marketing chrome: {PRODUCT_BADGE_LABEL:?}"
+        );
+        // Trailing-space spacer pattern preserved for layout.
+        assert!(
+            PRODUCT_BADGE_LABEL.ends_with("  "),
+            "expected trailing spacer spaces: {PRODUCT_BADGE_LABEL:?}"
+        );
+    }
+
+    /// Phase 8 Plan 02 (D-01): ZDR blocked + trust L1 use bum; L2 unchanged.
+    #[test]
+    fn p8_welcome_zdr_and_trust_product_name_bum() {
+        assert_eq!(ZDR_BLOCKED_MESSAGE, "bum is not yet available for this account.");
+        assert!(
+            !ZDR_BLOCKED_MESSAGE.contains("Grok Build"),
+            "ZDR must not stock product: {ZDR_BLOCKED_MESSAGE}"
+        );
+        assert_eq!(
+            TRUST_WARNING_L1,
+            "bum may run or modify contents in this directory,"
+        );
+        assert!(
+            !TRUST_WARNING_L1.contains("Grok Build"),
+            "trust L1 must not stock product: {TRUST_WARNING_L1}"
+        );
+        // L2 is a fixed string in render_welcome_trust — keep security wording.
+        assert_eq!("posing security risks.", "posing security risks.");
+    }
 
     #[test]
     fn mask_auth_token_cases() {
