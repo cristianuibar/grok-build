@@ -107,7 +107,7 @@ status: complete
 1. **Task 1: GREEN scaffold — p8_telemetry + VALIDATION** - `60cde69` (test)
 2. **Task 2: GREEN scaffold — pager p8_ wave1 + baselines** - `78eeb98` (test)
 
-**Plan metadata:** (pending docs commit)
+**Plan metadata:** `291834f` (docs: complete plan)
 
 ## Files Created/Modified
 
