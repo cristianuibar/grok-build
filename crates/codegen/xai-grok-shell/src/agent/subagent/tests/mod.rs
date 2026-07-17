@@ -3301,6 +3301,435 @@ fn p7_tool_unknown_model_rejected_by_existing_task_model_override_error() {
         "Harness provenance keeps soft fallback; only Tool rejects"
     );
 }
+
+fn p7_write_auth_json(path: &std::path::Path, xai: bool, codex: bool) {
+    use crate::auth::{AuthMode, AuthStore, GrokAuth, PROVIDER_CODEX, PROVIDER_XAI};
+    let mut providers = serde_json::Map::new();
+    if xai {
+        let mut store = AuthStore::new();
+        store.insert(
+            "xai::t".into(),
+            GrokAuth {
+                key: "xai-fake-token-p7-lib".into(),
+                auth_mode: AuthMode::Oidc,
+                create_time: chrono::Utc::now(),
+                user_id: "u".into(),
+                expires_at: Some(chrono::Utc::now() + chrono::Duration::hours(1)),
+                refresh_token: Some("rt".into()),
+                ..Default::default()
+            },
+        );
+        providers.insert(PROVIDER_XAI.to_string(), serde_json::to_value(store).unwrap());
+    }
+    if codex {
+        let mut store = AuthStore::new();
+        store.insert(
+            "codex::t".into(),
+            GrokAuth {
+                key: "codex-fake-token-p7-lib".into(),
+                auth_mode: AuthMode::Oidc,
+                create_time: chrono::Utc::now(),
+                user_id: "u".into(),
+                expires_at: Some(chrono::Utc::now() + chrono::Duration::hours(1)),
+                refresh_token: Some("rt".into()),
+                ..Default::default()
+            },
+        );
+        providers.insert(
+            PROVIDER_CODEX.to_string(),
+            serde_json::to_value(store).unwrap(),
+        );
+    }
+    let doc = serde_json::json!({ "version": 1, "providers": providers });
+    std::fs::write(path, serde_json::to_vec_pretty(&doc).unwrap()).unwrap();
+}
+
+fn p7_ctx_with_models_and_auth(
+    models: indexmap::IndexMap<String, crate::agent::config::ModelEntry>,
+    auth_path: std::path::PathBuf,
+    parent_model: &str,
+) -> SubagentSpawnContext {
+    let mut ctx = ctx_with_toggle(std::collections::HashMap::new());
+    ctx.available_models = models.clone();
+    ctx.models_manager = crate::agent::models::ModelsManager::new(
+        None,
+        models,
+        acp::ModelId::new(parent_model),
+        ctx.auth_manager.clone(),
+        crate::agent::config::Config::default(),
+    );
+    ctx.model_id = acp::ModelId::new(parent_model);
+    ctx.sampling_config.model = parent_model.to_string();
+    ctx.auth_json_path_override = Some(auth_path);
+    ctx
+}
+
+/// Production spawn path: missing Codex slot fails closed before insert_pending.
+#[tokio::test]
+async fn p7_spawn_missing_provider_gate_blocks_codex_child_when_codex_slot_empty() {
+    use crate::agent::config::ModelProvider;
+    use crate::test_support::lsp_runtime::test_gateway;
+    use xai_grok_tools::implementations::grok_build::task::types::SubagentRuntimeOverrides;
+
+    let dir = tempfile::TempDir::new().unwrap();
+    let auth_path = dir.path().join("auth.json");
+    p7_write_auth_json(&auth_path, true, false); // xAI only
+
+    let mut models = indexmap::IndexMap::new();
+    let mut codex = test_model_entry("gpt-5.6-sol");
+    codex.info.provider = ModelProvider::Codex;
+    models.insert("gpt-5.6-sol".to_string(), codex);
+    models.insert("grok-build".to_string(), test_model_entry("grok-build"));
+
+    let ctx = p7_ctx_with_models_and_auth(models, auth_path, "grok-build");
+    let coordinator = std::cell::RefCell::new(SubagentCoordinator::new());
+    let gateway = test_gateway();
+    let (mut request, result_rx) = make_request("explore");
+    request.runtime_overrides = SubagentRuntimeOverrides {
+        model: Some("gpt-5.6-sol".into()),
+        model_override_provenance: ModelOverrideProvenance::Tool,
+        isolation: Some(xai_tool_types::SubagentIsolationMode::Worktree),
+        ..Default::default()
+    };
+    let subagent_id = request.id.clone();
+    let local = tokio::task::LocalSet::new();
+    local
+        .run_until(async {
+            Box::pin(handle_subagent_request(request, ctx, &coordinator, &gateway)).await;
+        })
+        .await;
+    let result = result_rx.await.expect("result");
+    assert!(!result.success, "missing Codex must fail closed");
+    let err = result.error.as_deref().unwrap_or("");
+    assert!(
+        err.contains("spawn subagent") && err.contains("bum login --provider codex"),
+        "login-shaped spawn error, got: {err}"
+    );
+    assert!(
+        !coordinator.borrow().is_active_or_pending(&subagent_id),
+        "gate failure must leave no pending/active entry"
+    );
+}
+
+/// Usable Codex slot: missing-provider gate does not block (may fail later on spawn).
+#[tokio::test]
+async fn p7_spawn_missing_provider_allows_when_slot_usable() {
+    use crate::agent::config::ModelProvider;
+    use crate::test_support::lsp_runtime::test_gateway;
+    use xai_grok_tools::implementations::grok_build::task::types::SubagentRuntimeOverrides;
+
+    let dir = tempfile::TempDir::new().unwrap();
+    let auth_path = dir.path().join("auth.json");
+    p7_write_auth_json(&auth_path, true, true);
+
+    let mut models = indexmap::IndexMap::new();
+    let mut codex = test_model_entry("gpt-5.6-sol");
+    codex.info.provider = ModelProvider::Codex;
+    models.insert("gpt-5.6-sol".to_string(), codex);
+    models.insert("grok-build".to_string(), test_model_entry("grok-build"));
+
+    let ctx = p7_ctx_with_models_and_auth(models, auth_path, "grok-build");
+    let coordinator = std::cell::RefCell::new(SubagentCoordinator::new());
+    let gateway = test_gateway();
+    let (mut request, result_rx) = make_request("explore");
+    request.runtime_overrides = SubagentRuntimeOverrides {
+        model: Some("gpt-5.6-sol".into()),
+        model_override_provenance: ModelOverrideProvenance::Tool,
+        ..Default::default()
+    };
+    let local = tokio::task::LocalSet::new();
+    local
+        .run_until(async {
+            Box::pin(handle_subagent_request(request, ctx, &coordinator, &gateway)).await;
+        })
+        .await;
+    let result = result_rx.await.expect("result");
+    let err = result.error.as_deref().unwrap_or("");
+    assert!(
+        !err.contains("bum login --provider")
+            && !err.contains("Cannot spawn subagent with model"),
+        "usable slot must not produce missing-provider failure: {err}"
+    );
+}
+
+/// Same-provider (xAI child while parent xAI usable): no missing-provider friction.
+#[tokio::test]
+async fn p7_spawn_same_provider_no_extra_friction_when_parent_usable() {
+    use crate::agent::config::ModelProvider;
+    use crate::test_support::lsp_runtime::test_gateway;
+    use xai_grok_tools::implementations::grok_build::task::types::SubagentRuntimeOverrides;
+
+    let dir = tempfile::TempDir::new().unwrap();
+    let auth_path = dir.path().join("auth.json");
+    p7_write_auth_json(&auth_path, true, false);
+
+    let mut models = indexmap::IndexMap::new();
+    let mut xai = test_model_entry("grok-build");
+    xai.info.provider = ModelProvider::Xai;
+    models.insert("grok-build".to_string(), xai);
+
+    let ctx = p7_ctx_with_models_and_auth(models, auth_path, "grok-build");
+    let coordinator = std::cell::RefCell::new(SubagentCoordinator::new());
+    let gateway = test_gateway();
+    let (mut request, result_rx) = make_request("explore");
+    request.runtime_overrides = SubagentRuntimeOverrides {
+        model: Some("grok-build".into()),
+        model_override_provenance: ModelOverrideProvenance::Tool,
+        ..Default::default()
+    };
+    let local = tokio::task::LocalSet::new();
+    local
+        .run_until(async {
+            Box::pin(handle_subagent_request(request, ctx, &coordinator, &gateway)).await;
+        })
+        .await;
+    let result = result_rx.await.expect("result");
+    let err = result.error.as_deref().unwrap_or("");
+    assert!(
+        !err.contains("bum login --provider")
+            && !err.contains("Cannot spawn subagent with model"),
+        "same-provider usable must not hit missing-provider gate: {err}"
+    );
+}
+
+/// C2-M2: missing provider → no pending/active and no worktree create for this id.
+#[tokio::test]
+async fn p7_spawn_missing_provider_leaves_no_pending_or_active_child() {
+    use crate::agent::config::ModelProvider;
+    use crate::test_support::lsp_runtime::test_gateway;
+    use xai_grok_tools::implementations::grok_build::task::types::SubagentRuntimeOverrides;
+
+    let dir = tempfile::TempDir::new().unwrap();
+    let auth_path = dir.path().join("auth.json");
+    p7_write_auth_json(&auth_path, true, false);
+
+    let mut models = indexmap::IndexMap::new();
+    let mut codex = test_model_entry("gpt-5.6-sol");
+    codex.info.provider = ModelProvider::Codex;
+    models.insert("gpt-5.6-sol".to_string(), codex);
+    models.insert("grok-build".to_string(), test_model_entry("grok-build"));
+
+    let ctx = p7_ctx_with_models_and_auth(models, auth_path, "grok-build");
+    let coordinator = std::cell::RefCell::new(SubagentCoordinator::new());
+    let gateway = test_gateway();
+    let (mut request, result_rx) = make_request("explore");
+    request.runtime_overrides = SubagentRuntimeOverrides {
+        model: Some("gpt-5.6-sol".into()),
+        model_override_provenance: ModelOverrideProvenance::Tool,
+        isolation: Some(xai_tool_types::SubagentIsolationMode::Worktree),
+        ..Default::default()
+    };
+    let subagent_id = request.id.clone();
+    let expected_wt = std::env::temp_dir()
+        .join("grok-subagent-worktrees")
+        .join(&subagent_id);
+    let local = tokio::task::LocalSet::new();
+    local
+        .run_until(async {
+            Box::pin(handle_subagent_request(request, ctx, &coordinator, &gateway)).await;
+        })
+        .await;
+    let result = result_rx.await.expect("result");
+    assert!(!result.success);
+    assert!(
+        result
+            .error
+            .as_deref()
+            .is_some_and(|e| e.contains("bum login --provider codex")),
+        "expected missing-provider: {:?}",
+        result.error
+    );
+    assert!(
+        !coordinator.borrow().is_active_or_pending(&subagent_id),
+        "no pending/active after gate fail"
+    );
+    assert!(
+        !expected_wt.exists(),
+        "gate fail must not create worktree at {}",
+        expected_wt.display()
+    );
+}
+
+/// BYOK has_own_credentials skips OAuth-slot gate even when Codex slot empty.
+#[tokio::test]
+async fn p7_spawn_missing_provider_byok_skips_oauth_gate() {
+    use crate::agent::config::ModelProvider;
+    use crate::test_support::lsp_runtime::test_gateway;
+    use xai_grok_tools::implementations::grok_build::task::types::SubagentRuntimeOverrides;
+
+    let dir = tempfile::TempDir::new().unwrap();
+    let auth_path = dir.path().join("auth.json");
+    p7_write_auth_json(&auth_path, true, false);
+
+    let mut models = indexmap::IndexMap::new();
+    let mut byok = byok_model_entry("gpt-5.6-sol-byok");
+    byok.info.provider = ModelProvider::Codex;
+    models.insert("gpt-5.6-sol-byok".to_string(), byok);
+    models.insert("grok-build".to_string(), test_model_entry("grok-build"));
+
+    let ctx = p7_ctx_with_models_and_auth(models, auth_path, "grok-build");
+    let coordinator = std::cell::RefCell::new(SubagentCoordinator::new());
+    let gateway = test_gateway();
+    let (mut request, result_rx) = make_request("explore");
+    request.runtime_overrides = SubagentRuntimeOverrides {
+        model: Some("gpt-5.6-sol-byok".into()),
+        model_override_provenance: ModelOverrideProvenance::Tool,
+        ..Default::default()
+    };
+    let local = tokio::task::LocalSet::new();
+    local
+        .run_until(async {
+            Box::pin(handle_subagent_request(request, ctx, &coordinator, &gateway)).await;
+        })
+        .await;
+    let result = result_rx.await.expect("result");
+    let err = result.error.as_deref().unwrap_or("");
+    assert!(
+        !err.contains("bum login --provider")
+            && !err.contains("Cannot spawn subagent with model"),
+        "BYOK must skip missing-provider OAuth gate: {err}"
+    );
+}
+
+/// C2-M2 sibling: no worktree on missing-provider (named discoverable alias).
+#[tokio::test]
+async fn p7_spawn_missing_provider_creates_neither_worktree_nor_child_session() {
+    use crate::agent::config::ModelProvider;
+    use crate::test_support::lsp_runtime::test_gateway;
+    use xai_grok_tools::implementations::grok_build::task::types::SubagentRuntimeOverrides;
+
+    let dir = tempfile::TempDir::new().unwrap();
+    let auth_path = dir.path().join("auth.json");
+    p7_write_auth_json(&auth_path, true, false);
+
+    let mut models = indexmap::IndexMap::new();
+    let mut codex = test_model_entry("gpt-5.6-sol");
+    codex.info.provider = ModelProvider::Codex;
+    models.insert("gpt-5.6-sol".to_string(), codex);
+    models.insert("grok-build".to_string(), test_model_entry("grok-build"));
+
+    let ctx = p7_ctx_with_models_and_auth(models, auth_path, "grok-build");
+    let coordinator = std::cell::RefCell::new(SubagentCoordinator::new());
+    let gateway = test_gateway();
+    let (mut request, result_rx) = make_request("explore");
+    request.runtime_overrides = SubagentRuntimeOverrides {
+        model: Some("gpt-5.6-sol".into()),
+        model_override_provenance: ModelOverrideProvenance::Tool,
+        isolation: Some(xai_tool_types::SubagentIsolationMode::Worktree),
+        ..Default::default()
+    };
+    let subagent_id = request.id.clone();
+    let expected_wt = std::env::temp_dir()
+        .join("grok-subagent-worktrees")
+        .join(&subagent_id);
+    let local = tokio::task::LocalSet::new();
+    local
+        .run_until(async {
+            Box::pin(handle_subagent_request(request, ctx, &coordinator, &gateway)).await;
+        })
+        .await;
+    let result = result_rx.await.expect("result");
+    assert!(!result.success);
+    assert!(
+        !coordinator.borrow().is_active_or_pending(&subagent_id),
+        "no pending/active"
+    );
+    assert!(!expected_wt.exists(), "no worktree created on gate fail");
+    assert!(
+        result
+            .error
+            .as_deref()
+            .is_some_and(|e| e.contains("bum login --provider codex")),
+        "{:?}",
+        result.error
+    );
+}
+
+/// D-04: Tool invalid effort fails closed (no spawn apply).
+#[test]
+fn p7_invalid_effort_tool_provenance_fails_closed() {
+    let mut sampling = xai_grok_sampler::SamplerConfig {
+        model: "gpt-5.6-sol".into(),
+        ..Default::default()
+    };
+    let err = super::handle_request::apply_subagent_reasoning_effort(
+        "not-a-real-effort",
+        "gpt-5.6-sol",
+        true,
+        ModelOverrideProvenance::Tool,
+        &mut sampling,
+    )
+    .expect_err("Tool invalid effort must fail closed");
+    assert!(
+        err.contains("Invalid reasoning_effort"),
+        "must name invalid effort: {err}"
+    );
+    assert!(
+        err.contains("low") && err.contains("medium") && err.contains("high"),
+        "must list accepted tokens: {err}"
+    );
+    assert!(sampling.reasoning_effort.is_none());
+}
+
+/// AGENT-03: valid effort on supported model applies.
+#[test]
+fn p7_invalid_effort_supported_model_applies_medium() {
+    use xai_grok_sampling_types::ReasoningEffort;
+    let mut sampling = xai_grok_sampler::SamplerConfig {
+        model: "gpt-5.6-sol".into(),
+        ..Default::default()
+    };
+    super::handle_request::apply_subagent_reasoning_effort(
+        "medium",
+        "gpt-5.6-sol",
+        true, // supports
+        ModelOverrideProvenance::Tool,
+        &mut sampling,
+    )
+    .expect("valid medium on supported Sol must apply");
+    assert_eq!(sampling.reasoning_effort, Some(ReasoningEffort::Medium));
+}
+
+/// Discretion hard-fail: Tool effort on unsupported model.
+#[test]
+fn p7_invalid_effort_unsupported_model_tool_fails_closed() {
+    let mut sampling = xai_grok_sampler::SamplerConfig {
+        model: "grok-plain".into(),
+        ..Default::default()
+    };
+    let err = super::handle_request::apply_subagent_reasoning_effort(
+        "high",
+        "grok-plain",
+        false, // does not support
+        ModelOverrideProvenance::Tool,
+        &mut sampling,
+    )
+    .expect_err("Tool effort on unsupported model must fail closed");
+    assert!(
+        err.contains("does not support reasoning_effort"),
+        "clear unsupported message: {err}"
+    );
+    assert!(sampling.reasoning_effort.is_none());
+}
+
+/// Harness soft-skip for unsupported effort (role default path).
+#[test]
+fn p7_invalid_effort_harness_soft_skips_unsupported() {
+    let mut sampling = xai_grok_sampler::SamplerConfig {
+        model: "grok-plain".into(),
+        ..Default::default()
+    };
+    super::handle_request::apply_subagent_reasoning_effort(
+        "high",
+        "grok-plain",
+        false,
+        ModelOverrideProvenance::Harness,
+        &mut sampling,
+    )
+    .expect("Harness may soft-skip unsupported effort");
+    assert!(sampling.reasoning_effort.is_none());
+}
+
 #[test]
 fn normalize_forked_context_empty_parent() {
     use xai_grok_sampling_types::conversation::ConversationItem;

@@ -1,13 +1,14 @@
-//! Phase 7 — Wave 1 green harness for cross-provider multi-agent orchestration.
+//! Phase 7 — cross-provider multi-agent orchestration harness.
 //!
-//! **Contracts covered (compile-safe green scaffold only):**
+//! **Contracts covered:**
 //! - Dual-fixture BUM_HOME + auth.json smoke (`xai-fake-token` / `codex-fake-token`)
 //! - Pure `missing_provider_gate_error` login-hint decision (reuse Phase 6 public API)
+//! - Pure `oauth_provider_slot_usable` + spawn gate composition (Plan 03 / D-05..D-08)
 //! - Same-provider usable path → gate None (D-08 pure helper lock)
 //! - Public Phase 4 route isolation (base_url host + credential_slot differ both ways)
+//! - Tool unknown-model / effort pure composition anchors (Plan 03 Task 2)
 //!
 //! **Not in this file (later plans):**
-//! - Plan 03: spawn-time missing-provider gate on handle_subagent_request
 //! - Plan 04: eager Task preflight for child credentials
 //! - Plan 05: dual-token mock HTTP Authorization proofs
 //! - Plan 06: full same-provider spawn/resume lifecycle gate
@@ -30,8 +31,9 @@ use chrono::{Duration as ChronoDuration, Utc};
 use serial_test::serial;
 use tempfile::TempDir;
 use xai_grok_shell::agent::config::{
-    missing_provider_gate_error, EndpointsConfig, ModelProvider, CODEX_BASE_URL_DEFAULT,
-    CLI_CHAT_PROXY_BASE_URL_DEFAULT, XAI_API_BASE_URL_DEFAULT, resolve_provider_route,
+    missing_provider_gate_error, missing_provider_spawn_error_message, oauth_provider_slot_usable,
+    EndpointsConfig, ModelProvider, CODEX_BASE_URL_DEFAULT, CLI_CHAT_PROXY_BASE_URL_DEFAULT,
+    XAI_API_BASE_URL_DEFAULT, resolve_provider_route,
 };
 use xai_grok_shell::auth::{
     provider_slot_usable, read_provider_auth_store, select_provider_access_token, AuthMode,
@@ -164,6 +166,97 @@ fn p7_spawn_same_provider_no_extra_friction_when_parent_usable() {
     assert!(
         missing_provider_gate_error(ModelProvider::Codex, CODEX_MODEL, true, false).is_none()
     );
+}
+
+/// AGENT-05 / D-05: composition of pure oauth_provider_slot_usable + gate
+/// blocks Codex child when Codex slot is empty (production helpers).
+#[test]
+#[serial]
+fn p7_spawn_missing_provider_gate_blocks_codex_child_when_codex_slot_empty() {
+    let home = ensure_sandbox();
+    write_auth_document(
+        home,
+        Some(sample_oidc(XAI_FAKE, Some("xai-rt"), false)),
+        None, // empty Codex
+    );
+    let path = auth_path(home);
+    let slot = oauth_provider_slot_usable(&path, ModelProvider::Codex, None);
+    assert!(!slot, "empty Codex slot must be unusable");
+    let err = missing_provider_gate_error(ModelProvider::Codex, CODEX_MODEL, false, slot)
+        .expect("must fail closed");
+    assert_eq!(err.suggestion, "bum login --provider codex");
+    let msg = missing_provider_spawn_error_message(ModelProvider::Codex, CODEX_MODEL);
+    assert!(msg.contains("spawn subagent"), "{msg}");
+    assert!(msg.contains("bum login --provider codex"), "{msg}");
+}
+
+/// AGENT-05: usable Codex slot → gate None (production composition).
+#[test]
+#[serial]
+fn p7_spawn_missing_provider_allows_when_slot_usable() {
+    let home = ensure_sandbox();
+    write_auth_document(
+        home,
+        Some(sample_oidc(XAI_FAKE, Some("xai-rt"), false)),
+        Some(sample_oidc(CODEX_FAKE, Some(CODEX_REFRESH), false)),
+    );
+    let path = auth_path(home);
+    let slot = oauth_provider_slot_usable(&path, ModelProvider::Codex, None);
+    assert!(slot, "filled Codex slot must be usable");
+    assert!(
+        missing_provider_gate_error(ModelProvider::Codex, CODEX_MODEL, false, slot).is_none()
+    );
+}
+
+/// C2-M2 composition: gate failure is decided before any durable side effects
+/// would run — pure helpers return fail-closed without worktree/session APIs.
+#[test]
+#[serial]
+fn p7_spawn_missing_provider_creates_neither_worktree_nor_child_session() {
+    let home = ensure_sandbox();
+    write_auth_document(
+        home,
+        Some(sample_oidc(XAI_FAKE, Some("xai-rt"), false)),
+        None,
+    );
+    let path = auth_path(home);
+    let slot = oauth_provider_slot_usable(&path, ModelProvider::Codex, None);
+    assert!(
+        missing_provider_gate_error(ModelProvider::Codex, CODEX_MODEL, false, slot).is_some(),
+        "missing slot blocks spawn; no worktree/session APIs invoked in this pure path"
+    );
+    // Sandbox home must not gain a subagent worktree directory from this check.
+    let wt_marker = home.join("subagent-worktrees");
+    assert!(
+        !wt_marker.exists(),
+        "pure gate composition must not create worktree dirs"
+    );
+}
+
+/// C2-M2: gate decision alone never creates pending/active coordinator state
+/// (production inserts pending only after gate None — unit path covers that).
+#[test]
+fn p7_spawn_missing_provider_leaves_no_pending_or_active_child() {
+    // Pure decision: fail-closed returns error payload; caller must not
+    // insert_pending. Full coordinator assert lives in lib unit tests.
+    let err = missing_provider_gate_error(ModelProvider::Codex, CODEX_MODEL, false, false)
+        .expect("empty slot fails closed");
+    assert_eq!(err.provider, "codex");
+    assert!(
+        missing_provider_gate_error(ModelProvider::Codex, CODEX_MODEL, true, false).is_none(),
+        "BYOK skip still holds"
+    );
+}
+
+/// Tool unknown-model regression anchor: catalog-style reject message shape.
+#[test]
+fn p7_tool_unknown_model_catalog_reject_shape() {
+    // Production uses task_model_override_error (lib unit). Here lock spawn
+    // message + login hint stay free of token material.
+    let msg = missing_provider_spawn_error_message(ModelProvider::Xai, "totally-unknown-model");
+    assert!(msg.contains("bum login --provider xai"));
+    assert!(!msg.contains("fake-token"));
+    assert!(!msg.contains("Bearer"));
 }
 
 /// D-09 route isolation via public Phase 4 resolvers (not private override→config).
