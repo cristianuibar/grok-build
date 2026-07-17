@@ -18,7 +18,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [x] **Phase 3: Model catalog & GPT-5.6 entries** - Provider-tagged catalog with Grok + GPT-5.6 family in one list (completed 2026-07-16)
 - [x] **Phase 4: Provider-aware request routing** - Model → backend + credentials (Grok vs Codex paths) (completed 2026-07-16)
 - [x] **Phase 5: Codex OAuth & dual auth lifecycle** - ChatGPT login/logout/status + independent refresh
-- [ ] **Phase 6: Mid-session switch & missing-provider gate** - Switch anytime; fail closed with login prompt
+- [x] **Phase 6: Mid-session switch & missing-provider gate** - Switch anytime; fail closed with login prompt (completed 2026-07-17)
 - [ ] **Phase 7: Cross-provider multi-agent orchestration** - Same-provider regression + parent/child cross-provider spawn
 - [ ] **Phase 8: Quiet fork & rebrand polish** - No auto-update/telemetry; full bum chrome/strings
 - [ ] **Phase 9: Daily-driver end-to-end validation** - Real sessions both providers, mid-session switch, cross-provider agents
@@ -222,7 +222,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 →
 | 3. Model catalog & GPT-5.6 entries | 3/3 | Complete    | 2026-07-16 |
 | 4. Provider-aware request routing | 5/5 | Complete    | 2026-07-16 |
 | 5. Codex OAuth & dual auth lifecycle | 6/6 | Complete    | 2026-07-16 |
-| 6. Mid-session switch & missing-provider gate | 6/6 | In Progress|  |
+| 6. Mid-session switch & missing-provider gate | 6/6 | Complete    | 2026-07-17 |
 | 7. Cross-provider multi-agent orchestration | 0/TBD | Not started | - |
 | 8. Quiet fork & rebrand polish | 0/TBD | Not started | - |
 | 9. Daily-driver end-to-end validation | 0/TBD | Not started | - |
