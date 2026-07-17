@@ -200,7 +200,16 @@ Plans:
   2. Stock xAI auto-update channel is disabled so bum is not overwritten by official Grok Build updates
   3. Product telemetry / phone-home to xAI analytics is disabled by default for the fork
 
-**Plans**: TBD
+**Plans**: 6 plans
+
+Plans:
+- [ ] 08-01-PLAN.md — Wave 1 green p8_ harness + VALIDATION inventory (telemetry default + model/isolation baseline)
+- [ ] 08-02-PLAN.md — ID-02 pager TUI chrome (clap, hero, picker, billing)
+- [ ] 08-03-PLAN.md — ID-02 OAuth return + pager-minimal + bin banner
+- [ ] 08-04-PLAN.md — OPS-01 hard-off auto-update (gates, defaults, CLI no-op, min-version, settings)
+- [ ] 08-05-PLAN.md — OPS-02 feedback short-circuit + telemetry/Sentry quiet defaults
+- [ ] 08-06-PLAN.md — Phase gate: VALIDATION + PHASE-GATE green discovery for ID-02/OPS-01/OPS-02
+
 **UI hint**: yes
 
 ### Phase 9: Daily-driver end-to-end validation
