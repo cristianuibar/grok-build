@@ -4,17 +4,17 @@ milestone: v1.0
 milestone_name: milestone
 current_phase: 8
 current_phase_name: Quiet fork & rebrand polish
-current_plan: 5
+current_plan: 6
 status: executing
-stopped_at: Completed 08-04-PLAN.md
-last_updated: "2026-07-17T11:19:23.063Z"
+stopped_at: Completed 08-05-PLAN.md
+last_updated: "2026-07-17T11:31:44.454Z"
 last_activity: 2026-07-17
 last_activity_desc: Completed 08-01-PLAN.md (p8_ green harness + VALIDATION)
 progress:
   total_phases: 8
   completed_phases: 6
   total_plans: 43
-  completed_plans: 39
+  completed_plans: 40
 ---
 
 # Project State
@@ -29,13 +29,13 @@ See: .planning/PROJECT.md (updated 2026-07-17)
 ## Current Position
 
 Phase: 8 of 9 (Quiet fork & rebrand polish)
-Plan: 5 of 6
+Plan: 6 of 6
 Status: In progress — Plan 01 complete
 Last activity: 2026-07-17 — Completed 08-01-PLAN.md (p8_ green harness + VALIDATION)
-Current Plan: 5
+Current Plan: 6
 Total Plans in Phase: 6
 
-Progress: [█████████░] 91% (36/41 plans; 7/9 phases complete)
+Progress: [█████████░] 93% (36/41 plans; 7/9 phases complete)
 
 ## Performance Metrics
 
@@ -81,6 +81,7 @@ Progress: [█████████░] 91% (36/41 plans; 7/9 phases complete
 | Phase 08 P02 | 11min | 3 tasks | 14 files |
 | Phase 08 P03 | 15min | 3 tasks | 14 files |
 | Phase 08 P04 | 11min | 3 tasks | 9 files |
+| Phase 08 P05 | 11min | 3 tasks | 9 files |
 
 ## Decisions
 
@@ -125,9 +126,12 @@ Progress: [█████████░] 91% (36/41 plans; 7/9 phases complete
 - [Phase ?]: pager test-helpers feature enables pager-minimal --lib unit tests via dependency feature (not cfg(test))
 - [Phase ?]: OPS-01: should_check_for_updates always false; bum update/finish_update no-op with UI-SPEC message
 - [Phase ?]: OPS-01: auto_update None→false, no first-run true persist; min-version hard no-op; settings default false
+- [Phase ?]: Remote telemetry/feedback restrictive-only (C1-H3); remote true + local-unset stays off
+- [Phase ?]: InstrumentationMode default Disabled; OTEL exporter.enabled requires explicit telemetry (C1-H2)
+- [Phase ?]: Sentry hard-off at pager-bin; force_feedback gated when feedback disabled (D-10, C1-M1)
 
 ## Session
 
-**Last session:** 2026-07-17T11:19:23.054Z
-**Stopped at:** Completed 08-04-PLAN.md
+**Last session:** 2026-07-17T11:31:44.444Z
+**Stopped at:** Completed 08-05-PLAN.md
 **Resume file:** None

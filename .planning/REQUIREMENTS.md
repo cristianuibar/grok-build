@@ -42,7 +42,7 @@ Requirements for initial release. Each maps to roadmap phases.
 ### Quiet fork & daily driver
 
 - [x] **OPS-01**: Stock xAI auto-update channel is disabled so bum is not overwritten by official Grok Build updates
-- [ ] **OPS-02**: Product telemetry / phone-home to xAI analytics is disabled by default for the fork
+- [x] **OPS-02**: Product telemetry / phone-home to xAI analytics is disabled by default for the fork
 - [ ] **OPS-03**: User can complete a real coding session on an xAI model after xAI login (tools, edit, shell as in stock daily use)
 - [ ] **OPS-04**: User can complete a real coding session on a GPT-5.6 model after Codex login (tools, edit, shell as supported on that path)
 - [ ] **OPS-05**: User can switch between Grok and GPT-5.6 in one session and continue productive work without restarting the CLI
@@ -109,7 +109,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 | AGENT-05 | Phase 7 | Complete |
 | AGENT-06 | Phase 7 | Complete |
 | OPS-01 | Phase 8 | Complete |
-| OPS-02 | Phase 8 | Pending |
+| OPS-02 | Phase 8 | Complete |
 | OPS-03 | Phase 9 | Pending |
 | OPS-04 | Phase 9 | Pending |
 | OPS-05 | Phase 9 | Pending |
