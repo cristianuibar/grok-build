@@ -101,9 +101,9 @@ discover() {
 | ID-02 | hero badge / subtitle “bum” | unit | `p8_welcome` | ✅ Plan 02 green | 02 |
 | ID-02 | project picker product copy | unit | `p8_project_picker` | ✅ Plan 02 green | 02 |
 | ID-02 | headless + plugin_cmd residual CLI instruct bum | unit | `p8_runtime_cli` | ✅ Plan 02 green | 02 |
-| ID-02 | OAuth return “return to bum” | unit | `p8_oauth_return` | ❌ | 03 |
-| ID-02 | shell auth/device/mcp/plugin residual CLI instruct bum | unit | `p8_shell_runtime_cli` | ❌ | 03 |
-| ID-02 | pager-bin / minimal banner “bum” + crash/server residual | unit/e2e | `p8_bin_` / `p8_minimal_welcome` | ❌ | 03 |
+| ID-02 | OAuth return “return to bum” | unit | `p8_oauth_return` | ✅ Plan 03 green | 03 |
+| ID-02 | shell auth/device/mcp/plugin residual CLI instruct bum | unit | `p8_shell_runtime_cli` | ✅ Plan 03 green | 03 |
+| ID-02 | pager-bin / minimal banner “bum” + crash/server residual | unit/e2e | `p8_bin_` / `p8_minimal_welcome` | ✅ Plan 03 green | 03 |
 | ID-02 | residual inventory greps closed (or documented deferrals) | static | PHASE-GATE residual greps (C1-H1) | ❌ | 06 |
 | ID-02 | model catalog still `Grok Build (xAI)` / `grok-build` | regression | `dynamic_enum_model_names` (+ optional `p8_model_label` later) | ✅ Plan 01 re-verify | 01, 06 |
 | ID-02 | wave-1 pager `p8_` discovery smoke (no product strings yet) | unit | `p8_wave1` / `p8_` on pager `--lib` | ✅ Plan 01 green | 01 |
