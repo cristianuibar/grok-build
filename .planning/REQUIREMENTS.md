@@ -32,7 +32,7 @@ Requirements for initial release. Each maps to roadmap phases.
 
 ### Multi-agent / subagent orchestration
 
-- [ ] **AGENT-01**: Existing Grok Build multi-agent / subagent spawn, resume, roles, personas, and parent↔child routing continue to work in bum after the fork/rebrand (no regression of in-tree subagent behavior when parent and child share a provider)
+- [x] **AGENT-01**: Existing Grok Build multi-agent / subagent spawn, resume, roles, personas, and parent↔child routing continue to work in bum after the fork/rebrand (no regression of in-tree subagent behavior when parent and child share a provider)
 - [x] **AGENT-02**: User (or parent agent via tool) can spawn a subagent with an explicit **model** that may belong to a **different provider** than the parent session (e.g. parent on Grok 4.5 / grok-build; child on `gpt-5.6-sol`)
 - [x] **AGENT-03**: User (or parent agent) can specify **reasoning effort** (or equivalent Codex effort control) when launching a subagent (e.g. “medium effort”), and the child runs with that effort
 - [x] **AGENT-04**: Cross-provider subagent turns use the **child’s** model → provider → credentials → backend routing (not the parent’s bearer or base URL)
@@ -102,7 +102,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 | MOD-04 | Phase 4 | Complete |
 | MOD-05 | Phase 4 | Complete |
 | MOD-06 | Phase 6 | Complete |
-| AGENT-01 | Phase 7 | Pending |
+| AGENT-01 | Phase 7 | Complete |
 | AGENT-02 | Phase 7 | Complete |
 | AGENT-03 | Phase 7 | Complete |
 | AGENT-04 | Phase 7 | Complete |

@@ -177,7 +177,7 @@ Plans:
   4. Cross-provider child turns use the child’s model → provider → credentials → backend (not the parent’s bearer or base URL)
   5. Natural-language orchestration works: e.g. main on Grok, “start a Codex Sol medium-effort subagent to research X” yields a Sol medium-effort child that returns results; missing child-provider login fails closed with a clear login prompt
 
-**Plans**: 5/6 plans executed
+**Plans**: 6/6 plans executed
 
 Plans:
 
@@ -186,7 +186,7 @@ Plans:
 - [x] 07-03-PLAN.md — Authoritative spawn gate + Tool effort/unknown-model fail-closed (AGENT-02/03/04/05)
 - [x] 07-04-PLAN.md — Eager TaskProviderCredentialGate preflight for background default (AGENT-05)
 - [x] 07-05-PLAN.md — Dual fake-token isolation + no wrong-backend proofs (AGENT-02/04/05/06)
-- [ ] 07-06-PLAN.md — AGENT-01 regression + VALIDATION/PHASE-GATE for AGENT-01..06
+- [x] 07-06-PLAN.md — AGENT-01 regression + VALIDATION/PHASE-GATE for AGENT-01..06
 
 ### Phase 8: Quiet fork & rebrand polish
 
@@ -232,7 +232,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 →
 | 4. Provider-aware request routing | 5/5 | Complete    | 2026-07-16 |
 | 5. Codex OAuth & dual auth lifecycle | 6/6 | Complete    | 2026-07-16 |
 | 6. Mid-session switch & missing-provider gate | 6/6 | Complete    | 2026-07-17 |
-| 7. Cross-provider multi-agent orchestration | 5/6 | In Progress|  |
+| 7. Cross-provider multi-agent orchestration | 6/6 | In Progress|  |
 | 8. Quiet fork & rebrand polish | 0/TBD | Not started | - |
 | 9. Daily-driver end-to-end validation | 0/TBD | Not started | - |
 
