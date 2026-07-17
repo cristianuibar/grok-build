@@ -85,10 +85,25 @@ fn resolve_agent_profile_path(path: &std::path::Path) -> std::path::PathBuf {
         }
     }
 }
+/// Composition-root version banner (UI-SPEC / D-01). Pure for unit tests.
+fn format_pager_banner(version: &str) -> String {
+    format!("bum (pager) - v{version}")
+}
+
+/// Serve-mode startup product identity line (C1-H1 residual).
+fn agent_server_startup_line() -> &'static str {
+    "   bum agent server starting..."
+}
+
+/// Previous-session crash recovery product identity line (C1-H1 residual).
+fn last_session_crash_line() -> &'static str {
+    "bum crashed during your last session."
+}
+
 /// Print startup information for the serve command.
 fn print_serve_startup_info(bind_addr: SocketAddr, secret: &str) {
     eprintln!();
-    eprintln!("   Grok agent server starting...");
+    eprintln!("{}", agent_server_startup_line());
     eprintln!();
     eprintln!("   Address:  {}:{}", bind_addr.ip(), bind_addr.port());
     eprintln!("   Secret:   {}", secret);
@@ -154,7 +169,7 @@ async fn run_setup_command(json: bool) {
     if !managed_config::has_principal() {
         eprintln!("No deployment key or team sign-in found.");
         eprintln!();
-        eprintln!("To install managed configuration, sign in with a team using `grok login`,");
+        eprintln!("To install managed configuration, sign in with a team using `bum login`,");
         eprintln!("or set a deployment key:");
         eprintln!();
         if cfg!(unix) {
@@ -162,15 +177,15 @@ async fn run_setup_command(json: bool) {
         } else {
             eprintln!("  $env:GROK_DEPLOYMENT_KEY=\"<your-key>\"");
         }
-        eprintln!("  grok setup");
+        eprintln!("  bum setup");
         eprintln!();
-        eprintln!("Or add the key to ~/.grok/config.toml:");
+        eprintln!("Or add the key to ~/.bum/config.toml:");
         eprintln!();
         eprintln!("  [endpoints]");
         eprintln!("  deployment_key = \"<your-key>\"");
         eprintln!();
         eprintln!(
-            "If you don't have a deployment key, contact your organization's Grok administrator."
+            "If you don't have a deployment key, contact your organization's bum administrator."
         );
         std::process::exit(1);
     }
@@ -297,14 +312,14 @@ async fn run_workspace_mgmt(args: WorkspaceMgmtArgs) -> Result<()> {
         WorkspaceGate::Enabled => {}
         WorkspaceGate::Disabled => {
             anyhow::bail!(
-                "`grok workspace` is not enabled for this account \
+                "`bum workspace` is not enabled for this account \
              (gated by a server-side feature flag that is currently off)."
             )
         }
         WorkspaceGate::Unknown => {
             anyhow::bail!(
-                "Could not load your settings for `grok workspace`. Check your \
-             network connection (run `grok login` if you are signed out), then \
+                "Could not load your settings for `bum workspace`. Check your \
+             network connection (run `bum login` if you are signed out), then \
              try again."
             )
         }
@@ -360,7 +375,7 @@ async fn connect_workspace_control(
     .map_err(|e| {
         anyhow::anyhow!(
             "no running leader for this environment ({e}). \
-             Start a grok session, or run `grok workspace start`."
+             Start a bum session, or run `bum workspace start`."
         )
     })
 }
@@ -400,14 +415,14 @@ async fn workspace_start(
     );
     if !use_leader {
         anyhow::bail!(
-            "`grok workspace` requires leader mode (the workspace is shared via the leader).\n\
-             Enable it with `[cli] use_leader = true` in ~/.grok/config.toml, or pass --leader."
+            "`bum workspace` requires leader mode (the workspace is shared via the leader).\n\
+             Enable it with `[cli] use_leader = true` in ~/.bum/config.toml, or pass --leader."
         );
     }
     ensure_authenticated(
         &agent_config.grok_com_config,
         false,
-        Some("No cached credentials found. Run `grok login` first."),
+        Some("No cached credentials found. Run `bum login` first."),
     )
     .await?;
     let env_urls = LeaderEnvUrls::from(&agent_config.grok_com_config);
@@ -878,11 +893,11 @@ async fn run_agent_command(
     let is_leader = matches!(agent_args.mode, Some(AgentCmd::Leader(_)));
     if !is_stdio && !is_leader {
         eprintln!(
-            "Grok Build (pager) - v{}",
-            xai_grok_version::display_version_with_commit(
+            "{}",
+            format_pager_banner(&xai_grok_version::display_version_with_commit(
                 env!("VERSION_WITH_COMMIT"),
                 xai_grok_update::channel_label(),
-            )
+            ))
         );
         if should_check_for_updates(no_auto_update) {
             auto_update::run_update_if_available(
@@ -911,7 +926,7 @@ async fn run_agent_command(
         None,
     );
     if let Some(warning) = launch_yolo.blocked_warning {
-        eprintln!("grok: {warning}");
+        eprintln!("bum: {warning}");
     }
     agent_config.default_yolo_mode = launch_yolo.yolo;
     agent_config.default_auto_mode = xai_grok_shell::util::config::effective_auto_for_launch(
@@ -1472,10 +1487,10 @@ fn main() {
     );
     raise_fd_limit();
     if let Err(e) = xai_grok_config::validate_requirements() {
-        eprintln!("Couldn't start Grok: {e}");
+        eprintln!("Couldn't start bum: {e}");
         eprintln!();
         eprintln!(
-            "Update Grok to a version the policy allows, or ask your administrator \
+            "Update bum to a version the policy allows, or ask your administrator \
              to fix the managed requirements."
         );
         std::process::exit(2);
@@ -1491,7 +1506,7 @@ fn main() {
     if xai_grok_shell::util::config::load_crash_handler_enabled_sync() {
         let crash_dir = xai_grok_shell::util::grok_home::grok_home().join("crash");
         if let Some(report) = xai_crash_handler::check_previous_crash(&crash_dir) {
-            eprintln!("Grok crashed during your last session.");
+            eprintln!("{}", last_session_crash_line());
             eprintln!("  Signal:  {}", report.signal_name);
             eprintln!("  Version: {}", report.app_version);
             eprintln!("  Report:  {}", report.report_path.display());
@@ -1829,7 +1844,7 @@ async fn async_main() -> Result<()> {
             None,
         );
         if let Some(warning) = launch_yolo.blocked_warning {
-            eprintln!("grok: {warning}");
+            eprintln!("bum: {warning}");
         }
         let json_schema = args
             .json_schema
@@ -1912,9 +1927,9 @@ async fn async_main() -> Result<()> {
         Ok(true) => {
             let adopted = bg_update_wait.lock().await.take();
             if finish_update_on_exit(adopted, &update_config).await {
-                eprintln!("Update installed. Run `grok` to start.");
+                eprintln!("Update installed. Run `bum` to start.");
             } else {
-                eprintln!("Update did not complete. Run `grok update` to retry.");
+                eprintln!("Update did not complete. Run `bum update` to retry.");
             }
             Ok(())
         }
@@ -2148,6 +2163,41 @@ async fn signal_leaders_to_relaunch(installed_version: &str) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn p8_bin_banner_format_is_bum_pager() {
+        let banner = format_pager_banner("1.2.3");
+        assert_eq!(banner, "bum (pager) - v1.2.3");
+        assert!(banner.starts_with("bum (pager) - v"));
+        assert!(
+            !banner.contains("Grok Build"),
+            "banner must not use stock product name: {banner}"
+        );
+    }
+
+    #[test]
+    fn p8_bin_agent_server_startup_says_bum() {
+        let line = agent_server_startup_line();
+        assert!(
+            line.contains("bum agent server"),
+            "serve startup must say bum agent server: {line}"
+        );
+        assert!(
+            !line.contains("Grok agent server"),
+            "serve startup must not say Grok agent server: {line}"
+        );
+    }
+
+    #[test]
+    fn p8_bin_crash_message_says_bum() {
+        let line = last_session_crash_line();
+        assert_eq!(line, "bum crashed during your last session.");
+        assert!(
+            !line.contains("Grok crashed"),
+            "crash recovery must not say Grok crashed: {line}"
+        );
+    }
+
     #[cfg(all(feature = "jemalloc", unix))]
     struct TempHeapDump(std::path::PathBuf);
     #[cfg(all(feature = "jemalloc", unix))]
