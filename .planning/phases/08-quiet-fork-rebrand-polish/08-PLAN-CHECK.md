@@ -1,8 +1,8 @@
 # Phase 8 Plan Check — Quiet fork & rebrand polish
 
-**Checked:** 2026-07-17  
+**Checked:** 2026-07-17 (re-verify after revision)  
 **Plans verified:** 6 (`08-01` … `08-06`)  
-**Status:** **ISSUES FOUND** (2 blockers, 5 warnings)
+**Status:** **ISSUES FOUND** (1 blocker, 2 warnings)
 
 **Phase goal:** Product presents fully as **bum** and does not phone home or auto-update as stock Grok Build.
 
@@ -12,10 +12,25 @@
 
 | Result | Detail |
 |--------|--------|
-| **FAIL** | Nyquist 8e: `08-VALIDATION.md` missing (must exist at plan time, not only as Plan 01 execute deliverable) |
-| **FAIL** | Research resolution: `08-RESEARCH.md` `## Open Questions` not marked RESOLVED |
+| **FAIL** | Plan `08-03` YAML frontmatter is broken — closing `---` is glued to the last `key_links` line (`pattern: "bum \\(pager\\)"---`). `verify.plan-structure` → `valid: false` (all required frontmatter fields appear missing to the parser). |
 
-Goal-backward coverage of ID-02 / OPS-01 / OPS-02 and D-01..D-15 is **otherwise strong**. After the two blockers are fixed (and warnings preferred), re-run plan-check before `/gsd:execute-phase 8`.
+### Prior blockers (revision) — resolved
+
+| Prior blocker | Status |
+|---------------|--------|
+| Nyquist 8e: `08-VALIDATION.md` missing | **FIXED** — plan-time scaffold present |
+| Research resolution: Open Questions not RESOLVED | **FIXED** — `## Open Questions (RESOLVED)` + Q1–Q3 marked |
+
+### Hygiene claims — verified
+
+| Claim | Status |
+|-------|--------|
+| Plan 06 verify no longer `bash -n … \|\| true` | **OK** — content/file asserts only |
+| Plan 05 mandates `p8_sentry_*` | **OK** — Task 3 action: soft-land SUMMARY-only forbidden |
+| Plan 01 discover no `2>/dev/null` | **OK** — list stderr not swallowed |
+| Plan 03 Open Grok Build residual rebrand | **OK** — Task 1b + must_haves (blocked only by frontmatter parse) |
+
+Goal-backward coverage of ID-02 / OPS-01 / OPS-02 and D-01..D-15 remains strong once Plan 03 frontmatter is repaired.
 
 ---
 
@@ -23,9 +38,9 @@ Goal-backward coverage of ID-02 / OPS-01 / OPS-02 and D-01..D-15 is **otherwise 
 
 | Requirement | Plans | Status |
 |-------------|-------|--------|
-| **ID-02** product chrome as bum | 01 (baseline/model lock), 02 (clap/hero/picker/billing), 03 (OAuth/minimal/banner), 06 (gate) | Covered for UI-SPEC inventory sites |
-| **OPS-01** stock auto-update off | 01 (VALIDATION map planned), 04 (gates/defaults/CLI/min-version/settings), 06 (gate) | Covered |
-| **OPS-02** telemetry/phone-home off | 01 (telemetry Disabled baseline), 05 (feedback + Sentry + feedback default), 06 (gate) | Covered |
+| **ID-02** product chrome as bum | 01, 02, 03, 06 | Covered (03 structure invalid until frontmatter fix) |
+| **OPS-01** stock auto-update off | 01, 04, 06 | Covered |
+| **OPS-02** telemetry/phone-home off | 01, 05, 06 | Covered |
 
 | ROADMAP success criterion | Delivered by |
 |---------------------------|--------------|
@@ -37,16 +52,16 @@ Goal-backward coverage of ID-02 / OPS-01 / OPS-02 and D-01..D-15 is **otherwise 
 
 | Decision | Primary plan(s) | Notes |
 |----------|-----------------|-------|
-| D-01 product chrome → bum | 02, 03 | UI-SPEC inventory covered |
-| D-02 keep model brands | 01, 02, 06 | `dynamic_enum_model_names` + no catalog edit |
-| D-03 no crate renames | 02, 03, 06 | Static inventory / exclusions |
+| D-01 product chrome → bum | 02, 03 | Includes Open bum residual (03 Task 1b) |
+| D-02 keep model brands | 01, 02, 06 | No catalog edit |
+| D-03 no crate renames | 02, 03, 06 | Exclusions |
 | D-04 hard-off auto-update | 04 | `should_check_for_updates` always false |
 | D-05 explicit update no-op + message | 04 | UI-SPEC locked copy |
-| D-06 min-version ignore | 04 | hard no-op entry |
+| D-06 min-version ignore | 04 | hard no-op |
 | D-07 code defaults + tests | 04 | unwrap_or(false), settings, first-run |
-| D-08 TelemetryMode::Disabled | 01, 05 | Already-true baseline + lock |
-| D-09 Mixpanel off default | 05 | via Disabled mode |
-| D-10 Sentry off default | 05 | force `disabled: true` |
+| D-08 TelemetryMode::Disabled | 01, 05 | Baseline + lock |
+| D-09 Mixpanel off default | 05 | via Disabled |
+| D-10 Sentry off default | 05 | force disabled + **mandatory** `p8_sentry_*` |
 | D-11 local logs OK | 05 | explicit non-change |
 | D-12 clap bum / bum TUI | 02 | |
 | D-13 leave GROK_* internal | 02, 03, 05, 06 | |
@@ -57,7 +72,7 @@ Goal-backward coverage of ID-02 / OPS-01 / OPS-02 and D-01..D-15 is **otherwise 
 
 | Deferred idea | In plans? |
 |---------------|-----------|
-| Public signed x.ai install channel | **Excluded** (04/06 scope) |
+| Public signed x.ai install channel | **Excluded** |
 | Internal `xai-grok-*` crate rename | **Excluded** |
 | Mass `GROK_*` → `BUM_*` env rename | **Excluded** (D-13) |
 | Live dual-provider E2E (Phase 9) | **Excluded** |
@@ -74,22 +89,20 @@ Goal-backward coverage of ID-02 / OPS-01 / OPS-02 and D-01..D-15 is **otherwise 
                  └─ 08-06 (wave 5, deps 02–05)
 ```
 
-- Acyclic; wave numbers consistent with `depends_on`.
-- Wave 2 parallel (02 ‖ 03): **no shared `files_modified`**.
-- Sequential ownership of `pager-bin/src/main.rs`: 03 (banner) → 04 (update gates) → 05 (Sentry) — sound.
+- Acyclic; wave numbers consistent with `depends_on` (once 03 frontmatter parses).
+- Wave 2 parallel (02 ‖ 03): no shared `files_modified`.
+- Sequential ownership of `pager-bin/src/main.rs`: 03 → 04 → 05.
 
 ### Plan structure (gsd-tools `verify.plan-structure`)
 
-All 6 plans: `valid: true`; tasks have files/action/verify/done; frontmatter includes `requirements` + `must_haves`.
-
-| Plan | Tasks | Files (listed) | Wave | Reqs |
-|------|-------|----------------|------|------|
-| 01 | 2 | 4 | 1 | ID-02, OPS-01, OPS-02 |
-| 02 | 3 | 10 | 2 | ID-02 |
-| 03 | 3 | 3 | 2 | ID-02 |
-| 04 | 3 | 6 | 3 | OPS-01 |
-| 05 | 3 | 4 | 4 | OPS-02 |
-| 06 | 3 | 2 | 5 | ID-02, OPS-01, OPS-02 |
+| Plan | Tasks | valid | Notes |
+|------|-------|-------|-------|
+| 01 | 2 | ✅ | |
+| 02 | 3 | ✅ | 10 files (warning threshold) |
+| 03 | 4 | ❌ | Frontmatter parse fail — see blocker |
+| 04 | 3 | ✅ | |
+| 05 | 3 | ✅ | |
+| 06 | 3 | ✅ | |
 
 ---
 
@@ -98,21 +111,21 @@ All 6 plans: `valid: true`; tasks have files/action/verify/done; frontmatter inc
 | # | Dimension | Result |
 |---|-----------|--------|
 | 1 | Requirement coverage | **PASS** — ID-02, OPS-01, OPS-02 in frontmatter + tasks |
-| 2 | Task completeness | **PASS** — all auto tasks have files/action/verify/done; actions specific |
-| 3 | Dependency correctness | **PASS** — acyclic, waves consistent, no same-wave file conflicts |
-| 4 | Key links planned | **PASS** — gate → skip network; feedback → no SendFeedback; chrome → UI-SPEC |
-| 5 | Scope sanity | **PASS** with warning — plan 02 at 10 files (threshold) |
-| 6 | Verification derivation | **PASS** — must_haves user-observable / gate-testable |
-| 7 | Context compliance | **PASS** — locked decisions mapped; deferred excluded; discretion OK |
+| 2 | Task completeness | **FAIL** — Plan 03 frontmatter unparsable; tool reports missing required fields |
+| 3 | Dependency correctness | **PASS** (content) / blocked at tool level for 03 |
+| 4 | Key links planned | **PASS** (content in 03 present but outside closed YAML fence) |
+| 5 | Scope sanity | **PASS** with warnings — 02 files=10; 03 tasks=4 |
+| 6 | Verification derivation | **PASS** — user-observable / gate-testable must_haves |
+| 7 | Context compliance | **PASS** — D-01..D-15 mapped; deferred excluded |
 | 7b | Scope reduction | **PASS** — no silent v1/static reduction of locked decisions |
-| 7c | Architectural tier compliance | **PASS** — tasks match RESEARCH responsibility map |
-| 8 | Nyquist compliance | **FAIL** — `08-VALIDATION.md` missing (8e gate); 8a–8d skipped |
+| 7c | Architectural tier compliance | **PASS** — matches RESEARCH responsibility map |
+| 8 | Nyquist compliance | **PASS** — VALIDATION exists; all tasks have `<automated>` |
 | 9 | Cross-plan data contracts | **PASS** — string/default flips; no conflicting transforms |
-| 10 | CLAUDE.md compliance | **SKIPPED** (no project `./CLAUDE.md`; AGENTS.md constraints honored) |
-| 11 | Research resolution | **FAIL** — Open Questions not RESOLVED |
-| 12 | Pattern compliance | **PASS** — plans cite PATTERNS/UI-SPEC analogs; self-file edit-in-place |
-| — | Verify command format | **WARNING** — Plan 06 `bash -n … \|\| true`; Plan 01 list uses stderr swallow |
-| — | Numeric/factual claim authority | **PASS** — no conflicting numeric authority claims requiring live remeasure |
+| 10 | CLAUDE.md compliance | **SKIPPED** (no project `./CLAUDE.md`; AGENTS.md honored) |
+| 11 | Research resolution | **PASS** — Open Questions (RESOLVED) Q1–Q3 |
+| 12 | Pattern compliance | **PASS** — PATTERNS/UI-SPEC cited |
+| — | Verify command format | **PASS** — prior `\|\| true` / `2>/dev/null` hygiene fixed |
+| — | Numeric/factual claim authority | **PASS** |
 
 ---
 
@@ -120,97 +133,84 @@ All 6 plans: `valid: true`; tasks have files/action/verify/done; frontmatter inc
 
 ```bash
 ls .planning/phases/08-quiet-fork-rebrand-polish/*-VALIDATION.md
-# → NO VALIDATION.md
+# → 08-VALIDATION.md present (plan-time scaffold)
 ```
+
+| Task | Plan | Wave | Automated Command | Status |
+|------|------|------|-------------------|--------|
+| T1 | 01 | 1 | `cargo test … p8_telemetry --list` + execute + VALIDATION exists | ✅ |
+| T2 | 01 | 1 | pager `p8_` list+run; model + home_isolation | ✅ |
+| T1–T3 | 02 | 2 | `p8_cli_brand`, `p8_welcome`, `p8_` + billing + model | ✅ |
+| T1 | 03 | 2 | `p8_oauth_return` | ✅ |
+| T1b | 03 | 2 | `rg` Open bum / not Open Grok Build | ✅ |
+| T2–T3 | 03 | 2 | `p8_minimal_welcome`, `p8_bin_banner` | ✅ |
+| T1–T3 | 04 | 3 | pager-bin + update + settings filters | ✅ |
+| T1–T3 | 05 | 4 | `p8_feedback`, shell feedback/telemetry, `p8_` bin (sentry) | ✅ |
+| T1–T3 | 06 | 5 | VALIDATION content; PHASE-GATE content; model + isolation | ✅ |
 
 | Check | Status |
 |-------|--------|
-| 8e VALIDATION.md exists | ❌ **BLOCKER** |
-| 8a Automated verify | skipped (8e fail) |
-| 8b Feedback latency | skipped |
-| 8c Sampling continuity | skipped |
-| 8d Wave 0 completeness | skipped |
+| 8e VALIDATION.md exists | ✅ |
+| 8a Automated verify | ✅ all tasks |
+| 8b Feedback latency | ✅ no `--watch`; cargo targeted |
+| 8c Sampling continuity | ✅ |
+| 8d Wave 0 MISSING links | ✅ none |
 
-**Overall Dimension 8: ❌ FAIL**
-
-> Phase 7 precedent: `07-VALIDATION.md` existed **from planning** (Nyquist 8e). Plan 07-06 **updates** greened names — does not first-create. Phase 8 Plan 01 Task 1 first-creates VALIDATION at **execute** time — too late for pre-execution Nyquist gate.
-
-**Note (informational):** Once VALIDATION exists, planned tasks already carry `<automated>` cargo filters (`p8_*`, model regression, home_isolation) consistent with RESEARCH Validation Architecture — 8a content looks good in the plans themselves.
+**Overall Dimension 8: ✅ PASS**
 
 ---
 
 ## Dimension 11: Research Resolution
 
-`08-RESEARCH.md` has `## Open Questions` **without** `(RESOLVED)` and without per-question `RESOLVED` markers:
+`08-RESEARCH.md` § `## Open Questions (RESOLVED)`:
 
-1. Remote telemetry / feedback re-enable from remote settings  
-2. Agent/system prompt product naming  
-3. In-tree user-guide markdown under pager/docs  
+1. **Q1** remote telemetry/feedback — RESOLVED (Plan 05 hard-prefer Disabled/false)  
+2. **Q2** agent/system prompt naming — RESOLVED (out of chrome gate)  
+3. **Q3** user-guide docs — RESOLVED (scoped to runtime-extracted help)
 
-Plans partially absorb Q1 via Plan 05 discretion (hard pin preference) and treat Q2/Q3 as deferrable, but RESEARCH must mark resolutions explicitly (Phase 7 plan-check fixed the same class of issue).
+**PASS**
 
 ---
 
 ## Blockers (must fix before execute)
 
-### 1. [nyquist_compliance] `08-VALIDATION.md` not found
+### 1. [task_completeness] Plan 08-03 frontmatter not closed / unparsable
 
 - **Severity:** BLOCKER  
-- **Plan:** null (phase-level); Plan 01 currently owns first-create at execute  
-- **Description:** Nyquist check 8e requires `*-VALIDATION.md` in the phase directory **before** execution. Phase 7 treated missing VALIDATION as blocker and fixed it with a plan-time scaffold.  
-- **Fix:**
-  1. Author `.planning/phases/08-quiet-fork-rebrand-polish/08-VALIDATION.md` now (plan-time), mapping ID-02 / OPS-01 / OPS-02 → planned `p8_*` filters from RESEARCH Validation Architecture + plan frontmatter. Mark Plan 01 rows as scaffold/green baseline; product rows as planned for 02–05; wave table; green-only protocol; D-02 / deferred exclusions.
-  2. Revise Plan 01 Task 1: **update/seed** VALIDATION if present — do not claim sole first-create-at-execute as the Nyquist contract.
-  3. Plan 06 continues to **finalize greened** filter names after SUMMARYs (same as Phase 7).
+- **Plan:** `08-03`  
+- **Description:** Line ends with `pattern: "bum \\(pager\\)"---` — the document fence is not on its own line. YAML frontmatter never closes; `gsd-tools query verify.plan-structure` reports missing `phase`, `plan`, `type`, `wave`, `depends_on`, `files_modified`, `autonomous`, `must_haves`. Execute tooling that reads frontmatter will not see `depends_on: [08-01]`, requirements, or must_haves.  
+- **Fix:** Split the fence onto its own line:
 
-### 2. [research_resolution] Open Questions not RESOLVED
+```yaml
+      pattern: "bum \\(pager\\)"
+---
+```
 
-- **Severity:** BLOCKER  
-- **File:** `08-RESEARCH.md`  
-- **Description:** Unresolved open questions block planning completeness.  
-- **Fix:** Rename section to `## Open Questions (RESOLVED)` and mark each item RESOLVED with the plan choice, e.g.:
-  - **Q1** — RESOLVED: Plan 05 hard-prefer Disabled/false; optional remote pin + env override undocumented in UX (discretion documented in 05 SUMMARY).
-  - **Q2** — RESOLVED: Agent/system prompt product naming **out of Phase 8 chrome scope** (RESEARCH A2 / discretion); optional follow-up, not ID-02 gate.
-  - **Q3** — RESOLVED: Mass `docs/user-guide` polish **deferred** unless extracted product docs path is required; UI-SPEC inventory is the chrome gate for this phase.
+Re-run `node gsd-tools.cjs query verify.plan-structure …/08-03-PLAN.md` → expect `valid: true`.
 
 ---
 
-## Warnings (should fix)
+## Warnings (should fix; not blocking after Plan 03 repair)
 
-### 1. [verify_command_format] Plan 06 Task 2 verify swallows `bash -n` failure
-
-- **Severity:** WARNING  
-- **Plan:** 06, Task 2  
-- **Description:** `<automated>` includes `bash -n … 2>/dev/null || true` — never fails verify on syntax issues.  
-- **Fix:** Either run a real shell snippet extracted from PHASE-GATE with `set -euo pipefail` (no `|| true` on the syntax check), or drop `bash -n` and require Task 2 action to execute the gate with exit 0 recorded in SUMMARY, with verify asserting gate commands appear and `test -f` PHASE-GATE.
-
-### 2. [verify_command_format] Plan 01 discovery uses `2>/dev/null` + `|| true`
-
-- **Severity:** WARNING  
-- **Plan:** 01, Tasks 1–2  
-- **Description:** `n=$(cargo test … --list 2>/dev/null | grep -c 'p8_' || true); test "$n" -ge 1` does not false-pass empty filters (fails on `n < 1`), but stderr swallow hides cargo failures.  
-- **Fix:** Prefer `set -euo pipefail; n=$(cargo test … --list | grep -c 'p8_' || true); test "$n" -ge 1` without silencing cargo stderr, or use gsd-style discover then execute without redirect.
-
-### 3. [task_completeness] Plan 05 Task 3 Sentry proof may soft-land as “document only”
-
-- **Severity:** WARNING  
-- **Plan:** 05, Task 3  
-- **Description:** Action allows “document in SUMMARY … covered by code review + manual phase check” if no unit helper is extracted. D-10 still requires `disabled: true` at init, but automated phase gate may miss Sentry policy.  
-- **Fix:** Require `fork_sentry_disabled() -> bool` (or equivalent) + `p8_sentry_*` unit under pager-bin; include filter in Plan 06 PHASE-GATE.
-
-### 4. [requirement_coverage / half-rename residual] Headless “Open Grok Build” not in plans
-
-- **Severity:** WARNING  
-- **Plan:** null (gap vs discretionary inventory)  
-- **Description:** `xai-grok-shell/src/agent/app.rs` prints user-facing `Open Grok Build: {} (press Enter to open in browser)`. Not in UI-SPEC component inventory / plan files. Daily-driver TUI path is covered; headless residual can still feel like stock product.  
-- **Fix:** Either add a small Plan 03 (or 02) surgical rebrand to `Open bum: …` with a thin unit/string assert, **or** document explicit exclusion in VALIDATION (headless relay first-connect out of Phase 8 chrome inventory) so half-rename risk is conscious.
-
-### 5. [scope_sanity] Plan 02 lists 10 files
+### 1. [scope_sanity] Plan 02 lists 10 files
 
 - **Severity:** WARNING  
 - **Plan:** 02  
-- **Description:** 10 files is the warning threshold (target 5–8). Tasks=3 is fine.  
-- **Fix:** Optional split (clap/hero vs picker/billing) if executor context is tight; not required if executor stays focused.
+- **Fix:** Optional split clap/hero vs picker/billing if executor context is tight.
+
+### 2. [scope_sanity] Plan 03 has 4 tasks
+
+- **Severity:** WARNING  
+- **Plan:** 03  
+- **Description:** Task count at warning threshold after Task 1b residual rebrand.  
+- **Fix:** Optional merge Task 1+1b if desired; not required.
+
+### 3. [nyquist / gate consistency] Plan 06 softens `p8_sentry` as “if present”
+
+- **Severity:** WARNING (informational after Plan 05 mandate)  
+- **Plan:** 06 Task 2  
+- **Description:** Plan 05 Task 3 **requires** `p8_sentry_*`; Plan 06 lists `p8_sentry if present`. Prefer unconditional subgroup in PHASE-GATE once 05 lands.  
+- **Fix:** List `p8_sentry` as required subgroup in Plan 06 action + VALIDATION row (already planned in VALIDATION map).
 
 ---
 
@@ -218,78 +218,56 @@ Plans partially absorb Q1 via Plan 05 discretion (hard pin preference) and treat
 
 ```yaml
 issues:
-  - plan: null
-    dimension: nyquist_compliance
-    severity: blocker
-    description: "08-VALIDATION.md not found (Nyquist 8e). Plan 01 first-creates at execute; gate requires plan-time VALIDATION like Phase 7."
-    fix_hint: "Author 08-VALIDATION.md now from RESEARCH Validation Architecture; Plan 01 updates scaffold; Plan 06 finalizes greened filters."
-
-  - plan: null
-    dimension: research_resolution
-    severity: blocker
-    description: "08-RESEARCH.md ## Open Questions lacks (RESOLVED) and per-question RESOLVED markers (Q1 remote telemetry, Q2 agent prompts, Q3 user-guide docs)."
-    fix_hint: "Mark section ## Open Questions (RESOLVED) with plan-aligned resolutions; Q2/Q3 defer out of chrome gate if that is the decision."
-
-  - plan: "08-06"
-    task: 2
-    dimension: verify_command_format
-    severity: warning
-    description: "bash -n … 2>/dev/null || true never fails Task 2 verify."
-    fix_hint: "Remove || true; or verify PHASE-GATE content + require gate execution exit 0 in SUMMARY."
-
-  - plan: "08-01"
-    task: 1
-    dimension: verify_command_format
-    severity: warning
-    description: "p8_ discovery pipeline redirects cargo stderr to /dev/null."
-    fix_hint: "Drop 2>/dev/null so cargo failures are visible; keep test n -ge 1."
-
-  - plan: "08-05"
-    task: 3
+  - plan: "08-03"
     dimension: task_completeness
-    severity: warning
-    description: "Sentry off default may fall back to SUMMARY/code-review without p8_sentry automated proof."
-    fix_hint: "Mandate testable fork_sentry_disabled (or equivalent) + p8_sentry filter in Plan 06 gate."
-
-  - plan: null
-    dimension: requirement_coverage
-    severity: warning
-    description: "Residual user-facing Open Grok Build in shell agent/app.rs not covered by plans or UI-SPEC inventory."
-    fix_hint: "Rebrand to Open bum or document explicit exclusion in VALIDATION."
+    severity: blocker
+    description: "YAML frontmatter not closed — last key_links pattern line ends with glued '---'; verify.plan-structure valid:false / missing all required frontmatter fields."
+    fix_hint: "Put closing --- on its own line after pattern: \"bum \\\\(pager\\\\)\""
 
   - plan: "08-02"
     dimension: scope_sanity
     severity: warning
     description: "Plan 02 lists 10 files (warning threshold)."
-    fix_hint: "Optional split clap/hero vs picker/billing if context budget is tight."
+    fix_hint: "Optional split if context budget is tight."
+
+  - plan: "08-03"
+    dimension: scope_sanity
+    severity: warning
+    description: "Plan 03 has 4 tasks (warning threshold)."
+    fix_hint: "Optional merge OAuth + Open bum residual."
+
+  - plan: "08-06"
+    task: 2
+    dimension: verification_derivation
+    severity: warning
+    description: "PHASE-GATE action says p8_sentry if present; Plan 05 mandates p8_sentry_*."
+    fix_hint: "Require p8_sentry subgroup in gate after Plan 05."
 ```
 
 ---
 
 ## What already works (do not regress)
 
-- **Goal-backward:** Three ROADMAP success criteria each have concrete plan ownership and must_haves.
-- **Green-only protocol:** Plan 01 scaffolds green `p8_` only; product asserts land with product code in 02–05 — matches Phase 7 lessons.
-- **OPS-01 traps:** Plan 04 hits all RESEARCH traps (`should_check_for_updates`, `unwrap_or(true)`, first-run persist true, min-version install, settings default true, CLI path).
-- **OPS-02 traps:** Plan 05 hits pager ungated `SendFeedback` + `resolve_feedback` default true + Sentry init.
-- **ID-02:** UI-SPEC locked copy mapped site-by-site (clap, hero, picker, OAuth, minimal, banner, billing, update printers).
-- **D-02 protected:** Explicit non-edit of model catalog + regression tests.
-- **Threat models:** STRIDE tables on privacy/tampering threats for update and phone-home.
-- **No deferred scope creep.**
+- **Prior Nyquist/research blockers fixed** at plan time.
+- **Goal-backward:** three ROADMAP success criteria owned by concrete plans.
+- **Green-only protocol:** Plan 01 scaffolds green `p8_` only; product asserts in 02–05.
+- **OPS-01 traps:** Plan 04 covers chokepoints from RESEARCH.
+- **OPS-02 traps:** Plan 05 feedback short-circuit + Sentry force-off + mandatory unit.
+- **ID-02 residual:** Open Grok Build → Open bum in Plan 03 Task 1b.
+- **D-02 protected;** deferred ideas excluded; threat models present.
 
 ---
 
 ## Must-fix before `/gsd:execute-phase 8`
 
-1. **Create `08-VALIDATION.md`** (plan-time Nyquist scaffold).  
-2. **Resolve RESEARCH Open Questions** (`## Open Questions (RESOLVED)` + inline RESOLVED).  
-3. Re-run plan-check (expect PASS or warnings-only).  
-4. Preferred: harden Plan 05 Sentry unit proof + Plan 06 verify; decide headless `Open Grok Build` rebrand vs explicit exclusion.
+1. **Repair `08-03-PLAN.md` frontmatter fence** (one-line fix).  
+2. Confirm `verify.plan-structure` → `valid: true` for all six plans.  
+3. Re-run plan-check (expect **PASS** with warnings only).
 
 ---
 
 ## Recommendation
 
-**Return to planner** with the 2 blockers. Do **not** execute Phase 8 until VALIDATION exists and Open Questions are marked RESOLVED.
+**Return to planner** for the single Plan 03 frontmatter fix. Do **not** execute until structure validates.
 
-After revision: re-verify → expected **PLAN_CHECK_PASS** if only residual warnings remain (Sentry unit, headless string, file-count, verify hygiene).
+After fix: expected **PLAN_CHECK_PASS** (warnings only: file/task counts, optional p8_sentry gate wording).
