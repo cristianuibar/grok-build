@@ -252,3 +252,6 @@ default-bazel = [
 jemalloc = []
 sandbox-enforce = ["xai-grok-sandbox/enforce"]
 release-dist = []
+# Expose test-only helpers (minimal_api setters, theme test_lock, etc.) to
+# dependent crates' unit tests — notably `xai-grok-pager-minimal`.
+test-helpers = ["xai-grok-pager-render/test-helpers"]
