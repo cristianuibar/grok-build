@@ -226,13 +226,13 @@ Plans:
   3. User can switch between Grok and GPT-5.6 in one session and continue productive work without restarting the CLI
   4. Parent-on-Grok + child-on-Codex and parent-on-Codex + child-on-Grok subagent research/coding tasks complete successfully when both providers are logged in
 
-**Plans**: 1/5 plans executed
+**Plans**: 2/5 plans executed
 
 Plans:
 
 - [x] 09-01-PLAN.md — VALIDATION dual map + thin green p9_ fixture residual smoke
 - [ ] 09-02-PLAN.md — Automated PHASE-GATE (prior p6/p7/p8 subset + p9_) discover+execute
-- [ ] 09-03-PLAN.md — Required 09-UAT.md dual-login checklist + non-secret preflight script
+- [x] 09-03-PLAN.md — Required 09-UAT.md dual-login checklist + non-secret preflight script
 - [ ] 09-04-PLAN.md — Live dual-login UAT execute (human) + in-phase blocker fixes only
 - [ ] 09-05-PLAN.md — Hybrid gate close: re-run auto + 09-VERIFICATION + nyquist sign-off
 
@@ -252,7 +252,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 →
 | 6. Mid-session switch & missing-provider gate | 6/6 | Complete    | 2026-07-17 |
 | 7. Cross-provider multi-agent orchestration | 6/6 | Complete    | 2026-07-17 |
 | 8. Quiet fork & rebrand polish | 6/6 | Complete    | 2026-07-17 |
-| 9. Daily-driver end-to-end validation | 1/5 | In Progress|  |
+| 9. Daily-driver end-to-end validation | 2/5 | In Progress|  |
 
 ## Coverage map
 

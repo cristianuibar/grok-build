@@ -4,17 +4,17 @@ milestone: v1.0
 milestone_name: milestone
 current_phase: 9
 current_phase_name: Daily-driver end-to-end validation
-current_plan: 2
+current_plan: 3
 status: executing
-stopped_at: Completed 09-01-PLAN.md
-last_updated: "2026-07-17T15:13:00Z"
+stopped_at: Completed 09-03-PLAN.md
+last_updated: "2026-07-17T15:16:13.624Z"
 last_activity: 2026-07-17
-last_activity_desc: "Completed 09-01: p9_ residual + VALIDATION dual map"
+last_activity_desc: "Completed 09-03: required UAT checklist + non-secret preflight"
 progress:
   total_phases: 9
-  completed_phases: 8
+  completed_phases: 6
   total_plans: 49
-  completed_plans: 43
+  completed_plans: 44
 ---
 
 # Project State
@@ -24,29 +24,29 @@ progress:
 See: .planning/PROJECT.md (updated 2026-07-17)
 
 **Core value:** One CLI (`bum`) can log into both xAI and Codex and freely switch between Grok and GPT-5.6 models in a real coding session — including cross-provider subagent orchestration.
-**Current focus:** Phase 9 — Daily-driver end-to-end validation (Plan 02 next)
+**Current focus:** Phase 9 — Daily-driver end-to-end validation (09-01 + 09-03 done; remaining 02/04/05)
 
 ## Current Position
 
 Phase: 9 of 9 (Daily-driver end-to-end validation)
-Plan: 2 of 5
+Plan: 3 of 5 (09-03 SUMMARY landed)
 Status: Executing
-Last activity: 2026-07-17 — Completed 09-01 (p9_ residual + VALIDATION inventory)
-Current Plan: 2 of 5
+Last activity: 2026-07-17 — Completed 09-03 (09-UAT.md + uat-preflight.sh)
+Current Plan: next incomplete among 02/04/05
 Total Plans in Phase: 5
 
-Progress: [█████████░] 86%
+Progress: [█████████░] 88%
 
 ## Performance Metrics
 
 **Velocity:**
 
-- Total plans completed: 43 (phases 1–8 + 09-01)
+- Total plans completed: 44 (phases 1–8 + 09-01 + 09-03)
 - Phase 5: 6 plans
 - Phase 6: 6 plans
 - Phase 7: 6 plans
 - Phase 8: 6 plans (harness → chrome → residual → auto-update → telemetry/feedback → phase gate) + review-fix
-- Phase 9: 1/5 plans (VALIDATION + p9_ residual)
+- Phase 9: 2/5 plans with SUMMARY (09-01 inventory + 09-03 UAT runbook); live UAT + hybrid close pending
 
 **By Phase:**
 
@@ -60,7 +60,7 @@ Progress: [█████████░] 86%
 | 06 | 6/6 | complete — MOD-03, MOD-06 |
 | 07 | 6/6 | complete — AGENT-01..06 |
 | 08 | 6/6 | complete — ID-02, OPS-01, OPS-02 |
-| 09 | 1/5 | 09-01 done — inventory + p9_; live UAT pending |
+| 09 | 2/5 SUMMARY | 09-01 + 09-03; OPS-03..06 live still pending |
 
 ---
 **Per-Plan Metrics:**
@@ -74,11 +74,15 @@ Progress: [█████████░] 86%
 | Phase 08 P05 | 11min | 3 tasks | 9 files |
 | Phase 08 P06 | 20min | 3 tasks | 3 files |
 | Phase 09 P01 | 2min | 2 tasks | 2 files |
+| Phase 09 P03 | 12min | 2 tasks | 3 files |
 
 ## Decisions
 
 ### Phase 9 (Daily-driver end-to-end validation)
 
+- [Phase 9]: Plan 03: UAT is a required gate document; fixture green never substitutes live OPS PASS (D-16)
+- [Phase 9]: Plan 03: Preflight script prints steps and fails closed on secrets; never auto-marks PASS (D-15)
+- [Phase 9]: Plan 03: Credential path guards use scoped basenames only — not bare *token* (C3-L1)
 - [Phase 9]: Plan 01: single p9_ composition residual (dual-slot + empty-Codex login-hint); not dual p7 clones (C1-M1)
 - [Phase 9]: Plan 01: skip optional p9_route_metadata; host/slot stays p7_resolve_route; bearer stays p7_isolation_* (C1-L1)
 
@@ -101,7 +105,7 @@ Progress: [█████████░] 86%
 
 ## Session
 
-**Last session:** 2026-07-17T15:12:30.832Z
-**Stopped at:** Completed 09-01-PLAN.md
+**Last session:** 2026-07-17T15:16:13.614Z
+**Stopped at:** Completed 09-03-PLAN.md
 **Resume file:** None
-**Next:** Execute 09-02-PLAN.md (PHASE-GATE automated half + prior-gate re-runs)
+**Next:** Complete remaining Phase 9 plans (09-02 PHASE-GATE if open; 09-04 live dual-login execute; 09-05 hybrid VERIFICATION)
