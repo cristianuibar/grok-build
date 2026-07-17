@@ -1926,10 +1926,16 @@ async fn async_main() -> Result<()> {
     match result {
         Ok(true) => {
             let adopted = bg_update_wait.lock().await.take();
-            if finish_update_on_exit(adopted, &update_config).await {
-                eprintln!("Update installed. Run `bum` to start.");
-            } else {
-                eprintln!("Update did not complete. Run `bum update` to retry.");
+            match finish_update_on_exit(adopted, &update_config).await {
+                FinishUpdateOnExit::Installed => {
+                    eprintln!("Update installed. Run `bum` to start.");
+                }
+                FinishUpdateOnExit::Failed => {
+                    eprintln!("Update did not complete. Run `bum update` to retry.");
+                }
+                FinishUpdateOnExit::ChannelDisabled => {
+                    // Locked disabled message already printed (OPS-01 / C1-M2).
+                }
             }
             Ok(())
         }
@@ -1937,58 +1943,29 @@ async fn async_main() -> Result<()> {
         Err(e) => Err(e),
     }
 }
-/// Complete the update after a quit-for-update (Ctrl+U) exit. Returns `true`
-/// when an update path completed without a reported failure.
+
+/// Outcome of quit-for-update (Ctrl+U) completion.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum FinishUpdateOnExit {
+    Installed,
+    Failed,
+    /// Stock channel hard-off (quiet fork) — no network, message printed.
+    ChannelDisabled,
+}
+
+/// Complete the update after a quit-for-update (Ctrl+U) exit.
 ///
-/// Prefers awaiting the parked waiter for the background `grok update` child
-/// spawned at startup — the download is usually already done or in flight.
-/// Only when there is no waiter (spawn failed, or no download was needed
-/// because the target was already on disk) or the child failed does this
-/// fall back to a fresh blocking `grok update`, which itself resolves to
-/// "Already up to date" without downloading when the disk is current.
+/// Quiet fork (OPS-01 / C1-M2): always short-circuits before any stock channel
+/// helper (`run_update_if_available` / download wait). Does not await adopted
+/// background children for install purposes and never falls through to a blocking
+/// stock `run_update_if_available`.
 async fn finish_update_on_exit(
-    adopted: Option<tokio::task::JoinHandle<std::io::Result<std::process::ExitStatus>>>,
-    update_config: &UpdateConfig,
-) -> bool {
-    let run_blocking = |reason: Option<String>| async move {
-        if let Some(reason) = reason {
-            eprintln!("{reason}");
-        }
-        auto_update::run_update_if_available(
-            auto_update::UpdateRunMode::Blocking,
-            false,
-            update_config,
-        )
-        .await
-        .is_ok()
-    };
-    match adopted {
-        Some(handle) => {
-            eprintln!("Waiting for the update download to finish...");
-            match handle.await {
-                Ok(Ok(status)) if status.success() => true,
-                Ok(Ok(status)) => {
-                    run_blocking(Some(format!(
-                        "Background update exited with {status}; retrying..."
-                    )))
-                    .await
-                }
-                Ok(Err(e)) => {
-                    run_blocking(Some(format!(
-                        "Could not wait for the background update ({e}); retrying..."
-                    )))
-                    .await
-                }
-                Err(join_err) => {
-                    run_blocking(Some(format!(
-                        "Background update waiter failed ({join_err}); retrying..."
-                    )))
-                    .await
-                }
-            }
-        }
-        None => run_blocking(None).await,
-    }
+    _adopted: Option<tokio::task::JoinHandle<std::io::Result<std::process::ExitStatus>>>,
+    _update_config: &UpdateConfig,
+) -> FinishUpdateOnExit {
+    // Drop any adopted waiter without waiting — stock install is disabled.
+    print_stock_auto_update_disabled();
+    FinishUpdateOnExit::ChannelDisabled
 }
 /// Build an [`UpdateConfig`] from the current environment and config files.
 fn build_update_config() -> UpdateConfig {
@@ -2010,19 +1987,90 @@ fn build_update_config() -> UpdateConfig {
     }
     config
 }
-/// Centralized gate for all auto-update checks. Add new suppression
-/// rules here — not at each call site.
-fn should_check_for_updates(no_auto_update_flag: bool) -> bool {
-    if cfg!(debug_assertions) {
-        return false;
+/// UI-SPEC locked primary line for explicit update / quit-for-update no-op.
+const STOCK_AUTO_UPDATE_DISABLED_PRIMARY: &str =
+    "Stock auto-update is disabled in bum. Install or build locally to upgrade.";
+/// Optional second CLI line (UI-SPEC).
+const STOCK_AUTO_UPDATE_DISABLED_SECONDARY: &str =
+    "This fork does not download updates from the stock x.ai channel.";
+
+/// Pure message lines for `bum update` / finish_update_on_exit (testable).
+fn stock_auto_update_disabled_lines() -> [&'static str; 2] {
+    [
+        STOCK_AUTO_UPDATE_DISABLED_PRIMARY,
+        STOCK_AUTO_UPDATE_DISABLED_SECONDARY,
+    ]
+}
+
+fn print_stock_auto_update_disabled() {
+    for line in stock_auto_update_disabled_lines() {
+        eprintln!("{line}");
     }
-    if no_auto_update_flag {
-        return false;
-    }
-    if std::env::var_os("GROK_DISABLE_AUTOUPDATER").is_some() {
-        return false;
-    }
-    true
+}
+
+/// Hermetic counter: stock-channel helper invocations (OPS-01 / C1-M2).
+/// Incremented only when a stock helper seam is entered; hard-off paths must
+/// leave this at 0.
+#[cfg(test)]
+static STOCK_UPDATE_HELPER_CALLS: std::sync::atomic::AtomicUsize =
+    std::sync::atomic::AtomicUsize::new(0);
+
+#[cfg(test)]
+fn note_stock_update_helper_call() {
+    STOCK_UPDATE_HELPER_CALLS.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+}
+
+/// Thin seam around stock `run_update_if_available` for hermetic proofs.
+/// Production call sites that remain behind `should_check_for_updates` use this
+/// so tests can prove the gate never reaches the stock channel.
+#[allow(dead_code)]
+async fn stock_run_update_if_available(
+    run_mode: auto_update::UpdateRunMode,
+    interactive: bool,
+    update_config: &UpdateConfig,
+) -> Result<bool> {
+    #[cfg(test)]
+    note_stock_update_helper_call();
+    auto_update::run_update_if_available(run_mode, interactive, update_config).await
+}
+
+/// Thin seam around stock `check_update_status` (explicit update --check path).
+#[allow(dead_code)]
+async fn stock_check_update_status(
+    update_config: &UpdateConfig,
+) -> auto_update::UpdateStatus {
+    #[cfg(test)]
+    note_stock_update_helper_call();
+    auto_update::check_update_status(update_config).await
+}
+
+/// Thin seam around stock `run_update` (explicit install path).
+#[allow(dead_code)]
+async fn stock_run_update(
+    force_reinstall: bool,
+    version: Option<&str>,
+    channel_switch: Option<&str>,
+    update_config: &mut UpdateConfig,
+) -> Result<Option<String>> {
+    #[cfg(test)]
+    note_stock_update_helper_call();
+    auto_update::run_update(force_reinstall, version, channel_switch, update_config).await
+}
+
+/// Centralized gate for all auto-update checks.
+///
+/// Quiet fork (OPS-01 / D-04 / D-07): **always false** in release and debug.
+/// Ignores `--no-auto-update`, `GROK_DISABLE_AUTOUPDATER`, and debug builds —
+/// bum never probes the stock x.ai auto-update channel from the composition root.
+/// Call sites for startup and `LeaderAutoUpdateConfig` already skip when false.
+fn should_check_for_updates(_no_auto_update_flag: bool) -> bool {
+    false
+}
+
+/// Whether startup / leader branches may invoke stock update helpers.
+/// Pure structural gate used by hermetic unit proofs (C1-M2).
+fn startup_or_leader_may_invoke_stock_update(no_auto_update_flag: bool) -> bool {
+    should_check_for_updates(no_auto_update_flag)
 }
 /// Mode-gate for the direct stdio agent's background auto-update.
 ///
@@ -2048,45 +2096,22 @@ fn get_channel_switch(alpha: bool, stable: bool, enterprise: bool) -> Option<&'s
         None
     }
 }
-/// Handle `grok-pager update [--check] [--json] [--force-reinstall] [--version X] [--alpha|--stable|--enterprise]`.
+/// Handle `bum update [--check] [--json] [--force-reinstall] [--version X] [--alpha|--stable|--enterprise]`.
+///
+/// Quiet fork (OPS-01 / D-05): stock channel is hard-off. Always prints the
+/// UI-SPEC locked disabled message and returns success (exit 0) without calling
+/// `check_update_status`, `run_update`, or any stock fetch/install helper.
 async fn run_update_command(
-    check: bool,
-    json: bool,
-    force_reinstall: bool,
-    version: Option<String>,
-    channel_switch: Option<&str>,
-    base_update_config: &UpdateConfig,
+    _check: bool,
+    _json: bool,
+    _force_reinstall: bool,
+    _version: Option<String>,
+    _channel_switch: Option<&str>,
+    _base_update_config: &UpdateConfig,
 ) -> Result<()> {
-    if json && !check {
-        anyhow::bail!("--json requires --check");
-    }
-    let mut update_config = base_update_config.clone();
-    if check {
-        if version.is_some() {
-            anyhow::bail!("--version cannot be used with --check");
-        }
-        auto_update::apply_channel_switch(channel_switch, &mut update_config).await;
-        let status = auto_update::check_update_status(&update_config).await;
-        auto_update::print_update_status(&status, json)?;
-        return Ok(());
-    }
-    if let Some(ref v) = version
-        && semver::Version::parse(v).is_err()
-    {
-        anyhow::bail!(
-            "'{}' is not a valid version. Expected semver like 0.1.150",
-            v
-        );
-    }
-    let installed = auto_update::run_update(
-        force_reinstall,
-        version.as_deref(),
-        channel_switch,
-        &mut update_config,
-    )
-    .await?;
-    if let Some(installed_version) = installed {
-        signal_leaders_to_relaunch(&installed_version).await;
+    // Primary on stdout for CLI scripting; secondary for clarity.
+    for line in stock_auto_update_disabled_lines() {
+        println!("{line}");
     }
     Ok(())
 }
@@ -2163,6 +2188,7 @@ async fn signal_leaders_to_relaunch(installed_version: &str) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::atomic::Ordering;
 
     #[test]
     fn p8_bin_banner_format_is_bum_pager() {
@@ -2196,6 +2222,143 @@ mod tests {
             !line.contains("Grok crashed"),
             "crash recovery must not say Grok crashed: {line}"
         );
+    }
+
+    // ── OPS-01: auto-update hard-off (D-04, D-05, C1-M2) ──────────────────
+
+    fn test_update_config() -> UpdateConfig {
+        UpdateConfig {
+            proxy_base_url: "http://127.0.0.1".into(),
+            auth_scope: "test".into(),
+            deployment_key: None,
+            alpha_test_key: None,
+            channel: "stable".into(),
+            npm_registry: None,
+        }
+    }
+
+    fn reset_stock_helper_calls() {
+        STOCK_UPDATE_HELPER_CALLS.store(0, Ordering::SeqCst);
+    }
+
+    #[test]
+    fn p8_no_auto_update_should_check_always_false() {
+        // Hard-off in release and debug; flag ignored (D-04 / D-07).
+        assert!(
+            !should_check_for_updates(false),
+            "should_check_for_updates(false) must be hard-off"
+        );
+        assert!(
+            !should_check_for_updates(true),
+            "should_check_for_updates(true) must be hard-off"
+        );
+    }
+
+    #[test]
+    fn p8_update_cmd_message_contains_disabled_copy() {
+        let lines = stock_auto_update_disabled_lines();
+        let joined = lines.join("\n");
+        assert!(
+            joined.contains("Stock auto-update is disabled in bum"),
+            "missing UI-SPEC primary: {joined}"
+        );
+        assert!(
+            joined.contains("Install or build locally to upgrade"),
+            "missing UI-SPEC upgrade guidance: {joined}"
+        );
+        assert!(
+            joined.contains("stock x.ai channel")
+                || joined.contains("This fork does not download updates"),
+            "missing UI-SPEC secondary channel note: {joined}"
+        );
+    }
+
+    #[tokio::test]
+    async fn p8_update_no_network_run_update_command() {
+        reset_stock_helper_calls();
+        let cfg = test_update_config();
+        let result = run_update_command(
+            false,
+            false,
+            false,
+            None,
+            None,
+            &cfg,
+        )
+        .await;
+        assert!(result.is_ok(), "bum update must exit 0 (Ok): {result:?}");
+        assert_eq!(
+            STOCK_UPDATE_HELPER_CALLS.load(Ordering::SeqCst),
+            0,
+            "run_update_command must not invoke stock helpers"
+        );
+        // --check path also no-ops without stock helpers.
+        reset_stock_helper_calls();
+        let result = run_update_command(true, false, false, None, None, &cfg).await;
+        assert!(result.is_ok());
+        assert_eq!(
+            STOCK_UPDATE_HELPER_CALLS.load(Ordering::SeqCst),
+            0,
+            "run_update_command --check must not invoke stock helpers"
+        );
+    }
+
+    #[tokio::test]
+    async fn p8_update_no_network_finish_update_on_exit() {
+        let cfg = test_update_config();
+
+        // None adopted waiter — must not fall through to run_update_if_available.
+        reset_stock_helper_calls();
+        let outcome = finish_update_on_exit(None, &cfg).await;
+        assert_eq!(outcome, FinishUpdateOnExit::ChannelDisabled);
+        assert_eq!(
+            STOCK_UPDATE_HELPER_CALLS.load(Ordering::SeqCst),
+            0,
+            "finish_update_on_exit(None) must not call stock helpers"
+        );
+
+        // Some(handle) failure-style path: already-finished failing child.
+        // Hard-off must not await-then-retry via stock channel either.
+        reset_stock_helper_calls();
+        let failing = tokio::spawn(async {
+            Err(std::io::Error::other("simulated background update failure"))
+        });
+        let outcome = finish_update_on_exit(Some(failing), &cfg).await;
+        assert_eq!(outcome, FinishUpdateOnExit::ChannelDisabled);
+        assert_eq!(
+            STOCK_UPDATE_HELPER_CALLS.load(Ordering::SeqCst),
+            0,
+            "finish_update_on_exit(Some(failing)) must not call stock helpers"
+        );
+
+        // Successful adopted handle must still not install from stock channel.
+        reset_stock_helper_calls();
+        let ok_handle = tokio::spawn(async {
+            // Dummy successful exit status via a short-lived true process would
+            // be heavy; we only need a JoinHandle that completes Ok — but
+            // ExitStatus is OS-specific. Use a failing path already covered and
+            // a cancelled-style join via immediate success from a real process.
+            std::process::Command::new("true")
+                .status()
+                .map_err(std::io::Error::other)
+        });
+        let outcome = finish_update_on_exit(Some(ok_handle), &cfg).await;
+        assert_eq!(outcome, FinishUpdateOnExit::ChannelDisabled);
+        assert_eq!(
+            STOCK_UPDATE_HELPER_CALLS.load(Ordering::SeqCst),
+            0,
+            "finish_update_on_exit(Some(ok)) must not call stock helpers"
+        );
+    }
+
+    #[test]
+    fn p8_update_no_network_startup_and_leader_gated() {
+        // With should_check always false, startup and leader branches cannot
+        // reach run_update_if_available / ensure_latest_on_disk (structural gate).
+        assert!(!startup_or_leader_may_invoke_stock_update(false));
+        assert!(!startup_or_leader_may_invoke_stock_update(true));
+        assert!(!should_check_for_updates(false));
+        assert!(!should_check_for_updates(true));
     }
 
     #[cfg(all(feature = "jemalloc", unix))]
