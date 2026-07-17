@@ -6,9 +6,10 @@ plans_reviewed: ['09-01-PLAN.md', '09-02-PLAN.md', '09-03-PLAN.md', '09-04-PLAN.
 cycle: 2
 prior_cycle: 1
 current_high: 0
-current_actionable: 3
+current_actionable: 0
 verdict: REPLAN
 replanned_at: 2026-07-17
+cycle2_replanned_at: 2026-07-17
 ---
 
 # Cross-AI Plan Review — Phase 9
@@ -330,6 +331,20 @@ None.
 
 ## Current Actionable Non-HIGH Concerns
 
-- **C2-M1 (09-05):** Remove trailing `|| true` from Task 3 secrets verify; enforce auth.json + token-like path guards and phase-diff content scan as required gates.
-- **C2-M2 (09-04):** Expand Task 3 automated verify to discover+execute affected p6/p7/p8 residual filters after product may-modify fixes (not only `p9_`).
-- **C2-L1 (09-03):** Make token-like path + scoped phase-diff secret checks required in preflight script or Task 2 verify.
+None — all cycle-2 residuals incorporated (see replan dispositions below).
+
+## Replan dispositions (cycle 2 → plans)
+
+All 3 cycle-2 actionable findings incorporated into PLAN.md executable content. `current_actionable=0`.
+
+| ID | Sev | Plan | Disposition | Where |
+|----|-----|------|-------------|-------|
+| C2-M1 | MEDIUM | 09-05 | INCORPORATED | Task 3 secrets verify: removed trailing broad `\|\| true`; required auth.json + token-like path guards + phase-diff content scan; optional `git diff --check` isolated so it cannot mask required gates |
+| C2-M2 | MEDIUM | 09-04 | INCORPORATED | Post-fix residual map + Task 3 automated verify path-detects may-modify classes and discover+executes affected p6/p7/p8 filters (always p9_ + p6_dual_login + p7_isolation safety net) |
+| C2-L1 | LOW | 09-03 | INCORPORATED | Task 2 preflight action requires fail-closed path + phase-diff secret gates (not "may print"); Task 2 verify enforces token-like `git ls-files` + scoped phase-diff content scan |
+
+### Review Feedback Deferred / Rejected (cycle 2)
+
+None.
+
+CYCLE_SUMMARY: current_high=0 current_actionable=0
