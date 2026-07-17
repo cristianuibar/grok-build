@@ -3260,6 +3260,47 @@ fn harness_model_override_keeps_internal_fallback_behavior() {
         "internal role/config pins must retain downstream soft fallback"
     );
 }
+/// Phase 7 p7_ regression: Tool-provenance unknown models fail closed today
+/// via `task_model_override_error` (not parent-model fallback). Plan 02–05
+/// product work must not reintroduce silent inherit for explicit Task.model.
+#[test]
+fn p7_tool_unknown_model_rejected_by_existing_task_model_override_error() {
+    let mut models = indexmap::IndexMap::new();
+    models.insert("grok-build".to_string(), test_model_entry("grok-build-internal"));
+    models.insert("gpt-5.6-sol".to_string(), test_model_entry("gpt-5.6-sol-internal"));
+    let error = super::handle_request::task_model_override_error(
+        Some("not-a-real-model-slug"),
+        ModelOverrideProvenance::Tool,
+        false,
+        &models,
+        false,
+    )
+    .expect("Tool unknown model must reject fail-closed");
+    assert!(
+        error.contains("Unknown Task.model slug 'not-a-real-model-slug'"),
+        "error must name unknown slug: {error}"
+    );
+    assert!(
+        error.contains("Valid model slugs:"),
+        "error must list valid slugs: {error}"
+    );
+    assert!(
+        error.contains("Omit `model` to inherit the parent model."),
+        "error must guide omit-to-inherit: {error}"
+    );
+    // Non-Tool provenance still soft-falls through (existing harness behavior).
+    assert!(
+        super::handle_request::task_model_override_error(
+            Some("not-a-real-model-slug"),
+            ModelOverrideProvenance::Harness,
+            false,
+            &models,
+            false,
+        )
+        .is_none(),
+        "Harness provenance keeps soft fallback; only Tool rejects"
+    );
+}
 #[test]
 fn normalize_forked_context_empty_parent() {
     use xai_grok_sampling_types::conversation::ConversationItem;
