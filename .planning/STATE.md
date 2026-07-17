@@ -4,12 +4,12 @@ milestone: v1.0
 milestone_name: milestone
 current_phase: 9
 current_phase_name: Daily-driver end-to-end validation
-current_plan: 3
+current_plan: next incomplete among 02/04/05
 status: executing
-stopped_at: Completed 09-03-PLAN.md
-last_updated: "2026-07-17T15:16:13.624Z"
+stopped_at: Completed 09-02-PLAN.md
+last_updated: "2026-07-17T15:23:23.204Z"
 last_activity: 2026-07-17
-last_activity_desc: "Completed 09-03: required UAT checklist + non-secret preflight"
+last_activity_desc: Completed 09-03 (09-UAT.md + uat-preflight.sh)
 progress:
   total_phases: 9
   completed_phases: 6
@@ -35,7 +35,7 @@ Last activity: 2026-07-17 — Completed 09-03 (09-UAT.md + uat-preflight.sh)
 Current Plan: next incomplete among 02/04/05
 Total Plans in Phase: 5
 
-Progress: [█████████░] 88%
+Progress: [█████████░] 90%
 
 ## Performance Metrics
 
@@ -75,8 +75,12 @@ Progress: [█████████░] 88%
 | Phase 08 P06 | 20min | 3 tasks | 3 files |
 | Phase 09 P01 | 2min | 2 tasks | 2 files |
 | Phase 09 P03 | 12min | 2 tasks | 3 files |
+| Phase 09 P02 | 8min | 2 tasks | 2 files |
 
 ## Decisions
+
+- [Phase ?]: Plan 02: PHASE-GATE sole SoT full P0/P1/p9_; isolation list dirs then aggregate once; human_uat required unsigned
+- [Phase ?]: Plan 02: automated half GREEN 2026-07-17; live OPS still pending (D-02/D-16); nyquist stays false
 
 ### Phase 9 (Daily-driver end-to-end validation)
 
@@ -105,7 +109,7 @@ Progress: [█████████░] 88%
 
 ## Session
 
-**Last session:** 2026-07-17T15:16:13.614Z
-**Stopped at:** Completed 09-03-PLAN.md
+**Last session:** 2026-07-17T15:23:23.192Z
+**Stopped at:** Completed 09-02-PLAN.md
 **Resume file:** None
 **Next:** Complete remaining Phase 9 plans (09-02 PHASE-GATE if open; 09-04 live dual-login execute; 09-05 hybrid VERIFICATION)
