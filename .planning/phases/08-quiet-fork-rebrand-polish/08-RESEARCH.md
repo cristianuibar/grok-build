@@ -444,23 +444,20 @@ Resolved::new(TelemetryMode::Disabled, ConfigSource::Default)
 
 **If empty table was expected:** remaining claims are codebase-verified; A1–A4 need planner awareness only.
 
-## Open Questions
+## Open Questions (RESOLVED)
 
-1. **Remote telemetry / feedback feature flags**
-   - What we know: resolve path can re-enable from remote settings after default Disabled/false.
-   - What's unclear: whether any managed deployment needs remote toggle.
-   - Recommendation: hard-prefer local Disabled/false for product events and feedback; document env override only for developers (`GROK_TELEMETRY_ENABLED`) without advertising in UX.
+1. **Remote telemetry / feedback feature flags** — **RESOLVED (Plan 05)**
+   - Decision: hard-prefer local `TelemetryMode::Disabled` and feedback default `false` for product events; do not advertise stock phone-home re-enable in UX.
+   - Developer-only env overrides (if already present) may remain undocumented for users; quiet-fork gate is defaults + feedback dispatch short-circuit + Sentry off.
+   - Optional: pin remote-settings path so managed config cannot silently re-enable product analytics without an explicit local opt-in (Plan 05 discretion).
 
-2. **Agent/system prompt product naming**
-   - What we know: templates and agent descriptions still say Grok Build.
-   - What's unclear: whether ID-02 “user-facing” includes model self-introduction.
-   - Recommendation: defer to discretion / Phase 9 if chrome greps clean; optional small prompt rebrand plan if user wants model to say bum.
+2. **Agent/system prompt product naming** — **RESOLVED (out of chrome gate)**
+   - Decision: **defer** model self-introduction / agent system-prompt “Grok Build agent” rebrand beyond Phase 8 chrome gate (CONTEXT chrome-first; RESEARCH recommendation).
+   - Phase 9 may pick up if daily-driver UX still feels half-renamed. Not a Plan 01–06 must-have.
 
-3. **In-tree user-guide markdown under pager/docs**
-   - What we know: CONTEXT allows in-tree help/docs polish; many `docs/user-guide/*.md` say Grok Build.
-   - What's unclear: depth for v1.
-   - Recommendation: rebrand user-guide product name if extracted to `~/.bum/docs` (pager-bin extracts docs); skip CHANGELOG archaeology.
-
+3. **In-tree user-guide markdown under pager/docs** — **RESOLVED (scoped)**
+   - Decision: rebrand **runtime-extracted** user-facing help that ships with the binary (if Plan 02/03 inventory hits it); skip CHANGELOG archaeology and wholesale docs rewrite.
+   - Depth = product chrome + extracted help surfaces only (CONTEXT “in-tree user-facing help/docs only”).
 ## Environment Availability
 
 | Dependency | Required By | Available | Version | Fallback |
