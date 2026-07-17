@@ -119,7 +119,7 @@ Each task was committed atomically:
 2. **Task 2: Write and run 08-PHASE-GATE.md (per-subgroup discover + execute)** - `9886b63` (docs)
 3. **Task 3: Residual inventory gate + model brands + deferred exclusions** - `a5be216` (docs)
 
-**Plan metadata:**  (docs: complete phase gate close-out plan)
+**Plan metadata:** `8a9c57d` (docs: complete phase gate close-out plan)
 
 ## Files Created/Modified
 
