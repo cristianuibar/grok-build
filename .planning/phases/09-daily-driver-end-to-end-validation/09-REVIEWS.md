@@ -5,8 +5,9 @@ reviewed_at: 2026-07-17T17:52:00Z
 plans_reviewed: ['09-01-PLAN.md', '09-02-PLAN.md', '09-03-PLAN.md', '09-04-PLAN.md', '09-05-PLAN.md']
 cycle: 1
 current_high: 0
-current_actionable: 14
+current_actionable: 0
 verdict: REPLAN
+replanned_at: 2026-07-17
 ---
 
 # Cross-AI Plan Review — Phase 9
@@ -211,23 +212,35 @@ N/A — single reviewer.
 
 CYCLE_SUMMARY: current_high=0 current_actionable=14
 
+## Replan dispositions (cycle 1 → plans)
+
+All 14 actionable findings incorporated into PLAN.md executable content. `current_actionable=0`.
+
+| ID | Sev | Plan | Disposition | Where |
+|----|-----|------|-------------|-------|
+| C1-M1 | MEDIUM | 09-01 | Incorporated | Task 1: single differentiated p9_ residual; forbid dual p7 clones |
+| C1-M2 | MEDIUM | 09-02 | Incorporated | Full P0/P1 inventory SoT table; Task 2 verify matches full inventory |
+| C1-M3 | MEDIUM | 09-03 | Incorporated | Disposable worktree/fixture + initial/final git status in UAT + preflight |
+| C1-M4 | MEDIUM | 09-03 | Incorporated | CLI chrome preflight; residual Grok chrome = blocker decision |
+| C1-M5 | MEDIUM | 09-04 | Incorporated | Conditional may-modify paths in files_modified + SUMMARY path recording |
+| C1-M6 | MEDIUM | 09-04 | Incorporated | OPS-06 structured evidence fields (parent/child/effort/result/parent_after) |
+| C1-M7 | MEDIUM | 09-05 | Incorporated | Final-gate filter failure policy: restore original; no thin-wrapper default |
+| C1-M8 | MEDIUM | 09-05 | Incorporated | Secrets GREEN gate: content + auth.json path + phase-diff scan |
+| C1-L1 | LOW | 09-01 | Incorporated | Optional route residual labeled metadata-only; bearer = p7_isolation |
+| C1-L2 | LOW | 09-02 | Incorporated | home_isolation discover-before-execute in PHASE-GATE + Task 2 verify |
+| C1-L3 | LOW | 09-02 | Incorporated | list both isolation dirs; execute aggregate p7_isolation once |
+| C1-L4 | LOW | 09-03 | Incorporated | Preflight secrets: auth.json/token paths + phase-diff scan |
+| C1-L5 | LOW | 09-04 | Incorporated | Outcome taxonomy PASS \| PRODUCT BLOCKER \| AUTH/ACCOUNT BLOCKED \| PROVIDER OUTAGE/LIMIT |
+| C1-L6 | LOW | 09-05 | Incorporated | Final-gate home_isolation discover-before-execute in Task 1 verify |
+
+### Review Feedback Deferred / Rejected
+
+None — all cycle-1 actionable findings incorporated.
+
 ## Current HIGH Concerns
 
 None.
 
 ## Current Actionable Non-HIGH Concerns
 
-- [C1-M1] 09-01: avoid duplicating p7 harness/login-hint tests; keep one differentiated p9_ residual or alias.
-- [C1-M2] 09-02: make Task 2 `<automated>` verify run the full claimed P0/P1 inventory (or sole gate script SoT).
-- [C1-M3] 09-03: require disposable worktree/fixture file + initial/final `git status --short`.
-- [C1-M4] 09-03: require CLI chrome preflight (`bum --help`, auth/login/switch labels); treat residual Grok product chrome as explicit blocker decision.
-- [C1-M5] 09-04: declare conditional may-modify source paths (switch/spawn/auth/tools) or require Task 3 to record every changed path.
-- [C1-M6] 09-04: structured OPS-06 evidence (parent/child model, effort, result returned, parent after completion).
-- [C1-M7] 09-05: forbid thin discoverable wrappers as default fix; restore original behavioral filters with reviewer-visible explanation for any replacement.
-- [C1-M8] 09-05: before GREEN, guard tracked `auth.json`/token paths and scan phase diffs, not only JWT regex.
-- [C1-L1] 09-01: label optional route residual as metadata-only; rely on p7_isolation for bearer isolation.
-- [C1-L2] 09-02: discover-before-execute for home_isolation (Phase 8 pattern).
-- [C1-L3] 09-02: discover both isolation directions, execute aggregate `p7_isolation` once.
-- [C1-L4] 09-03: broaden preflight secrets to auth.json / opaque token / phase-diff scan.
-- [C1-L5] 09-04: outcome taxonomy PASS | PRODUCT BLOCKER | AUTH/ACCOUNT BLOCKED | PROVIDER OUTAGE/LIMIT.
-- [C1-L6] 09-05: same discover-before-execute for home isolation in final gate verify.
+None remaining after replan (cycle 1 dispositions above).
