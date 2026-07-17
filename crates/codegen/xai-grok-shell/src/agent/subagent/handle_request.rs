@@ -180,7 +180,42 @@ pub(crate) async fn preflight_subagent_spawn(
         );
         return SubagentPreflightOutcome::Denied { message: msg };
     }
+    // Explicit Tool effort × support — fail closed before bg "started" (WR-01).
+    // Role/definition defaults soft-skip later; only explicit runtime effort gates.
+    let supports = ctx
+        .models_manager
+        .model_supports_reasoning_effort(gate_model_id);
+    if let Some(msg) = explicit_tool_effort_gate_message(
+        input.runtime_overrides.reasoning_effort.as_deref(),
+        input.runtime_overrides.model_override_provenance,
+        gate_model_id,
+        supports,
+    ) {
+        tracing::warn!(
+            model_id = %gate_model_id,
+            subagent_type = %input.subagent_type,
+            "subagent preflight: explicit Tool reasoning_effort unsupported — denied before started"
+        );
+        return SubagentPreflightOutcome::Denied { message: msg };
+    }
     SubagentPreflightOutcome::Ok
+}
+
+/// Effort provenance for hard-fail vs soft-skip (D-04 / Plan 03).
+///
+/// Model-facing Task always stamps [`ModelOverrideProvenance::Tool`] for the
+/// *model* field, but role / persona / `AgentDefinition.effort` defaults must
+/// still soft-skip when the child model lacks effort support. Only an
+/// **explicit** runtime `reasoning_effort` keeps the Tool/Harness stamp.
+pub(super) fn effort_apply_provenance(
+    explicit_runtime_effort: bool,
+    model_override_provenance: ModelOverrideProvenance,
+) -> ModelOverrideProvenance {
+    if explicit_runtime_effort {
+        model_override_provenance
+    } else {
+        ModelOverrideProvenance::Harness
+    }
 }
 
 /// Apply explicit `reasoning_effort` to child sampling config (D-04 / AGENT-03).
@@ -231,6 +266,26 @@ pub(super) fn apply_subagent_reasoning_effort(
             }
         }
     }
+}
+
+/// Pre-pending / preflight gate for **explicit Tool** effort × model support.
+///
+/// Role/persona/definition defaults are not checked here (Harness soft-skip at
+/// apply time). Returns `Some(message)` when spawn must fail closed before
+/// side effects (pending, worktree, bg "started").
+pub(super) fn explicit_tool_effort_gate_message(
+    explicit_effort: Option<&str>,
+    provenance: ModelOverrideProvenance,
+    model_id: &str,
+    model_supports: bool,
+) -> Option<String> {
+    let raw = explicit_effort?;
+    if provenance != ModelOverrideProvenance::Tool {
+        return None;
+    }
+    let mut scratch = xai_grok_sampler::SamplerConfig::default();
+    apply_subagent_reasoning_effort(raw, model_id, model_supports, provenance, &mut scratch)
+        .err()
 }
 /// This is a free async function, NOT a method on MvpAgent. It receives
 /// a `SubagentSpawnContext` with everything it needs, and a mutable
@@ -437,6 +492,24 @@ pub(crate) async fn handle_subagent_request(
             subagent_id = %request.id,
             model_id = %gate_model_id,
             "subagent spawn: missing usable provider credentials — rejected before pending/worktree"
+        );
+        send_pre_spawn_failure(request, &msg, coordinator, &ctx, gateway);
+        return;
+    }
+    // Explicit Tool effort × support before pending/worktree (WR-01, aligns with preflight).
+    let effort_supports = ctx
+        .models_manager
+        .model_supports_reasoning_effort(gate_model_id);
+    if let Some(msg) = explicit_tool_effort_gate_message(
+        request.runtime_overrides.reasoning_effort.as_deref(),
+        request.runtime_overrides.model_override_provenance,
+        gate_model_id,
+        effort_supports,
+    ) {
+        tracing::warn!(
+            subagent_id = %request.id,
+            model_id = %gate_model_id,
+            "subagent spawn: explicit Tool reasoning_effort unsupported — rejected before pending/worktree"
         );
         send_pre_spawn_failure(request, &msg, coordinator, &ctx, gateway);
         return;
@@ -656,6 +729,20 @@ pub(crate) async fn handle_subagent_request(
             && !ctx.available_models.contains_key(model_str)
             && !ctx.available_models.values().any(|e| e.info().model == *model_str);
         if model_unknown {
+            // Tool explicit model (or any explicit runtime model pin): fail closed —
+            // never re-home child onto parent bearer after a provider gate (WR-03).
+            if request.runtime_overrides.model_override_provenance
+                == ModelOverrideProvenance::Tool
+                || effective_runtime.model.is_some()
+            {
+                let msg = format!(
+                    "Resolved subagent model '{model_str}' is not in the available catalog; \
+                     refusing parent credential fallback."
+                );
+                pending_guard.set_error(msg.clone());
+                send_failure(request, &msg);
+                return;
+            }
             let (parent_config, parent_mid) = read_parent_sampling_config(&ctx).await;
             tracing::warn!(
                 subagent_id = % request.id, resolved_model = % model_str, parent_model =
@@ -688,15 +775,30 @@ pub(crate) async fn handle_subagent_request(
             return;
         }
     }
+    // Final model may differ from preflight (resume pin / re-resolve). Re-check
+    // provider credentials so parent-fallback cannot sneak past the early gate.
+    if let Some(msg) =
+        missing_provider_spawn_gate_message(effective_model_id.0.as_ref(), &ctx)
+    {
+        pending_guard.set_error(msg.clone());
+        send_failure(request, &msg);
+        return;
+    }
     if let Some(raw) = effective_runtime.reasoning_effort.as_deref() {
         let supports = ctx
             .models_manager
             .model_supports_reasoning_effort(effective_model_id.0.as_ref());
+        // CR-01: only explicit Task/runtime effort uses Tool hard-fail; role /
+        // persona / definition defaults soft-skip as Harness.
+        let effort_provenance = effort_apply_provenance(
+            request.runtime_overrides.reasoning_effort.is_some(),
+            request.runtime_overrides.model_override_provenance,
+        );
         match apply_subagent_reasoning_effort(
             raw,
             effective_model_id.0.as_ref(),
             supports,
-            request.runtime_overrides.model_override_provenance,
+            effort_provenance,
             &mut effective_sampling_config,
         ) {
             Ok(()) => {}
@@ -998,16 +1100,21 @@ pub(crate) async fn handle_subagent_request(
         None,
         Some(
             serde_json::json!(
-                { "subagent_id" : & request.id, "subagent_type" : & request
-                .subagent_type, "effective_model" : effective_model_id.0.as_ref(),
-                "effective_model_raw" : & effective_sampling_config.model, "base_url" : &
-                effective_sampling_config.base_url, "key_prefix" : key_prefix(&
-                effective_sampling_config.api_key), "auth_type" : format!("{:?}",
-                inherited_auth_type), "model_has_own_creds" : model_has_own_creds,
-                "auth_method_id" : ctx.auth_method_id.0.as_ref(), "parent_model" : ctx
-                .model_id.0.as_ref(), "parent_key_prefix" : key_prefix(& ctx
-                .sampling_config.api_key), "context_window" : effective_sampling_config
-                .context_window, }
+                {
+                    "subagent_id": &request.id,
+                    "subagent_type": &request.subagent_type,
+                    "effective_model": effective_model_id.0.as_ref(),
+                    "effective_model_raw": &effective_sampling_config.model,
+                    "base_url": &effective_sampling_config.base_url,
+                    "has_child_key": api_key_present(&effective_sampling_config.api_key),
+                    "has_parent_key": api_key_present(&ctx.sampling_config.api_key),
+                    "keys_match": effective_sampling_config.api_key == ctx.sampling_config.api_key,
+                    "auth_type": format!("{:?}", inherited_auth_type),
+                    "model_has_own_creds": model_has_own_creds,
+                    "auth_method_id": ctx.auth_method_id.0.as_ref(),
+                    "parent_model": ctx.model_id.0.as_ref(),
+                    "context_window": effective_sampling_config.context_window,
+                }
             ),
         ),
     );

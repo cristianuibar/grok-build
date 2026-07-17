@@ -3730,6 +3730,91 @@ fn p7_invalid_effort_harness_soft_skips_unsupported() {
     assert!(sampling.reasoning_effort.is_none());
 }
 
+/// CR-01: Task stamps Tool for model, but omitted effort + role default must soft-skip.
+#[test]
+fn p7_tool_model_stamp_role_effort_soft_skips_unsupported() {
+    let mut sampling = xai_grok_sampler::SamplerConfig {
+        model: "grok-plain".into(),
+        ..Default::default()
+    };
+    // Explicit runtime effort = false → Harness even when model stamp is Tool.
+    let provenance = super::handle_request::effort_apply_provenance(
+        false,
+        ModelOverrideProvenance::Tool,
+    );
+    assert_eq!(provenance, ModelOverrideProvenance::Harness);
+    super::handle_request::apply_subagent_reasoning_effort(
+        "high",
+        "grok-plain",
+        false,
+        provenance,
+        &mut sampling,
+    )
+    .expect("role/definition effort under Task model stamp must soft-skip");
+    assert!(sampling.reasoning_effort.is_none());
+}
+
+/// CR-01: explicit Task reasoning_effort keeps Tool hard-fail on unsupported model.
+#[test]
+fn p7_explicit_tool_effort_hard_fails_unsupported() {
+    let mut sampling = xai_grok_sampler::SamplerConfig {
+        model: "grok-plain".into(),
+        ..Default::default()
+    };
+    let provenance = super::handle_request::effort_apply_provenance(
+        true,
+        ModelOverrideProvenance::Tool,
+    );
+    assert_eq!(provenance, ModelOverrideProvenance::Tool);
+    let err = super::handle_request::apply_subagent_reasoning_effort(
+        "high",
+        "grok-plain",
+        false,
+        provenance,
+        &mut sampling,
+    )
+    .expect_err("explicit Tool effort on unsupported model must fail closed");
+    assert!(
+        err.contains("does not support reasoning_effort"),
+        "clear unsupported message: {err}"
+    );
+    assert!(sampling.reasoning_effort.is_none());
+}
+
+/// WR-01: early gate message for explicit Tool unsupported effort.
+#[test]
+fn p7_explicit_tool_effort_gate_message_denies_unsupported() {
+    let msg = super::handle_request::explicit_tool_effort_gate_message(
+        Some("high"),
+        ModelOverrideProvenance::Tool,
+        "grok-plain",
+        false,
+    );
+    assert!(
+        msg.as_deref().is_some_and(|m| m.contains("does not support reasoning_effort")),
+        "expected deny message, got {msg:?}"
+    );
+    // Role/harness defaults: no early gate.
+    assert!(
+        super::handle_request::explicit_tool_effort_gate_message(
+            None,
+            ModelOverrideProvenance::Tool,
+            "grok-plain",
+            false,
+        )
+        .is_none()
+    );
+    assert!(
+        super::handle_request::explicit_tool_effort_gate_message(
+            Some("high"),
+            ModelOverrideProvenance::Harness,
+            "grok-plain",
+            false,
+        )
+        .is_none()
+    );
+}
+
 #[test]
 fn normalize_forked_context_empty_parent() {
     use xai_grok_sampling_types::conversation::ConversationItem;
@@ -4047,6 +4132,70 @@ async fn p7_preflight_resume_from_pin_denies_when_target_provider_empty() {
         }
         other => panic!("expected Denied for resume pin, got {other:?}"),
     }
+}
+
+/// WR-01: explicit Tool effort on model without effort support → preflight Denied.
+#[tokio::test]
+async fn p7_preflight_denies_explicit_tool_effort_on_unsupported_model() {
+    let dir = tempfile::TempDir::new().unwrap();
+    let auth_path = dir.path().join("auth.json");
+    p7_write_auth_json(&auth_path, true, false);
+
+    // test_model_entry defaults supports_reasoning_effort = false
+    let mut models = indexmap::IndexMap::new();
+    models.insert("grok-plain".to_string(), test_model_entry("grok-plain"));
+
+    let ctx = p7_ctx_with_models_and_auth(models, auth_path, "grok-plain");
+    let coordinator = std::cell::RefCell::new(SubagentCoordinator::new());
+    let input = p7_preflight_input(
+        "explore",
+        SubagentRuntimeOverrides {
+            model: Some("grok-plain".into()),
+            model_override_provenance: ModelOverrideProvenance::Tool,
+            reasoning_effort: Some("high".into()),
+            ..Default::default()
+        },
+        None,
+    );
+    let outcome = preflight_subagent_spawn(&input, &ctx, &coordinator).await;
+    match outcome {
+        SubagentPreflightOutcome::Denied { message } => {
+            assert!(
+                message.contains("does not support reasoning_effort"),
+                "effort support deny: {message}"
+            );
+        }
+        other => panic!("expected Denied for Tool effort on unsupported model, got {other:?}"),
+    }
+}
+
+/// WR-01 / CR-01: omitted effort (role would fill later) does not preflight-deny on unsupported.
+#[tokio::test]
+async fn p7_preflight_ok_when_effort_omitted_on_unsupported_model() {
+    let dir = tempfile::TempDir::new().unwrap();
+    let auth_path = dir.path().join("auth.json");
+    p7_write_auth_json(&auth_path, true, false);
+
+    let mut models = indexmap::IndexMap::new();
+    models.insert("grok-plain".to_string(), test_model_entry("grok-plain"));
+
+    let ctx = p7_ctx_with_models_and_auth(models, auth_path, "grok-plain");
+    let coordinator = std::cell::RefCell::new(SubagentCoordinator::new());
+    let input = p7_preflight_input(
+        "explore",
+        SubagentRuntimeOverrides {
+            model: Some("grok-plain".into()),
+            model_override_provenance: ModelOverrideProvenance::Tool,
+            reasoning_effort: None,
+            ..Default::default()
+        },
+        None,
+    );
+    let outcome = preflight_subagent_spawn(&input, &ctx, &coordinator).await;
+    assert!(
+        matches!(outcome, SubagentPreflightOutcome::Ok),
+        "omitted effort must not preflight-deny; got {outcome:?}"
+    );
 }
 
 /// Persona-derived cross-provider pin with omitted Task.model → deny when target empty (C3-M1).
