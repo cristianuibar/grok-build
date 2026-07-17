@@ -1221,8 +1221,8 @@ pub fn default_settings() -> Vec<SettingMeta> {
             category: SettingCategory::Advanced,
             owner: SettingOwner::Shell,
             label: "Auto-update",
-            // Quiet fork (OPS-01 / D-07 / UI-SPEC): stock channel disabled by default.
-            description: "Stock update channel (disabled in bum).",
+            // Quiet fork (OPS-01 / D-07 / UI-SPEC): stock channel permanently hard-off.
+            description: "Stock update channel (permanently disabled in bum; cannot re-enable).",
             keywords: &[
                 "auto", "update", "updates", "upgrade", "version", "install", "channel",
             ],

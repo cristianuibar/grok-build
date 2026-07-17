@@ -1572,6 +1572,31 @@ fn pr13_each_setter_writes_to_its_own_mirror() {
     assert_eq!(app.auto_update, Some(false));
     assert_eq!(app.show_tips, Some(false));
 }
+
+/// Quiet fork OPS-01: SetAutoUpdate(true) must not persist or flip mirror.
+#[test]
+fn p8_set_auto_update_true_is_refused() {
+    let mut app = test_app_with_agent();
+    assert_eq!(app.auto_update, None);
+    let effects = dispatch(Action::SetAutoUpdate(true), &mut app);
+    assert_eq!(
+        app.auto_update, None,
+        "enabling stock auto-update must leave mirror unset"
+    );
+    assert!(
+        effects.is_empty(),
+        "must not emit PersistSetting for hard-off enable attempt"
+    );
+    // Explicit false still allowed (cleanup of drift / off path).
+    let effects = dispatch(Action::SetAutoUpdate(false), &mut app);
+    assert_eq!(app.auto_update, Some(false));
+    assert!(
+        effects
+            .iter()
+            .any(|e| matches!(e, Effect::PersistSetting { key: "auto_update", .. })),
+        "false must still persist"
+    );
+}
 /// Three-way alignment pin: the PAGER registry default must agree
 /// with `PagerLocalSnapshot::default()` (covered by
 /// `defaults_match_pager_state` in `registry::tests`) AND with

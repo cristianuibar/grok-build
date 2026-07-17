@@ -1856,6 +1856,13 @@ pub(in crate::app::dispatch) fn set_auto_update(app: &mut AppView, new: bool) ->
     if prev_effective == new && prev_state.is_some() {
         return vec![];
     }
+    // Quiet fork (OPS-01 / D-07): stock channel is hard-off at composition root.
+    // Refuse enabling so settings cannot claim "on" / "restart to apply" while
+    // probes remain permanently offline.
+    if new {
+        app.show_toast("Stock auto-update is permanently disabled in bum.");
+        return vec![];
+    }
     set_auto_update_inner(app, new);
     refresh_open_settings_modals(app);
     tracing::info!(target: "settings", key = "auto_update", value = new, "setting changed");
