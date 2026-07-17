@@ -1109,12 +1109,42 @@ impl acp::Agent for MvpAgent {
             });
         }
         if let Some(model_id) = resolved_custom_model {
-            let _ = crate::timed!(
+            let requested = acp::ModelId::new(model_id);
+            let apply_result = crate::timed!(
                 log : "new_session: set_session_model", { crate
                 ::agent::handlers::model_switch::apply(self,
                 acp::SetSessionModelRequest::new(session_id.clone(),
-                acp::ModelId::new(model_id)),). await }
+                requested.clone()),). await }
             );
+            if let Err(e) = apply_result {
+                // WR-04: do not silently leave construction-time default model
+                // when the requested provider has no usable credentials.
+                if let Some(typed) =
+                    crate::agent::config::ModelSwitchMissingProviderError::from_acp_error(&e)
+                {
+                    tracing::error!(
+                        session_id = %session_id.0,
+                        model_id = %typed.model_id,
+                        provider = %typed.provider,
+                        "new_session: set_session_model missing provider — session stays on construction model"
+                    );
+                    let current = self.models_manager.current_model_id();
+                    let reason = typed.user_message();
+                    self.send_model_auto_switched(
+                        &session_id,
+                        &requested,
+                        &current,
+                        &reason,
+                    )
+                    .await;
+                } else {
+                    tracing::warn!(
+                        session_id = %session_id.0,
+                        error = %e,
+                        "new_session: set_session_model failed"
+                    );
+                }
+            }
             tracing::debug!(
                 session_id = % session_id.0, "new_session: set_session_model"
             );
@@ -1847,12 +1877,47 @@ impl acp::Agent for MvpAgent {
                     );
                     map
                 });
-            let _ = crate::agent::handlers::model_switch::apply(
+            let requested = model_id.clone();
+            let apply_result = crate::agent::handlers::model_switch::apply(
                     self,
                     acp::SetSessionModelRequest::new(session_id.to_owned(), model_id)
                         .meta(restore_meta),
                 )
                 .await;
+            if let Err(e) = apply_result {
+                // WR-04: surface missing-provider restore failures so resume
+                // does not silently continue under the wrong construction model.
+                if let Some(typed) =
+                    crate::agent::config::ModelSwitchMissingProviderError::from_acp_error(&e)
+                {
+                    tracing::error!(
+                        session_id = %session_id.0,
+                        model_id = %typed.model_id,
+                        provider = %typed.provider,
+                        "load_session: restore model missing provider — session stays on construction model"
+                    );
+                    let current = self
+                        .sessions
+                        .borrow()
+                        .get(&session_id)
+                        .map(|h| h.model_id.clone())
+                        .unwrap_or_else(|| self.models_manager.current_model_id());
+                    let reason = typed.user_message();
+                    self.send_model_auto_switched(
+                        &session_id,
+                        &requested,
+                        &current,
+                        &reason,
+                    )
+                    .await;
+                } else {
+                    tracing::warn!(
+                        session_id = %session_id.0,
+                        error = %e,
+                        "load_session: restore model failed"
+                    );
+                }
+            }
         }
         let mut response_meta_map = serde_json::Map::new();
         response_meta_map.insert("sessionId".to_string(), serde_json::json!(session_id));
