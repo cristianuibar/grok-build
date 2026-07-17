@@ -2,9 +2,9 @@
 phase: 9
 slug: daily-driver-end-to-end-validation
 plan: 02
-status: automated-half-pending
-gate_started: null
-gate_passed: null
+status: automated-half-green
+gate_started: 2026-07-17T15:14:46Z
+gate_passed_automated: 2026-07-17T15:21:09Z
 requirements: [OPS-03, OPS-04, OPS-05, OPS-06]
 fixture_only: true
 green_only: true
@@ -177,22 +177,22 @@ echo "NOTE: automated half GREEN still requires human_uat for full gate GREEN (D
 
 | # | Check | Status |
 |---|-------|--------|
-| 1 | `p9_` discover+execute (`cross_provider_subagent`) | ⬜ |
-| 2 | `p6_dual_login` discover+execute | ⬜ |
-| 3 | `p6_missing_provider` discover+execute | ⬜ |
-| 4 | `switch_changes_next_sample_route` discover+execute | ⬜ |
-| 5 | `p7_isolation_grok_parent_codex` list_only n≥1 | ⬜ |
-| 6 | `p7_isolation_codex_parent_grok` list_only n≥1 | ⬜ |
-| 7 | `p7_isolation` aggregate discover+execute **once** | ⬜ |
-| 8 | `p7_eager` (tools `--lib`) discover+execute | ⬜ |
-| 9 | `p7_spawn_missing_provider` (`--lib`) discover+execute | ⬜ |
-| 10 | `p7_parent_model` discover+execute | ⬜ |
-| 11 | `p8_telemetry` discover+execute | ⬜ |
-| 12 | `p8_no_auto_update` discover+execute | ⬜ |
-| 13 | `p8_sentry` discover+execute | ⬜ |
-| 14 | `home_isolation` discover (hermetic\|home) then execute | ⬜ |
-| 15 | Green-only — no intentional-red exception | ⬜ |
-| 16 | No unfiltered shell `--lib` sole gate; fixture tokens only | ⬜ |
+| 1 | `p9_` discover+execute (`cross_provider_subagent`) | ✅ n=1 |
+| 2 | `p6_dual_login` discover+execute | ✅ n=3 |
+| 3 | `p6_missing_provider` discover+execute | ✅ n=3 |
+| 4 | `switch_changes_next_sample_route` discover+execute | ✅ n=1 |
+| 5 | `p7_isolation_grok_parent_codex` list_only n≥1 | ✅ n=1 |
+| 6 | `p7_isolation_codex_parent_grok` list_only n≥1 | ✅ n=1 |
+| 7 | `p7_isolation` aggregate discover+execute **once** | ✅ n=4 |
+| 8 | `p7_eager` (tools `--lib`) discover+execute | ✅ n=7 |
+| 9 | `p7_spawn_missing_provider` (`--lib`) discover+execute | ✅ n=5 |
+| 10 | `p7_parent_model` discover+execute | ✅ n=1 |
+| 11 | `p8_telemetry` discover+execute | ✅ n=3 |
+| 12 | `p8_no_auto_update` discover+execute | ✅ n=1 |
+| 13 | `p8_sentry` discover+execute | ✅ n=1 |
+| 14 | `home_isolation` discover (hermetic\|home) then execute | ✅ n=1 |
+| 15 | Green-only — no intentional-red exception | ✅ |
+| 16 | No unfiltered shell `--lib` sole gate; fixture tokens only | ✅ |
 
 ---
 
@@ -228,10 +228,10 @@ each OPS row before phase gate GREEN. Evidence lives in `09-UAT.md` (Plan 03) an
 
 ## Gate results (filled by Plan 02 Task 2)
 
-**Automated half status:** pending  
-**Full gate status:** pending human_uat  
-**Started:** _TBD_  
-**Passed (automated):** _TBD_  
+**Automated half status:** GREEN  
+**Full gate status:** pending human_uat (D-02 / D-16 — automated GREEN ≠ full gate GREEN)  
+**Started:** `2026-07-17T15:14:46Z`  
+**Passed (automated):** `2026-07-17T15:21:09Z`  
 **Host:** local cargo (debug test profile)  
 **Protocol:** per-subgroup discover ≥1 then execute; list_only both isolation dirs then aggregate once; home_isolation discover-before-execute; `&&` chains only; no intentional-red; no live OAuth
 
@@ -239,20 +239,20 @@ each OPS row before phase gate GREEN. Evidence lives in `09-UAT.md` (Plan 03) an
 
 | Subgroup | Package | Target | Mode | Discovered ≥1 | Result |
 |----------|---------|--------|------|---------------|--------|
-| `p9_` | shell | `--test cross_provider_subagent` | discover+execute | ⬜ | pending |
-| `p6_dual_login` | shell | `--test model_switch_gate` | discover+execute | ⬜ | pending |
-| `p6_missing_provider` | shell | `--test model_switch_gate` | discover+execute | ⬜ | pending |
-| `switch_changes_next_sample_route` | shell | `--test provider_routing` | discover+execute | ⬜ | pending |
-| `p7_isolation_grok_parent_codex` | shell | `--lib` | list_only | ⬜ | pending |
-| `p7_isolation_codex_parent_grok` | shell | `--lib` | list_only | ⬜ | pending |
-| `p7_isolation` | shell | `--lib` | discover+execute once | ⬜ | pending |
-| `p7_eager` | tools | `--lib` | discover+execute | ⬜ | pending |
-| `p7_spawn_missing_provider` | shell | `--lib` | discover+execute | ⬜ | pending |
-| `p7_parent_model` | shell | `--lib` | discover+execute | ⬜ | pending |
-| `p8_telemetry` | shell | `--lib` | discover+execute | ⬜ | pending |
-| `p8_no_auto_update` | pager-bin | `--bin bum` | discover+execute | ⬜ | pending |
-| `p8_sentry` | pager-bin | `--bin bum` | discover+execute | ⬜ | pending |
-| `home_isolation` | pager-bin | `--test home_isolation` | discover then execute | ⬜ | pending |
+| `p9_` | shell | `--test cross_provider_subagent` | discover+execute | 1 | pass (1 ok) |
+| `p6_dual_login` | shell | `--test model_switch_gate` | discover+execute | 3 | pass (3 ok) |
+| `p6_missing_provider` | shell | `--test model_switch_gate` | discover+execute | 3 | pass (3 ok) |
+| `switch_changes_next_sample_route` | shell | `--test provider_routing` | discover+execute | 1 | pass (1 ok) |
+| `p7_isolation_grok_parent_codex` | shell | `--lib` | list_only | 1 | present (C1-L3) |
+| `p7_isolation_codex_parent_grok` | shell | `--lib` | list_only | 1 | present (C1-L3) |
+| `p7_isolation` | shell | `--lib` | discover+execute once | 4 | pass (4 ok; both dirs) |
+| `p7_eager` | tools | `--lib` | discover+execute | 7 | pass (7 ok) |
+| `p7_spawn_missing_provider` | shell | `--lib` | discover+execute | 5 | pass (5 ok) |
+| `p7_parent_model` | shell | `--lib` | discover+execute | 1 | pass (1 ok) |
+| `p8_telemetry` | shell | `--lib` | discover+execute | 3 | pass (3 ok) |
+| `p8_no_auto_update` | pager-bin | `--bin bum` | discover+execute | 1 | pass (1 ok) |
+| `p8_sentry` | pager-bin | `--bin bum` | discover+execute | 1 | pass (1 ok) |
+| `home_isolation` | pager-bin | `--test home_isolation` | discover then execute | 1 (`hermetic`) | pass (1 ok) |
 
 ---
 
