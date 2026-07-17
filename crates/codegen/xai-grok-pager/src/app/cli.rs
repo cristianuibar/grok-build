@@ -1378,4 +1378,17 @@ mod tests {
         };
         assert_eq!(agent.reasoning_effort.as_deref(), Some("max"));
     }
+
+    /// Phase 8 wave-1 harness smoke: discoverable under `p8_` / `p8_wave1`.
+    /// Does **not** assert clap product brand (stock still `name=grok` / about Grok Build —
+    /// Plan 02 owns `p8_cli_brand` green flip with product strings).
+    #[test]
+    fn p8_wave1_harness_smoke_compiles() {
+        // Clap parse infrastructure alive; argv0 is not the product brand assert.
+        let args = PagerArgs::try_parse_from(["bum", "login"]).expect("login parses for harness");
+        assert!(
+            matches!(args.command, Some(Command::Login { .. })),
+            "Phase 8 pager lib p8_ discovery scaffold must stay green"
+        );
+    }
 }
