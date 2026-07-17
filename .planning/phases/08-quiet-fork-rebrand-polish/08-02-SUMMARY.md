@@ -135,7 +135,7 @@ status: complete
 2. **Task 2: Welcome hero badge, subtitle, ZDR/trust product lines** - `f80bd47` (feat)
 3. **Task 3: Project picker + billing + pager runtime CLI residual** - `94d945c` (feat)
 
-**Plan metadata:** _(pending docs commit)_
+**Plan metadata:** `16b523d` (docs: complete plan)
 
 ## Files Created/Modified
 
