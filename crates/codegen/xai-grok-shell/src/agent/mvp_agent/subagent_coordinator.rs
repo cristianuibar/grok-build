@@ -487,6 +487,7 @@ impl MvpAgent {
             parent_chat_state,
             parent_max_turns,
             available_models,
+            auth_json_path_override: None,
             subagent_model_overrides: self.subagent_model_overrides.clone(),
             subagent_toggle: self.subagent_toggle.clone(),
             subagent_roles: self.subagent_roles.clone(),

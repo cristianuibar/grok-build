@@ -42,6 +42,56 @@ pub(super) fn task_model_override_error(
         is_session_auth,
     )
 }
+
+/// Apply explicit `reasoning_effort` to child sampling config (D-04 / AGENT-03).
+///
+/// - Parse first via [`ReasoningEffort::from_str`] (canonical tokens + aliases).
+/// - Tool provenance: fail closed on parse error or unsupported model.
+/// - Harness / role-only: soft-skip (warn) when parse fails or model lacks support.
+pub(super) fn apply_subagent_reasoning_effort(
+    raw: &str,
+    model_id: &str,
+    model_supports: bool,
+    provenance: ModelOverrideProvenance,
+    sampling: &mut xai_grok_sampler::SamplerConfig,
+) -> Result<(), String> {
+    use xai_grok_sampling_types::ReasoningEffort;
+    match raw.parse::<ReasoningEffort>() {
+        Ok(eff) => {
+            if model_supports {
+                sampling.reasoning_effort = Some(eff);
+                Ok(())
+            } else if provenance == ModelOverrideProvenance::Tool {
+                Err(format!(
+                    "Model '{model_id}' does not support reasoning_effort. \
+                     Omit reasoning_effort or choose a model with effort support."
+                ))
+            } else {
+                tracing::warn!(
+                    model_id,
+                    value = raw,
+                    "subagent reasoning_effort: model does not support effort, ignoring (harness)"
+                );
+                Ok(())
+            }
+        }
+        Err(err) => {
+            if provenance == ModelOverrideProvenance::Tool {
+                Err(format!(
+                    "Invalid reasoning_effort '{raw}': {err}. \
+                     Accepted values: none, minimal, low, medium, high, xhigh (alias: max)."
+                ))
+            } else {
+                tracing::warn!(
+                    value = raw,
+                    error = %err,
+                    "subagent reasoning_effort: parse failed, ignoring override"
+                );
+                Ok(())
+            }
+        }
+    }
+}
 /// This is a free async function, NOT a method on MvpAgent. It receives
 /// a `SubagentSpawnContext` with everything it needs, and a mutable
 /// reference to the coordinator for tracking.
@@ -95,27 +145,9 @@ pub(crate) async fn handle_subagent_request(
     let run_in_background = request.run_in_background
         || definition.background.unwrap_or(false);
     let cancel_token = CancellationToken::new();
-    coordinator
-        .borrow_mut()
-        .insert_pending(PendingSubagent {
-            subagent_id: request.id.clone(),
-            subagent_type: request.subagent_type.clone(),
-            description: request.description.clone(),
-            persona: request.runtime_overrides.persona.clone(),
-            parent_prompt_id: request.parent_prompt_id.clone(),
-            parent_session_id: ctx.parent_session_id.clone(),
-            started_at: start,
-            run_in_background,
-            surface_completion: request.surface_completion,
-            color: definition.color,
-            cancel_token: cancel_token.clone(),
-        });
-    let mut pending_guard = PendingGuard {
-        coordinator,
-        id: request.id.clone(),
-        defused: false,
-        error: None,
-    };
+    // insert_pending is deferred until AFTER effective-model preflight +
+    // missing-provider credential gate (C2-M2 / D-05): no pending entry,
+    // worktree, or child session when the gate fails closed.
     resolve_subagent_toolset(
         &request.subagent_type,
         request.runtime_overrides.harness_agent_type.as_deref(),
@@ -169,8 +201,7 @@ pub(crate) async fn handle_subagent_request(
             subagent_id = % request.id, error = err,
             "Persona resolution failed, aborting subagent spawn"
         );
-        pending_guard.set_error(err.clone());
-        send_failure(request, err);
+        send_pre_spawn_failure(request, err, coordinator, &ctx, gateway);
         return;
     }
     if let Some(ref warn) = effective_runtime.role_prompt_warning {
@@ -191,7 +222,7 @@ pub(crate) async fn handle_subagent_request(
                  Wait for it to complete before resuming."
             );
             drop(coord);
-            send_failure(request, &msg);
+            send_pre_spawn_failure(request, &msg, coordinator, &ctx, gateway);
             return;
         }
         match coord
@@ -207,7 +238,7 @@ pub(crate) async fn handle_subagent_request(
                      The subagent may have been evicted or the ID is invalid."
                 );
                 drop(coord);
-                send_failure(request, &msg);
+                send_pre_spawn_failure(request, &msg, coordinator, &ctx, gateway);
                 return;
             }
         }
@@ -227,7 +258,7 @@ pub(crate) async fn handle_subagent_request(
             request.runtime_overrides.persona.as_deref(),
             source,
         ) {
-            send_failure(request, &e.to_string());
+            send_pre_spawn_failure(request, &e.to_string(), coordinator, &ctx, gateway);
             return;
         }
     }
@@ -238,10 +269,86 @@ pub(crate) async fn handle_subagent_request(
         &ctx.available_models,
         ctx.auth_manager.auth_mode().is_some_and(|mode| mode.is_session_auth()),
     ) {
-        pending_guard.set_error(error.clone());
-        send_failure(request, &error);
+        send_pre_spawn_failure(request, &error, coordinator, &ctx, gateway);
         return;
     }
+    // fork_context forces parent model for radix reuse (must run before gate).
+    if request.fork_context {
+        effective_runtime.model = Some(ctx.model_id.0.to_string());
+    }
+    // Side-effect-free effective model preflight for credential gate.
+    // Resume pins source model for gate; full resolve later re-applies pin.
+    let mut preflight_model = effective_runtime.model.clone();
+    if let Some(ref source) = resume_source
+        && let Some(ref source_model) = source.model_id
+    {
+        preflight_model = Some(source_model.clone());
+    }
+    let (_preflight_cfg, preflight_model_id) = resolve_effective_model_config(
+            preflight_model.as_deref(),
+            &request.subagent_type,
+            &definition.model,
+            &ctx,
+        )
+        .await;
+    let gate_model_id = preflight_model_id.0.as_ref();
+    if let Some(entry) =
+        crate::agent::config::find_model_by_id(&ctx.available_models, gate_model_id)
+    {
+        let target_provider = entry.info.provider;
+        let auth_path = ctx.auth_json_path_override.clone().unwrap_or_else(|| {
+            crate::util::grok_home::grok_home().join("auth.json")
+        });
+        let live_xai = matches!(target_provider, crate::agent::config::ModelProvider::Xai)
+            .then(|| ctx.auth_manager.current_or_expired())
+            .flatten();
+        let slot_usable = crate::agent::config::oauth_provider_slot_usable(
+            &auth_path,
+            target_provider,
+            live_xai.as_ref(),
+        );
+        if let Some(_err) = crate::agent::config::missing_provider_gate_error(
+            target_provider,
+            gate_model_id,
+            entry.has_own_credentials(),
+            slot_usable,
+        ) {
+            let msg = crate::agent::config::missing_provider_spawn_error_message(
+                target_provider,
+                gate_model_id,
+            );
+            tracing::warn!(
+                subagent_id = %request.id,
+                model_id = %gate_model_id,
+                provider = %target_provider.as_str(),
+                "subagent spawn: missing usable provider credentials — rejected before pending/worktree"
+            );
+            send_pre_spawn_failure(request, &msg, coordinator, &ctx, gateway);
+            return;
+        }
+    }
+    // Gate passed (or no catalog entry to gate) — durable side effects begin.
+    coordinator
+        .borrow_mut()
+        .insert_pending(PendingSubagent {
+            subagent_id: request.id.clone(),
+            subagent_type: request.subagent_type.clone(),
+            description: request.description.clone(),
+            persona: request.runtime_overrides.persona.clone(),
+            parent_prompt_id: request.parent_prompt_id.clone(),
+            parent_session_id: ctx.parent_session_id.clone(),
+            started_at: start,
+            run_in_background,
+            surface_completion: request.surface_completion,
+            color: definition.color,
+            cancel_token: cancel_token.clone(),
+        });
+    let mut pending_guard = PendingGuard {
+        coordinator,
+        id: request.id.clone(),
+        defused: false,
+        error: None,
+    };
     let worktree_path = if let Some(ref source) = resume_source {
         if effective_runtime.isolation != xai_tool_types::SubagentIsolationMode::None
             && source.worktree_path.is_none()
@@ -417,9 +524,7 @@ pub(crate) async fn handle_subagent_request(
             prune_orphaned_background_task_tools(&mut definition.tool_config);
         }
     }
-    if request.fork_context {
-        effective_runtime.model = Some(ctx.model_id.0.to_string());
-    }
+    // fork_context already applied to effective_runtime before the credential gate.
     let (mut effective_sampling_config, mut effective_model_id) = resolve_effective_model_config(
             effective_runtime.model.as_deref(),
             &request.subagent_type,
@@ -469,19 +574,22 @@ pub(crate) async fn handle_subagent_request(
             return;
         }
     }
-    if let Some(raw) = effective_runtime.reasoning_effort.as_deref()
-        && ctx
+    if let Some(raw) = effective_runtime.reasoning_effort.as_deref() {
+        let supports = ctx
             .models_manager
-            .model_supports_reasoning_effort(effective_model_id.0.as_ref())
-    {
-        use xai_grok_sampling_types::ReasoningEffort;
-        match raw.parse::<ReasoningEffort>() {
-            Ok(eff) => effective_sampling_config.reasoning_effort = Some(eff),
-            Err(err) => {
-                tracing::warn!(
-                    value = raw, error = % err,
-                    "subagent reasoning_effort: parse failed, ignoring override"
-                )
+            .model_supports_reasoning_effort(effective_model_id.0.as_ref());
+        match apply_subagent_reasoning_effort(
+            raw,
+            effective_model_id.0.as_ref(),
+            supports,
+            request.runtime_overrides.model_override_provenance,
+            &mut effective_sampling_config,
+        ) {
+            Ok(()) => {}
+            Err(msg) => {
+                pending_guard.set_error(msg.clone());
+                send_failure(request, &msg);
+                return;
             }
         }
     }

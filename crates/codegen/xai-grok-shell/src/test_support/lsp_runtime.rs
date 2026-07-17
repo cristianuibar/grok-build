@@ -100,6 +100,7 @@ pub(crate) fn ctx_with_toggle(toggle: HashMap<String, bool>) -> SubagentSpawnCon
         persona_io_summaries: Vec::new(),
         parent_chat_state: None,
         available_models: indexmap::IndexMap::new(),
+        auth_json_path_override: None,
         subagent_model_overrides: HashMap::new(),
         subagent_toggle: toggle,
         disable_web_search: false,

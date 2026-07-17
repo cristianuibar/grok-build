@@ -254,6 +254,11 @@ pub(crate) struct SubagentSpawnContext {
     pub parent_max_turns: Option<usize>,
     /// All available models for resolving model IDs from overrides.
     pub available_models: indexmap::IndexMap<String, crate::agent::config::ModelEntry>,
+    /// Optional override for the auth.json path used by the spawn-time
+    /// missing-provider credential gate. `None` → `$BUM_HOME/auth.json`
+    /// via [`crate::util::grok_home::grok_home`]. Tests inject a TempDir path
+    /// so gate behavior does not depend on the developer's real credentials.
+    pub auth_json_path_override: Option<PathBuf>,
     /// Per-subagent model ID overrides from config.toml `[subagents.models]`.
     pub subagent_model_overrides: std::collections::HashMap<String, String>,
     /// Per-subagent enable/disable toggles from config.toml `[subagents.toggle]`.

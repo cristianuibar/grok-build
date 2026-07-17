@@ -5611,6 +5611,58 @@ pub fn missing_provider_gate_error(
     Some(ModelSwitchMissingProviderError::new(provider, model_id))
 }
 
+/// Whether the OAuth credential slot for `provider` is usable for switch- and
+/// spawn-time gates (Phase 6 D-02 / Phase 7 D-05).
+///
+/// Pure over explicit inputs — **not** bound to [`crate::agent::mvp_agent::MvpAgent`]:
+/// - `auth_path`: path to `auth.json` (typically `$BUM_HOME/auth.json`)
+/// - `provider`: catalog `ModelEntry.info.provider` only (never client-supplied)
+/// - `live_xai_auth`: optional live xAI session credential for refreshable-xAI
+///   fallback when disk is empty. **Codex is never inferred from xAI alone.**
+///
+/// Disk store via [`crate::auth::provider_slot_usable`] is the baseline
+/// (refreshable OAuth counts). Fail closed on read/parse errors.
+pub fn oauth_provider_slot_usable(
+    auth_path: &std::path::Path,
+    provider: ModelProvider,
+    live_xai_auth: Option<&crate::auth::GrokAuth>,
+) -> bool {
+    let slot = match provider {
+        ModelProvider::Xai => crate::auth::PROVIDER_XAI,
+        ModelProvider::Codex => crate::auth::PROVIDER_CODEX,
+    };
+    let disk_usable = match crate::auth::read_provider_auth_store(auth_path, slot) {
+        Ok(store) => crate::auth::provider_slot_usable(store.as_ref()),
+        // Fail closed on parse / unsupported version (no credential disclosure).
+        Err(_) => false,
+    };
+    if disk_usable {
+        return true;
+    }
+    if matches!(provider, ModelProvider::Xai) {
+        if let Some(auth) = live_xai_auth {
+            return crate::auth::credential_usable(auth);
+        }
+    }
+    false
+}
+
+/// Spawn-oriented missing-provider failure message (D-07).
+///
+/// Reuses the same CLI suggestion as model-switch but verbs "spawn subagent".
+pub fn missing_provider_spawn_error_message(
+    provider: ModelProvider,
+    model_id: &str,
+) -> String {
+    let err = ModelSwitchMissingProviderError::new(provider, model_id);
+    format!(
+        "Cannot spawn subagent with model '{}': no usable {} credentials. Run: {}",
+        err.model_id,
+        provider.display_label(),
+        err.suggestion,
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -5699,6 +5751,91 @@ mod tests {
         assert!(
             missing_provider_gate_error(ModelProvider::Xai, "grok-build", false, false).is_some()
         );
+    }
+
+    #[test]
+    fn p7_provider_slot_usable_empty_path_false() {
+        let missing = std::env::temp_dir().join(format!(
+            "p7-oauth-slot-missing-{}.json",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_file(&missing);
+        assert!(
+            !oauth_provider_slot_usable(&missing, ModelProvider::Codex, None),
+            "missing auth.json must be unusable for Codex"
+        );
+        assert!(
+            !oauth_provider_slot_usable(&missing, ModelProvider::Xai, None),
+            "missing auth.json must be unusable for xAI without live fallback"
+        );
+    }
+
+    #[test]
+    fn p7_provider_slot_usable_disk_codex_true() {
+        use crate::auth::{AuthMode, AuthStore, GrokAuth, PROVIDER_CODEX, PROVIDER_XAI};
+        use chrono::{Duration as ChronoDuration, Utc};
+        let dir = tempfile::TempDir::new().expect("tempdir");
+        let path = dir.path().join("auth.json");
+        let mut codex = AuthStore::new();
+        codex.insert(
+            "codex::t".into(),
+            GrokAuth {
+                key: "codex-fake-token-p7-unit".into(),
+                auth_mode: AuthMode::Oidc,
+                create_time: Utc::now(),
+                user_id: "u".into(),
+                expires_at: Some(Utc::now() + ChronoDuration::hours(1)),
+                refresh_token: Some("rt".into()),
+                ..Default::default()
+            },
+        );
+        let doc = serde_json::json!({
+            "version": 1,
+            "providers": {
+                PROVIDER_CODEX: codex,
+            }
+        });
+        std::fs::write(&path, serde_json::to_vec_pretty(&doc).unwrap()).unwrap();
+        assert!(
+            oauth_provider_slot_usable(&path, ModelProvider::Codex, None),
+            "usable Codex disk slot"
+        );
+        assert!(
+            !oauth_provider_slot_usable(&path, ModelProvider::Xai, None),
+            "empty xAI slot must not be usable"
+        );
+        // Codex never inferred from live xAI alone (empty auth.json path)
+        let live = GrokAuth {
+            key: "xai-live".into(),
+            auth_mode: AuthMode::Oidc,
+            create_time: Utc::now(),
+            user_id: "u".into(),
+            expires_at: Some(Utc::now() + ChronoDuration::hours(1)),
+            refresh_token: Some("rt".into()),
+            ..Default::default()
+        };
+        let empty_path = dir.path().join("empty-auth.json");
+        let empty_doc = serde_json::json!({ "version": 1, "providers": {} });
+        std::fs::write(&empty_path, serde_json::to_vec_pretty(&empty_doc).unwrap()).unwrap();
+        assert!(
+            !oauth_provider_slot_usable(&empty_path, ModelProvider::Codex, Some(&live)),
+            "Codex must not become usable from live xAI auth alone"
+        );
+        // xAI live fallback when disk empty for xAI
+        assert!(
+            oauth_provider_slot_usable(&empty_path, ModelProvider::Xai, Some(&live)),
+            "xAI live auth fallback when disk empty"
+        );
+        let _ = PROVIDER_XAI; // keep slot constants intentional
+    }
+
+    #[test]
+    fn p7_missing_provider_spawn_error_message_suggests_login() {
+        let msg = missing_provider_spawn_error_message(ModelProvider::Codex, "gpt-5.6-sol");
+        assert!(msg.contains("spawn subagent"), "spawn verb: {msg}");
+        assert!(msg.contains("bum login --provider codex"), "CLI hint: {msg}");
+        assert!(msg.contains("gpt-5.6-sol"), "model id: {msg}");
+        assert!(msg.contains("Codex"), "provider label: {msg}");
     }
 
     #[test]

@@ -17,30 +17,14 @@ use tokio::sync::oneshot;
 use xai_grok_sampling_types::parse_reasoning_effort_meta;
 
 /// Whether the OAuth credential slot for `provider` is usable for switch-time
-/// gating (D-02). Disk store via [`crate::auth::store_usable`] /
-/// [`crate::auth::credential_usable`] is the baseline (refreshable OK). For
-/// xAI only, a live AuthManager session that is usable under the same pure
-/// semantics also counts — Codex never uses the xAI AuthManager alone.
+/// gating (D-02). Thin wrapper over pure
+/// [`config::oauth_provider_slot_usable`] with path + live xAI inputs.
 fn provider_oauth_slot_usable(agent: &MvpAgent, provider: config::ModelProvider) -> bool {
     let path = crate::util::grok_home::grok_home().join("auth.json");
-    let slot = match provider {
-        config::ModelProvider::Xai => crate::auth::PROVIDER_XAI,
-        config::ModelProvider::Codex => crate::auth::PROVIDER_CODEX,
-    };
-    let disk_usable = match crate::auth::read_provider_auth_store(&path, slot) {
-        Ok(store) => crate::auth::provider_slot_usable(store.as_ref()),
-        // Fail closed on parse / unsupported version (no credential disclosure).
-        Err(_) => false,
-    };
-    if disk_usable {
-        return true;
-    }
-    if matches!(provider, config::ModelProvider::Xai) {
-        if let Some(auth) = agent.auth_manager.current_or_expired() {
-            return crate::auth::credential_usable(&auth);
-        }
-    }
-    false
+    let live_xai = matches!(provider, config::ModelProvider::Xai)
+        .then(|| agent.auth_manager.current_or_expired())
+        .flatten();
+    config::oauth_provider_slot_usable(&path, provider, live_xai.as_ref())
 }
 
 /// Apply a model switch to a session (`allowed_models` is gated by
