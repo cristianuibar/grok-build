@@ -356,6 +356,51 @@ impl xai_tool_runtime::Tool for TaskTool {
         // Placeholder; `ChannelBackend::spawn` replaces it with a fresh one.
         let (result_tx, _) = tokio::sync::oneshot::channel();
 
+        let runtime_overrides = SubagentRuntimeOverrides {
+            model,
+            model_override_provenance: ModelOverrideProvenance::Tool,
+            reasoning_effort,
+            persona: None,
+            capability_mode: input.capability_mode,
+            isolation: input.isolation,
+            // Model-issued `task` spawns never override the harness; the
+            // parent agent decides the flavor (the `/goal` harness override
+            // is set only by the harness-internal role spawners).
+            harness_agent_type: None,
+        };
+
+        // 3b. Eager async preflight (AGENT-05 / D-05 / C2-H1): live effective
+        // model + credential gate via SubagentBackend RPC — BEFORE background
+        // fire-and-forget returns "started". Not a sync slug-only Fn.
+        // Always runs (bg and blocking) so omit-model inherit / role pins are
+        // checked with the same coordinator path as spawn.
+        match backend
+            .backend()
+            .preflight_spawn(SubagentPreflightInput {
+                subagent_type: input.subagent_type.clone(),
+                resume_from: resume_from.clone(),
+                runtime_overrides: runtime_overrides.clone(),
+                parent_session_id: parent_session_id.clone(),
+                fork_context: false,
+            })
+            .await
+        {
+            SubagentPreflightOutcome::Ok => {}
+            SubagentPreflightOutcome::Denied { message } => {
+                return Err(xai_tool_runtime::ToolError::invalid_arguments(message));
+            }
+            SubagentPreflightOutcome::Unavailable => {
+                return Err(xai_tool_runtime::ToolError::custom(
+                    "validation_unavailable",
+                    format!(
+                        "Cannot preflight subagent spawn for '{}': the subagent coordinator is \
+                         unreachable. Retry shortly or notify ops.",
+                        input.subagent_type
+                    ),
+                ));
+            }
+        }
+
         let request = SubagentRequest {
             id: id.clone(),
             prompt: input.prompt.clone(),
@@ -365,18 +410,7 @@ impl xai_tool_runtime::Tool for TaskTool {
             parent_prompt_id,
             resume_from,
             cwd,
-            runtime_overrides: SubagentRuntimeOverrides {
-                model,
-                model_override_provenance: ModelOverrideProvenance::Tool,
-                reasoning_effort,
-                persona: None,
-                capability_mode: input.capability_mode,
-                isolation: input.isolation,
-                // Model-issued `task` spawns never override the harness; the
-                // parent agent decides the flavor (the `/goal` harness override
-                // is set only by the harness-internal role spawners).
-                harness_agent_type: None,
-            },
+            runtime_overrides,
             run_in_background: input.run_in_background,
             // Model-spawned subagents must still appear in the idle reminder.
             surface_completion: true,
@@ -520,6 +554,7 @@ mod tests {
     }
 
     /// Backend whose `ValidateType` outcome is computed per (type, session) pair.
+    /// Auto-acks `Preflight` with `Ok` so existing spawn tests stay green.
     fn make_backend_with_validation_fn<F>(
         outcome_fn: F,
     ) -> (
@@ -528,6 +563,21 @@ mod tests {
     )
     where
         F: Fn(&str, &str) -> SubagentValidateTypeOutcome + Send + 'static,
+    {
+        make_backend_with_validation_and_preflight(outcome_fn, |_| SubagentPreflightOutcome::Ok)
+    }
+
+    /// Backend with custom ValidateType + Preflight responders.
+    fn make_backend_with_validation_and_preflight<Fv, Fp>(
+        outcome_fn: Fv,
+        preflight_fn: Fp,
+    ) -> (
+        SubagentBackendResource,
+        mpsc::UnboundedReceiver<SubagentEvent>,
+    )
+    where
+        Fv: Fn(&str, &str) -> SubagentValidateTypeOutcome + Send + 'static,
+        Fp: Fn(&SubagentPreflightInput) -> SubagentPreflightOutcome + Send + 'static,
     {
         let (raw_tx, mut raw_rx) = mpsc::unbounded_channel::<SubagentEvent>();
         let (proxy_tx, proxy_rx) = mpsc::unbounded_channel::<SubagentEvent>();
@@ -539,6 +589,10 @@ mod tests {
                         let outcome = outcome_fn(&req.subagent_type, &req.parent_session_id);
                         let _ = req.respond_to.send(outcome);
                     }
+                    SubagentEvent::Preflight(req) => {
+                        let outcome = preflight_fn(&req.input);
+                        let _ = req.respond_to.send(outcome);
+                    }
                     other => {
                         if proxy_tx.send(other).is_err() {
                             break;
@@ -548,6 +602,22 @@ mod tests {
             }
         });
         (backend, proxy_rx)
+    }
+
+    /// Backend that always validates type OK and uses a custom preflight responder.
+    fn make_backend_with_preflight<F>(
+        preflight_fn: F,
+    ) -> (
+        SubagentBackendResource,
+        mpsc::UnboundedReceiver<SubagentEvent>,
+    )
+    where
+        F: Fn(&SubagentPreflightInput) -> SubagentPreflightOutcome + Send + 'static,
+    {
+        make_backend_with_validation_and_preflight(
+            |_, _| SubagentValidateTypeOutcome::Ok,
+            preflight_fn,
+        )
     }
 
     /// Extract a `SubagentRequest` from a `SubagentEvent`, panicking on wrong variant.
@@ -2878,5 +2948,258 @@ mod tests {
                 other => panic!("Expected SubagentCompleted, got {other:?}"),
             }
         }
+    }
+
+    // ── Phase 7 plan-04 p7_eager async preflight before bg started (C2-H1) ─
+
+    /// Background path: preflight deny → tool error with login hint; no spawn; no "started".
+    #[tokio::test]
+    async fn p7_eager_missing_provider_rejects_before_background_started() {
+        let (backend, mut rx) = make_backend_with_preflight(|_| {
+            SubagentPreflightOutcome::Denied {
+                message: "Cannot spawn subagent with model 'gpt-5.6-sol' — no usable \
+                          Codex credentials. Run: bum login --provider codex"
+                    .into(),
+            }
+        });
+        let resources = resources_for_task(backend);
+
+        let drain = tokio::spawn(async move {
+            let got = tokio::time::timeout(std::time::Duration::from_millis(150), rx.recv()).await;
+            assert!(
+                got.is_err() || got.ok().flatten().is_none(),
+                "preflight deny must not call spawn"
+            );
+        });
+
+        let mut input = task_input("general-purpose", true);
+        input.model = Some("gpt-5.6-sol".into());
+        let err = xai_tool_runtime::Tool::run(
+            &TaskTool,
+            test_ctx(resources.into_shared()),
+            input,
+        )
+        .await
+        .expect_err("preflight deny must reject before background started");
+        let msg = err.to_string();
+        assert!(
+            msg.contains("bum login --provider codex"),
+            "login-shaped error expected: {msg}"
+        );
+        assert!(
+            !msg.to_lowercase().contains("started"),
+            "must not return started notice: {msg}"
+        );
+
+        let _ = tokio::time::timeout(std::time::Duration::from_millis(500), drain).await;
+    }
+
+    /// Preflight allow → spawn proceeds (background returns started).
+    #[tokio::test]
+    async fn p7_eager_missing_provider_allows_when_preflight_ok() {
+        let (backend, mut rx) = make_backend_with_preflight(|_| SubagentPreflightOutcome::Ok);
+        let resources = resources_for_task(backend);
+
+        let drain = tokio::spawn(async move {
+            let request = unwrap_spawn(rx.recv().await.expect("spawn after preflight Ok"));
+            assert_eq!(
+                request.runtime_overrides.model.as_deref(),
+                Some("gpt-5.6-sol")
+            );
+            // Background fire-and-forget — no need to reply; Task returns started.
+            drop(request.result_tx);
+        });
+
+        let mut input = task_input("general-purpose", true);
+        input.model = Some("gpt-5.6-sol".into());
+        let result = xai_tool_runtime::Tool::run(
+            &TaskTool,
+            test_ctx(resources.into_shared()),
+            input,
+        )
+        .await
+        .expect("preflight Ok must allow background start");
+        match result {
+            ToolOutput::Text(text) => {
+                assert!(
+                    text.text.to_lowercase().contains("started")
+                        || text.text.contains("subagent")
+                        || text.text.contains("task"),
+                    "background path should return started-style notice: {}",
+                    text.text
+                );
+            }
+            other => panic!("expected Text started notice, got {other:?}"),
+        }
+
+        let _ = tokio::time::timeout(std::time::Duration::from_millis(500), drain).await;
+    }
+
+    /// Omit Task.model still invokes preflight with None model (inherit signal).
+    #[tokio::test]
+    async fn p7_eager_omit_model_preflight_forwards_inherit_context() {
+        let saw_omit = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let saw_omit_c = saw_omit.clone();
+        let (backend, mut rx) = make_backend_with_preflight(move |input| {
+            assert!(
+                input.runtime_overrides.model.is_none(),
+                "omit-model must forward None, not skip preflight"
+            );
+            assert_eq!(input.subagent_type, "explore");
+            saw_omit_c.store(true, std::sync::atomic::Ordering::SeqCst);
+            SubagentPreflightOutcome::Ok
+        });
+        let resources = resources_for_task(backend);
+
+        let drain = tokio::spawn(async move {
+            let request = unwrap_spawn(rx.recv().await.expect("spawn"));
+            assert!(request.runtime_overrides.model.is_none());
+            drop(request.result_tx);
+        });
+
+        let input = task_input("explore", true);
+        // model left None
+        let _ = xai_tool_runtime::Tool::run(
+            &TaskTool,
+            test_ctx(resources.into_shared()),
+            input,
+        )
+        .await
+        .expect("omit-model + preflight Ok");
+        assert!(
+            saw_omit.load(std::sync::atomic::Ordering::SeqCst),
+            "preflight must run when model is omitted"
+        );
+        let _ = tokio::time::timeout(std::time::Duration::from_millis(500), drain).await;
+    }
+
+    /// Preflight request includes subagent_type for role model pins.
+    #[tokio::test]
+    async fn p7_eager_preflight_forwards_subagent_type_for_role_pins() {
+        let saw = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let saw_c = saw.clone();
+        let (backend, mut rx) = make_backend_with_preflight(move |input| {
+            assert_eq!(input.subagent_type, "implementer");
+            saw_c.store(true, std::sync::atomic::Ordering::SeqCst);
+            SubagentPreflightOutcome::Ok
+        });
+        let resources = resources_for_task(backend);
+        let drain = tokio::spawn(async move {
+            let _ = rx.recv().await;
+        });
+
+        let mut input = task_input("implementer", true);
+        input.model = Some("grok-build".into());
+        let _ = xai_tool_runtime::Tool::run(
+            &TaskTool,
+            test_ctx(resources.into_shared()),
+            input,
+        )
+        .await
+        .unwrap();
+        assert!(saw.load(std::sync::atomic::Ordering::SeqCst));
+        let _ = tokio::time::timeout(std::time::Duration::from_millis(500), drain).await;
+    }
+
+    /// Resume path forwards resume_from on preflight (C3-M1).
+    #[tokio::test]
+    async fn p7_eager_preflight_forwards_resume_from_when_present() {
+        let saw = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let saw_c = saw.clone();
+        let (backend, mut rx) = make_backend_with_preflight(move |input| {
+            assert_eq!(input.resume_from.as_deref(), Some("prior-child-id"));
+            assert!(
+                input.runtime_overrides.model.is_none(),
+                "resume soft-ignores model before preflight"
+            );
+            saw_c.store(true, std::sync::atomic::Ordering::SeqCst);
+            SubagentPreflightOutcome::Ok
+        });
+        let resources = resources_for_task(backend);
+        let drain = tokio::spawn(async move {
+            let _ = rx.recv().await;
+        });
+
+        let mut input = task_input("explore", true);
+        input.resume_from = Some("prior-child-id".into());
+        input.model = Some("gpt-5.6-sol".into()); // soft-ignored
+        let _ = xai_tool_runtime::Tool::run(
+            &TaskTool,
+            test_ctx(resources.into_shared()),
+            input,
+        )
+        .await
+        .unwrap();
+        assert!(saw.load(std::sync::atomic::Ordering::SeqCst));
+        let _ = tokio::time::timeout(std::time::Duration::from_millis(500), drain).await;
+    }
+
+    /// Runtime overrides / persona fields that affect model reach preflight (C3-M1).
+    #[tokio::test]
+    async fn p7_eager_preflight_forwards_runtime_overrides_persona_when_present() {
+        // Task tool currently leaves persona None (model-facing). Prove the
+        // preflight input carries the full runtime_overrides struct so shell
+        // can apply persona/role when harness sets them. Here we assert
+        // capability_mode + isolation + provenance are forwarded.
+        let saw = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let saw_c = saw.clone();
+        let (backend, mut rx) = make_backend_with_preflight(move |input| {
+            assert_eq!(
+                input.runtime_overrides.capability_mode,
+                Some(SubagentCapabilityMode::ReadOnly)
+            );
+            assert_eq!(
+                input.runtime_overrides.isolation,
+                Some(SubagentIsolationMode::None)
+            );
+            assert_eq!(
+                input.runtime_overrides.model_override_provenance,
+                ModelOverrideProvenance::Tool
+            );
+            // Persona is None on model-facing Task; field still present on wire.
+            assert!(input.runtime_overrides.persona.is_none());
+            assert!(input.runtime_overrides.harness_agent_type.is_none());
+            saw_c.store(true, std::sync::atomic::Ordering::SeqCst);
+            SubagentPreflightOutcome::Ok
+        });
+        let resources = resources_for_task(backend);
+        let drain = tokio::spawn(async move {
+            let _ = rx.recv().await;
+        });
+
+        let mut input = task_input("explore", true);
+        input.capability_mode = Some(SubagentCapabilityMode::ReadOnly);
+        input.isolation = Some(SubagentIsolationMode::None);
+        let _ = xai_tool_runtime::Tool::run(
+            &TaskTool,
+            test_ctx(resources.into_shared()),
+            input,
+        )
+        .await
+        .unwrap();
+        assert!(saw.load(std::sync::atomic::Ordering::SeqCst));
+        let _ = tokio::time::timeout(std::time::Duration::from_millis(500), drain).await;
+    }
+
+    /// Missing SubagentBackendResource fails closed before started (already
+    /// enforced at resource lookup; named for AGENT-05 inventory).
+    #[tokio::test]
+    async fn p7_eager_missing_backend_fail_closed() {
+        let resources = Resources::new();
+        let mut input = task_input("explore", true);
+        input.model = Some("gpt-5.6-sol".into());
+        let err = xai_tool_runtime::Tool::run(
+            &TaskTool,
+            test_ctx(resources.into_shared()),
+            input,
+        )
+        .await
+        .expect_err("missing backend must fail closed");
+        let msg = err.to_string();
+        assert!(
+            msg.contains("SubagentBackendResource") || msg.contains("missing"),
+            "expected missing backend error: {msg}"
+        );
+        assert!(!msg.to_lowercase().contains("started"));
     }
 }

@@ -17,7 +17,8 @@ use tokio::sync::{mpsc, oneshot};
 
 use super::types::{
     SubagentCancelOutcome, SubagentCancelRequest, SubagentCancelTarget, SubagentDescribeOutcome,
-    SubagentDescribeRequest, SubagentEvent, SubagentQueryRequest, SubagentRequest, SubagentResult,
+    SubagentDescribeRequest, SubagentEvent, SubagentPreflightInput, SubagentPreflightOutcome,
+    SubagentPreflightRequest, SubagentQueryRequest, SubagentRequest, SubagentResult,
     SubagentSnapshot, SubagentValidateTypeOutcome, SubagentValidateTypeRequest,
 };
 use crate::register_resource;
@@ -78,6 +79,17 @@ pub trait SubagentBackend: Send + Sync + 'static {
         harness_agent_type: Option<&str>,
         parent_session_id: &str,
     ) -> SubagentDescribeOutcome;
+
+    /// Async spawn preflight: resolve effective child model (omit-model inherit,
+    /// role/persona pins, resume pin) and check usable credentials for the
+    /// child's provider **before** background fire-and-forget returns "started".
+    ///
+    /// Shell coordinator owns catalog + live parent `ChatStateHandle` + auth
+    /// I/O. Tools must not invent provider labels or read `auth.json`.
+    ///
+    /// Returns [`SubagentPreflightOutcome::Unavailable`] on channel close /
+    /// responder drop / timeout — Task path fails closed (no silent skip).
+    async fn preflight_spawn(&self, input: SubagentPreflightInput) -> SubagentPreflightOutcome;
 }
 
 /// Resource wrapper injected into every session's `Resources`.
@@ -262,6 +274,44 @@ impl SubagentBackend for ChannelBackend {
                     "coordinator describe timed out, treating as Unavailable",
                 );
                 SubagentDescribeOutcome::Unavailable
+            }
+        }
+    }
+
+    async fn preflight_spawn(&self, input: SubagentPreflightInput) -> SubagentPreflightOutcome {
+        let subagent_type = input.subagent_type.clone();
+        let (respond_to, response_rx) = oneshot::channel();
+        if self
+            .tx
+            .send(SubagentEvent::Preflight(SubagentPreflightRequest {
+                input,
+                respond_to,
+            }))
+            .is_err()
+        {
+            tracing::warn!(
+                subagent_type = %subagent_type,
+                "coordinator preflight channel closed, treating as Unavailable",
+            );
+            return SubagentPreflightOutcome::Unavailable;
+        }
+        let timeout = validate_type_timeout();
+        match tokio::time::timeout(timeout, response_rx).await {
+            Ok(Ok(outcome)) => outcome,
+            Ok(Err(_)) => {
+                tracing::warn!(
+                    subagent_type = %subagent_type,
+                    "coordinator preflight responder dropped, treating as Unavailable",
+                );
+                SubagentPreflightOutcome::Unavailable
+            }
+            Err(_) => {
+                tracing::warn!(
+                    subagent_type = %subagent_type,
+                    timeout_ms = timeout.as_millis() as u64,
+                    "coordinator preflight timed out, treating as Unavailable",
+                );
+                SubagentPreflightOutcome::Unavailable
             }
         }
     }
@@ -828,5 +878,60 @@ mod tests {
     fn parse_timeout_ms_returns_value_for_positive_integer() {
         assert_eq!(parse_timeout_ms(Some("5000")), Some(5000));
         assert_eq!(parse_timeout_ms(Some("1")), Some(1));
+    }
+
+    // ── preflight_spawn ──────────────────────────────────────────
+
+    #[tokio::test]
+    async fn channel_backend_preflight_round_trips_ok() {
+        let (tx, mut rx) = mpsc::unbounded_channel::<SubagentEvent>();
+        let backend = ChannelBackend::new(tx);
+
+        let handle = tokio::spawn(async move {
+            match rx.recv().await.unwrap() {
+                SubagentEvent::Preflight(req) => {
+                    assert_eq!(req.input.subagent_type, "explore");
+                    assert_eq!(req.input.parent_session_id, "parent-1");
+                    assert_eq!(
+                        req.input.runtime_overrides.model.as_deref(),
+                        Some("gpt-5.6-sol")
+                    );
+                    req.respond_to.send(SubagentPreflightOutcome::Ok).unwrap();
+                }
+                _ => panic!("Expected Preflight event"),
+            }
+        });
+
+        let outcome = backend
+            .preflight_spawn(SubagentPreflightInput {
+                subagent_type: "explore".into(),
+                resume_from: None,
+                runtime_overrides: super::super::types::SubagentRuntimeOverrides {
+                    model: Some("gpt-5.6-sol".into()),
+                    ..Default::default()
+                },
+                parent_session_id: "parent-1".into(),
+                fork_context: false,
+            })
+            .await;
+        assert!(matches!(outcome, SubagentPreflightOutcome::Ok));
+        handle.await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn channel_backend_preflight_returns_unavailable_when_channel_closed() {
+        let (tx, rx) = mpsc::unbounded_channel::<SubagentEvent>();
+        drop(rx);
+        let backend = ChannelBackend::new(tx);
+        let outcome = backend
+            .preflight_spawn(SubagentPreflightInput {
+                subagent_type: "explore".into(),
+                resume_from: None,
+                runtime_overrides: Default::default(),
+                parent_session_id: "p".into(),
+                fork_context: false,
+            })
+            .await;
+        assert!(matches!(outcome, SubagentPreflightOutcome::Unavailable));
     }
 }

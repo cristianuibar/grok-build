@@ -647,6 +647,56 @@ pub struct SubagentDescribeRequest {
     pub respond_to: oneshot::Sender<SubagentDescribeOutcome>,
 }
 
+// Preflight-spawn protocol (AGENT-05 / D-05 — async credential gate before bg started)
+
+/// Cloneable spawn-resolution inputs shared by Task eager preflight and the
+/// shell `handle_subagent_request` effective-model path (C3-M1 field parity).
+///
+/// This is **not** a slug-only snapshot: `runtime_overrides` carries model /
+/// persona / harness provenance, and `resume_from` lets the coordinator apply
+/// the resume model pin. Parent inherit uses live `ChatStateHandle` on the
+/// shell side — tools never read `auth.json`.
+#[derive(Debug, Clone)]
+pub struct SubagentPreflightInput {
+    pub subagent_type: String,
+    /// Resume source id (when Task/resume supplies one). Soft-ignored model
+    /// override is already cleared on the Task path before this is built.
+    pub resume_from: Option<String>,
+    /// Full runtime overrides available at Task call time (model, persona,
+    /// capability, isolation, harness_agent_type, reasoning_effort, provenance).
+    pub runtime_overrides: SubagentRuntimeOverrides,
+    pub parent_session_id: String,
+    /// Harness-only: when true, shell forces parent model (fork_context).
+    /// Model-facing Task always sets `false`.
+    pub fork_context: bool,
+}
+
+/// Outcome of async `SubagentBackend::preflight_spawn`.
+///
+/// Distinct from validate-type: `Unavailable` is **fail-closed** on the Task
+/// path (background must not return "started" without a live gate answer).
+#[derive(Debug, Clone)]
+#[non_exhaustive]
+pub enum SubagentPreflightOutcome {
+    /// Child provider credentials usable (or BYOK / no catalog entry to gate).
+    Ok,
+    /// Fail closed with login-shaped (or other pre-spawn) message.
+    Denied {
+        message: String,
+    },
+    /// Coordinator unreachable / responder dropped / timed out.
+    Unavailable,
+}
+
+/// Oneshot RPC request for coordinator preflight (mirrors ValidateType).
+#[derive(Educe)]
+#[educe(Debug)]
+pub struct SubagentPreflightRequest {
+    pub input: SubagentPreflightInput,
+    #[educe(Debug(ignore))]
+    pub respond_to: oneshot::Sender<SubagentPreflightOutcome>,
+}
+
 /// Coordinator message enum. Intentionally NOT `#[non_exhaustive]` —
 /// the cross-crate drain loop in `xai-grok-shell` relies on
 /// compile-time exhaustiveness.
@@ -661,6 +711,8 @@ pub enum SubagentEvent {
     MarkUsageNotApplied(SubagentMarkUsageNotAppliedRequest),
     ValidateType(SubagentValidateTypeRequest),
     DescribeType(SubagentDescribeRequest),
+    /// Async credential / effective-model preflight before background "started".
+    Preflight(SubagentPreflightRequest),
 }
 
 // Resource types
