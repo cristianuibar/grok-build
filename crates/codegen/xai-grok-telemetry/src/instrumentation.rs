@@ -36,34 +36,41 @@ static LOG_GUARD: OnceLock<Mutex<Option<tracing_appender::non_blocking::WorkerGu
     OnceLock::new();
 static CHROME_GUARD: OnceLock<Mutex<Option<FlushGuard>>> = OnceLock::new();
 
+/// Resolve instrumentation mode from an optional `GROK_INSTRUMENTATION` value.
+///
+/// Quiet fork (OPS-02 / C1-H2 / D-08): when env is unset, default is
+/// [`InstrumentationMode::Disabled`] — no OTLP Server export to
+/// cli-chat-proxy. Explicit `server` still enables OTLP for developers.
+/// Local Log / Chrome remain available under D-11 when opted in via env.
+pub fn resolve_instrumentation_mode(env_value: Option<&str>) -> InstrumentationMode {
+    match env_value {
+        Some(v) => match v.trim().to_ascii_lowercase().as_str() {
+            "1" | "true" | "on" | "enabled" | "log" | "json" | "jsonl" => InstrumentationMode::Log,
+            "chrome" | "trace" | "trace.json" => InstrumentationMode::Chrome,
+            "server" => InstrumentationMode::Server,
+            "" | "0" | "false" | "off" | "disabled" | "none" => InstrumentationMode::Disabled,
+            _ => InstrumentationMode::Log,
+        },
+        // Quiet fork: do not phone home OTLP by default (was Server).
+        None => InstrumentationMode::Disabled,
+    }
+}
+
 fn mode() -> InstrumentationMode {
     *INSTRUMENTATION_MODE.get_or_init(|| {
-        let env_mode = match std::env::var(ENV_ENABLED) {
-            Ok(v) => match v.trim().to_ascii_lowercase().as_str() {
-                "1" | "true" | "on" | "enabled" | "log" | "json" | "jsonl" => {
-                    Some(InstrumentationMode::Log)
-                }
-                "chrome" | "trace" | "trace.json" => Some(InstrumentationMode::Chrome),
-                "server" => Some(InstrumentationMode::Server),
-                "" | "0" | "false" | "off" | "disabled" | "none" => {
-                    Some(InstrumentationMode::Disabled)
-                }
-                _ => Some(InstrumentationMode::Log),
-            },
-            Err(_) => None,
-        };
-
-        if let Some(mode) = env_mode {
-            return mode;
-        }
-
-        // Send instrumentation to the configured OpenTelemetry endpoint by default
-        InstrumentationMode::Server
+        let env = std::env::var(ENV_ENABLED).ok();
+        resolve_instrumentation_mode(env.as_deref())
     })
 }
 
 pub fn current_mode() -> InstrumentationMode {
     mode()
+}
+
+/// True when the default (env-unset) path would export internal OTLP Server
+/// traces. Quiet fork must keep this false.
+pub fn default_mode_exports_otlp() -> bool {
+    resolve_instrumentation_mode(None) == InstrumentationMode::Server
 }
 
 fn default_log_path() -> PathBuf {
@@ -631,4 +638,37 @@ impl Drop for InstrumentationTimer {
 
 pub fn timer(name: &'static str) -> InstrumentationTimer {
     InstrumentationTimer::new(name)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// OPS-02 / C1-H2: env-unset must not default to Server OTLP export.
+    #[test]
+    fn p8_internal_otel_off_by_default() {
+        assert_eq!(
+            resolve_instrumentation_mode(None),
+            InstrumentationMode::Disabled,
+            "quiet fork: unset GROK_INSTRUMENTATION must not be Server"
+        );
+        assert!(
+            !default_mode_exports_otlp(),
+            "default mode must not export internal OTLP to cli-chat-proxy"
+        );
+        // Explicit server still allowed for developers.
+        assert_eq!(
+            resolve_instrumentation_mode(Some("server")),
+            InstrumentationMode::Server
+        );
+        // Local log remains opt-in (D-11).
+        assert_eq!(
+            resolve_instrumentation_mode(Some("log")),
+            InstrumentationMode::Log
+        );
+        assert_eq!(
+            resolve_instrumentation_mode(Some("0")),
+            InstrumentationMode::Disabled
+        );
+    }
 }

@@ -377,13 +377,17 @@ pub fn wire_otel_deployment_key(key: String) {
 pub fn build_default_otel_layer_config() -> xai_grok_telemetry::otel_layer::OtelLayerConfig {
     let endpoints = crate::agent::config::EndpointsConfig::default();
     let grok_com_config = crate::auth::GrokComConfig::default();
+    // Quiet fork (OPS-02 / C1-H2): exporter off unless telemetry is
+    // explicitly enabled. Absence of explicit disable must NOT enable
+    // stock cli-chat-proxy OTLP export (do not use
+    // is_telemetry_explicitly_disabled_sync which defaults to "not disabled").
     let exporter = xai_grok_telemetry::otel_layer::OtelExporterConfig {
         traces_url: endpoints.resolve_otlp_traces_endpoint(),
         extra_headers: endpoints.resolve_otlp_headers(),
         export_interval: endpoints.resolve_otlp_export_interval(),
         timeout: endpoints.resolve_otlp_timeout(),
         enabled: endpoints.resolve_traces_export_enabled()
-            && !crate::agent::config::is_telemetry_explicitly_disabled_sync(),
+            && !crate::agent::config::is_telemetry_disabled_sync(),
     };
     let token_header_value = grok_com_config.token_header.clone();
     let grok_home = crate::util::grok_home::grok_home();
@@ -457,6 +461,30 @@ mod tests {
             mgr.hot_swap(auth);
         }
         Arc::new(mgr)
+    }
+
+    /// OPS-02 / C1-H2: default OTEL exporter must not phone home.
+    #[test]
+    #[serial_test::serial]
+    fn p8_internal_otel_off_by_default() {
+        unsafe {
+            std::env::remove_var("GROK_TELEMETRY_ENABLED");
+            std::env::remove_var("DISABLE_TELEMETRY");
+            std::env::remove_var("OTEL_TRACES_EXPORTER");
+        }
+        let cfg = build_default_otel_layer_config();
+        assert!(
+            !cfg.exporter.enabled,
+            "default OtelExporterConfig.enabled must be false (no cli-chat-proxy OTLP)"
+        );
+        // Instrumentation mode must not be Server when env unset (belt+suspenders).
+        assert_ne!(
+            xai_grok_telemetry::instrumentation::resolve_instrumentation_mode(None),
+            xai_grok_telemetry::instrumentation::InstrumentationMode::Server
+        );
+        assert!(
+            !xai_grok_telemetry::instrumentation::default_mode_exports_otlp()
+        );
     }
 
     fn make_nested_multi_slot_manager(dir: &tempfile::TempDir, token: &str) -> Arc<AuthManager> {

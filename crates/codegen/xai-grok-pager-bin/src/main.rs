@@ -100,6 +100,12 @@ fn last_session_crash_line() -> &'static str {
     "bum crashed during your last session."
 }
 
+/// Quiet-fork Sentry policy (OPS-02 / D-10): always disable phone-home.
+/// Pure helper so unit tests can lock the hard-off without init side effects.
+fn quiet_fork_sentry_disabled() -> bool {
+    true
+}
+
 /// Print startup information for the serve command.
 fn print_serve_startup_info(bind_addr: SocketAddr, secret: &str) {
     eprintln!();
@@ -1495,11 +1501,13 @@ fn main() {
         );
         std::process::exit(2);
     }
+    // Quiet fork (OPS-02 / D-10): Sentry crash phone-home is hard-off.
+    // Keep the dependency linked; do not advertise opt-in UX.
     let _sentry_guard = xai_grok_telemetry::sentry::init(xai_grok_telemetry::sentry::Config {
         client: "grok-pager",
         client_version: PAGER_CLIENT_VERSION,
         release: env!("VERSION_WITH_COMMIT"),
-        disabled: xai_grok_shell::agent::config::is_error_reporting_disabled_sync(),
+        disabled: quiet_fork_sentry_disabled(),
     });
     xai_grok_pager::docs::extract_user_guide_docs(&xai_grok_shell::util::grok_home::grok_home());
     xai_crash_handler::install_terminal_restore_only();
@@ -2221,6 +2229,31 @@ mod tests {
         assert!(
             !line.contains("Grok crashed"),
             "crash recovery must not say Grok crashed: {line}"
+        );
+    }
+
+    // ── OPS-02: Sentry hard-off + internal OTEL off (D-10, C1-H2) ──────────
+
+    #[test]
+    fn p8_sentry_disabled_by_default() {
+        assert!(
+            quiet_fork_sentry_disabled(),
+            "quiet fork must hard-disable Sentry phone-home (D-10)"
+        );
+        // Policy is unconditional — not gated on env or telemetry sync helpers.
+        assert_eq!(quiet_fork_sentry_disabled(), true);
+    }
+
+    #[test]
+    fn p8_internal_otel_off_by_default() {
+        // Composition-root path inherits telemetry crate quiet default.
+        assert!(
+            !xai_grok_telemetry::instrumentation::default_mode_exports_otlp(),
+            "bin must inherit non-Server instrumentation default"
+        );
+        assert_eq!(
+            xai_grok_telemetry::instrumentation::resolve_instrumentation_mode(None),
+            xai_grok_telemetry::instrumentation::InstrumentationMode::Disabled
         );
     }
 
