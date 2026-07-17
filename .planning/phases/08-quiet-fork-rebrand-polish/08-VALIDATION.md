@@ -6,7 +6,7 @@ nyquist_compliant: false
 wave_0_complete: false
 created: 2026-07-17
 updated: 2026-07-17
-plans_verified: []
+plans_verified: [01]
 ---
 
 # Phase 8 — Validation Strategy
@@ -95,32 +95,34 @@ discover() {
 
 ## Requirements → Test Map
 
-| Req ID | Behavior | Test Type | Planned filter / command | Exists at plan-time? | Owning plan |
-|--------|----------|-----------|--------------------------|----------------------|-------------|
-| ID-02 | clap `name`/`about` present as bum | unit | `p8_cli_brand` / `p8_clap` | ❌ scaffold Plan 01 | 01, 02 |
-| ID-02 | hero badge / subtitle “bum” | unit | `p8_welcome` / `p8_hero` | ❌ scaffold Plan 01 | 01, 02 |
+| Req ID | Behavior | Test Type | Planned filter / command | Exists? | Owning plan |
+|--------|----------|-----------|--------------------------|---------|-------------|
+| ID-02 | clap `name`/`about` present as bum | unit | `p8_cli_brand` / `p8_clap` | ❌ product Plan 02 | 02 |
+| ID-02 | hero badge / subtitle “bum” | unit | `p8_welcome` / `p8_hero` | ❌ product Plan 02 | 02 |
 | ID-02 | project picker product copy | unit | `p8_project_picker` | ❌ | 02 |
 | ID-02 | headless + plugin_cmd residual CLI instruct bum | unit | `p8_runtime_cli` | ❌ | 02 |
 | ID-02 | OAuth return “return to bum” | unit | `p8_oauth_return` | ❌ | 03 |
 | ID-02 | shell auth/device/mcp/plugin residual CLI instruct bum | unit | `p8_shell_runtime_cli` | ❌ | 03 |
 | ID-02 | pager-bin / minimal banner “bum” + crash/server residual | unit/e2e | `p8_bin_` / `p8_minimal_welcome` | ❌ | 03 |
 | ID-02 | residual inventory greps closed (or documented deferrals) | static | PHASE-GATE residual greps (C1-H1) | ❌ | 06 |
-| ID-02 | model catalog still `Grok Build (xAI)` / `grok-build` | regression | existing model catalog + `p8_model_label` | ✅ partial | 01, 06 |
-| OPS-01 | `should_check_for_updates` always false | unit | `p8_no_auto_update` / `p8_should_check` | ❌ | 01, 04 |
-| OPS-01 | auto_update effective default false; no first-run true | unit | `p8_auto_update_default` | ❌ | 01, 04 |
+| ID-02 | model catalog still `Grok Build (xAI)` / `grok-build` | regression | `dynamic_enum_model_names` (+ optional `p8_model_label` later) | ✅ Plan 01 re-verify | 01, 06 |
+| ID-02 | wave-1 pager `p8_` discovery smoke (no product strings yet) | unit | `p8_wave1` / `p8_` on pager `--lib` | ✅ Plan 01 green | 01 |
+| OPS-01 | `should_check_for_updates` always false | unit | `p8_no_auto_update` / `p8_should_check` | ❌ product Plan 04 | 04 |
+| OPS-01 | auto_update effective default false; no first-run true | unit | `p8_auto_update_default` | ❌ product Plan 04 | 04 |
 | OPS-01 | min-version enforcer does not install | unit | `p8_min_version` | ❌ | 04 |
 | OPS-01 | update CLI/status no-op + locked message | unit | `p8_update_cmd` | ❌ | 04 |
 | OPS-01 | hermetic zero stock-helper calls (incl. finish_update_on_exit) | unit | `p8_update_no_network` | ❌ | 04 |
 | OPS-01 | settings registry default auto_update false | unit | settings e2e / `p8_settings_auto_update` | ✅ exists (must flip) | 04 |
-| OPS-02 | telemetry mode default Disabled | unit | existing + `p8_telemetry` | ✅ partial | 01, 05 |
-| OPS-02 | remote telemetry true + local unset stays Disabled | unit | `p8_telemetry` remote restrictive (C1-H3) | ❌ | 05 |
+| OPS-02 | telemetry mode default Disabled | unit | `p8_telemetry` (`p8_telemetry_resolve_mode_defaults_to_disabled`) | ✅ Plan 01 green | 01, 05 |
+| OPS-02 | explicit config still can enable (precedence doc; not remote harden) | unit | `p8_telemetry_disabled_implies_no_easy_enabled_without_explicit_config` | ✅ Plan 01 green | 01 |
+| OPS-02 | remote telemetry true + local unset stays Disabled | unit | `p8_telemetry` remote restrictive (C1-H3) | ❌ product Plan 05 | 05 |
 | OPS-02 | resolve_feedback default false | unit | flip `resolve_feedback_defaults_*` + `p8_feedback_default` | ✅ exists (must flip) | 05 |
 | OPS-02 | remote feedback true + local unset stays false | unit | `p8_feedback` remote restrictive (C1-H3) | ❌ | 05 |
 | OPS-02 | feedback dispatch no `SendFeedback` + locked message | unit | `p8_feedback` | ❌ | 05 |
 | OPS-02 | force_feedback / debug trigger no network when disabled | unit | `p8_feedback` force gate (C1-M1) | ❌ | 05 |
 | OPS-02 | internal OTLP exporter off by default (TUI + non-TUI) | unit | `p8_internal_otel` / `p8_internal_otel_off_by_default` | ❌ | 05, 06 |
 | OPS-02 | Sentry off by default | unit | `p8_sentry` (unconditional gate) | ❌ | 05, 06 |
-| ALL | hermetic isolation / no stock home writes | integration | `home_isolation` (Phase 1) | ✅ | 01, 06 |
+| ALL | hermetic isolation / no stock home writes | integration | `home_isolation` (Phase 1) | ✅ Plan 01 re-verify | 01, 06 |
 
 ---
 
@@ -202,11 +204,29 @@ discover() {
 
 ## Wave gaps (close during execute)
 
-- [ ] Plan 01: green `p8_` scaffolds (cli, welcome, telemetry baseline, model label, isolation smoke)
-- [ ] Plan 02–03: product chrome + residual runtime CLI greened filters
+- [x] Plan 01: green `p8_` scaffolds — shell `p8_telemetry` (OPS-02 default Disabled), pager `p8_wave1` discovery smoke, model catalog + `home_isolation` re-verify. **No product chrome / OPS hard-off asserts yet** (stock clap still `name=grok`; product filters remain Plans 02–05).
+- [ ] Plan 02–03: product chrome + residual runtime CLI greened filters (`p8_cli_brand`, `p8_welcome`, picker/OAuth/banner, `p8_runtime_cli`, `p8_shell_runtime_cli`)
 - [ ] Plan 04: auto-update / min-version / settings / `p8_update_no_network` greened filters
 - [ ] Plan 05: feedback + remote restrictive + OTLP + sentry greened filters
 - [ ] Plan 06: `nyquist_compliant: true`, `wave_0_complete: true`, PHASE-GATE doc + residual greps
+
+### Plan 01 greened filters (discover+execute)
+
+| Crate | Filter | Command |
+|-------|--------|---------|
+| `xai-grok-shell` | `p8_telemetry` | `cargo test -p xai-grok-shell --lib p8_telemetry -- --nocapture` |
+| `xai-grok-pager` | `p8_` / `p8_wave1` | `cargo test -p xai-grok-pager --lib p8_ -- --nocapture` |
+| `xai-grok-pager` | model brand regression | `cargo test -p xai-grok-pager --test dynamic_enum_model_names -- --nocapture` |
+| `xai-grok-pager-bin` | `home_isolation` | `cargo test -p xai-grok-pager-bin --test home_isolation -- --nocapture` |
+
+### Plan 02–05 planned green product filter names (inventory only — do not land failing tests in Plan 01)
+
+| Plan | Filters to add green with product code |
+|------|----------------------------------------|
+| 02 | `p8_cli_brand`, `p8_welcome` / `p8_hero`, `p8_project_picker`, `p8_runtime_cli` |
+| 03 | `p8_oauth_return`, `p8_shell_runtime_cli`, `p8_bin_`, `p8_minimal_welcome` |
+| 04 | `p8_no_auto_update` / `p8_should_check`, `p8_auto_update_default`, `p8_min_version`, `p8_update_cmd`, `p8_update_no_network`, `p8_settings_auto_update` |
+| 05 | `p8_feedback` (+ default / remote / force), `p8_telemetry` remote restrictive, `p8_internal_otel`, `p8_sentry` |
 
 ---
 

@@ -8824,6 +8824,62 @@ reasoning_effort = "low"
         assert!(r.value, "feedback should be true by default");
         assert_eq!(r.source, ConfigSource::Default);
     }
+
+    /// Phase 8 OPS-02 baseline (D-08): unset features/remote/env → Disabled + Default.
+    /// Green-only wave-1 lock — product waves do not change this default path.
+    #[test]
+    #[serial]
+    fn p8_telemetry_resolve_mode_defaults_to_disabled() {
+        unsafe { std::env::remove_var("GROK_TELEMETRY_ENABLED") };
+        let cfg = Config::default();
+        assert!(
+            cfg.features.telemetry.is_none(),
+            "default Config must not pin features.telemetry"
+        );
+        assert!(
+            cfg.remote_settings.is_none(),
+            "default Config must not carry remote_settings"
+        );
+        let r = cfg.resolve_telemetry_mode();
+        assert_eq!(
+            r.value,
+            TelemetryMode::Disabled,
+            "quiet-fork default must be TelemetryMode::Disabled (D-08 / OPS-02)"
+        );
+        assert_eq!(
+            r.source,
+            ConfigSource::Default,
+            "unset path must report ConfigSource::Default"
+        );
+        assert!(
+            !cfg.is_telemetry_enabled(),
+            "is_telemetry_enabled must be false on default path"
+        );
+    }
+
+    /// Documents current resolve_telemetry_mode precedence for Phase 8 SUMMARY inventory.
+    /// Does not harden remote re-enable (Plan 05); only locks explicit config → Enabled.
+    #[test]
+    #[serial]
+    fn p8_telemetry_disabled_implies_no_easy_enabled_without_explicit_config() {
+        unsafe { std::env::remove_var("GROK_TELEMETRY_ENABLED") };
+        let default_cfg = Config::default();
+        assert_eq!(
+            default_cfg.resolve_telemetry_mode().value,
+            TelemetryMode::Disabled,
+            "default path stays Disabled without explicit config/env/requirement"
+        );
+
+        let mut enabled = Config::default();
+        enabled.features.telemetry = Some(TelemetryMode::Enabled);
+        let r = enabled.resolve_telemetry_mode();
+        assert_eq!(r.value, TelemetryMode::Enabled);
+        assert_eq!(
+            r.source,
+            ConfigSource::Config,
+            "explicit features.telemetry is the intentional enable path (Config source)"
+        );
+    }
     #[test]
     #[serial]
     fn resolve_session_recap_defaults_to_true_when_unset() {
