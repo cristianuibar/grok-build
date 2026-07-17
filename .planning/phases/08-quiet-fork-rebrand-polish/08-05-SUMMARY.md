@@ -155,7 +155,7 @@ Each task was committed atomically:
 2. **Task 2: resolve_feedback default false + remote restrictive-only** - `3cfbcaf` (feat)
 3. **Task 3: Internal OTLP off by default + Sentry hard-off** - `d7ed4ed` (feat)
 
-**Plan metadata:** (docs commit after this SUMMARY)
+**Plan metadata:** `9bd081a` (docs: complete quiet telemetry/feedback plan)
 
 ## Files Created/Modified
 
