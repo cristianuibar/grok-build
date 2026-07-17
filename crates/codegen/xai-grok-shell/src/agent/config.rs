@@ -2086,14 +2086,24 @@ impl Config {
         if let Some(mode) = self.features.telemetry {
             return Resolved::new(mode, ConfigSource::Config);
         }
+        // Quiet fork (OPS-02 / C1-H3): remote settings are restrictive-only.
+        // Remote may keep Disabled or further restrict; remote-true /
+        // remote Enabled / SessionMetrics must not silently enable product
+        // telemetry when local/env/config/requirement are unset.
         if let Some(rs) = self.remote_settings.as_ref() {
             if let Some(mode_str) = rs.telemetry_mode.as_deref()
                 && let Some(mode) = TelemetryMode::parse(mode_str)
             {
-                return Resolved::new(mode, ConfigSource::Remote);
+                if mode.is_disabled() {
+                    return Resolved::new(mode, ConfigSource::Remote);
+                }
+                // Non-disabled remote modes are ignored on the quiet path.
             }
             if let Some(val) = rs.telemetry_enabled {
-                return Resolved::new(TelemetryMode::from(val), ConfigSource::Remote);
+                if !val {
+                    return Resolved::new(TelemetryMode::Disabled, ConfigSource::Remote);
+                }
+                // Remote true is ignored (restrictive-only).
             }
         }
         Resolved::new(TelemetryMode::Disabled, ConfigSource::Default)
@@ -2165,15 +2175,19 @@ impl Config {
         )
     }
     pub(crate) fn resolve_feedback(&self) -> Resolved<bool> {
+        // Quiet fork (OPS-02 / C1-H3 / D-15): default false; remote is
+        // restrictive-only — only apply remote when it further disables
+        // (Some(false)). Remote true must not enable when local is unset.
         let ff = self
             .remote_settings
             .as_ref()
-            .and_then(|s| s.feedback_enabled);
+            .and_then(|s| s.feedback_enabled)
+            .filter(|enabled| !*enabled);
         BoolFlag::env("GROK_FEEDBACK_ENABLED")
             .requirement(self.requirements.feedback.pinned())
             .config(self.features.feedback)
             .feature_flag(ff)
-            .default(true)
+            .default(false)
             .resolve()
     }
     pub(crate) fn resolve_two_pass_compaction(&self) -> Resolved<bool> {
@@ -8816,13 +8830,26 @@ reasoning_effort = "low"
     }
     #[test]
     #[serial]
-    fn resolve_feedback_defaults_to_true_when_unset() {
+    fn p8_feedback_resolve_defaults_to_false() {
         unsafe { std::env::remove_var("GROK_FEEDBACK_ENABLED") };
         unsafe { std::env::remove_var("GROK_TELEMETRY_ENABLED") };
         let cfg = Config::default();
         let r = cfg.resolve_feedback();
-        assert!(r.value, "feedback should be true by default");
+        assert!(
+            !r.value,
+            "quiet-fork feedback must default to false (D-15 / OPS-02)"
+        );
         assert_eq!(r.source, ConfigSource::Default);
+    }
+
+    /// Legacy name kept as an alias-style regression for grep discoverability.
+    #[test]
+    #[serial]
+    fn resolve_feedback_defaults_to_true_when_unset() {
+        // Renamed behavior: default is now false (p8_feedback_resolve_defaults_to_false).
+        unsafe { std::env::remove_var("GROK_FEEDBACK_ENABLED") };
+        let cfg = Config::default();
+        assert!(!cfg.resolve_feedback().value);
     }
 
     /// Phase 8 OPS-02 baseline (D-08): unset features/remote/env → Disabled + Default.
@@ -9129,6 +9156,7 @@ reasoning_effort = "low"
     #[test]
     #[serial]
     fn resolve_feedback_remote_settings_used_when_no_local() {
+        // C1-H3: remote true is restrictive-only and must NOT enable when local unset.
         unsafe { std::env::remove_var("GROK_FEEDBACK_ENABLED") };
         let cfg = Config {
             remote_settings: Some(crate::util::config::RemoteSettings {
@@ -9138,8 +9166,99 @@ reasoning_effort = "low"
             ..Default::default()
         };
         let r = cfg.resolve_feedback();
-        assert_eq!(r.source, ConfigSource::Remote);
-        assert!(r.value);
+        assert!(
+            !r.value,
+            "remote feedback_enabled=true must not enable when local unset (C1-H3)"
+        );
+        assert_eq!(
+            r.source,
+            ConfigSource::Default,
+            "ignored remote-true falls through to Default false"
+        );
+    }
+
+    #[test]
+    #[serial]
+    fn p8_feedback_remote_true_local_unset_stays_false() {
+        unsafe { std::env::remove_var("GROK_FEEDBACK_ENABLED") };
+        let cfg = Config {
+            remote_settings: Some(crate::util::config::RemoteSettings {
+                feedback_enabled: Some(true),
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+        let r = cfg.resolve_feedback();
+        assert!(!r.value);
+        assert_eq!(r.source, ConfigSource::Default);
+    }
+
+    #[test]
+    #[serial]
+    fn p8_feedback_remote_false_local_unset_stays_false() {
+        unsafe { std::env::remove_var("GROK_FEEDBACK_ENABLED") };
+        let cfg = Config {
+            remote_settings: Some(crate::util::config::RemoteSettings {
+                feedback_enabled: Some(false),
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+        let r = cfg.resolve_feedback();
+        assert!(!r.value);
+        assert_eq!(
+            r.source,
+            ConfigSource::Remote,
+            "remote false may still force off as restrictive remote"
+        );
+    }
+
+    #[test]
+    #[serial]
+    fn p8_telemetry_remote_true_local_unset_stays_disabled() {
+        unsafe { std::env::remove_var("GROK_TELEMETRY_ENABLED") };
+        // telemetry_enabled=true only
+        let cfg = Config {
+            remote_settings: Some(crate::util::config::RemoteSettings {
+                telemetry_enabled: Some(true),
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+        let r = cfg.resolve_telemetry_mode();
+        assert_eq!(
+            r.value,
+            TelemetryMode::Disabled,
+            "remote telemetry_enabled=true must not enable (C1-H3)"
+        );
+        assert_eq!(r.source, ConfigSource::Default);
+
+        // telemetry_mode string that would enable
+        let cfg = Config {
+            remote_settings: Some(crate::util::config::RemoteSettings {
+                telemetry_mode: Some("enabled".into()),
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+        let r = cfg.resolve_telemetry_mode();
+        assert_eq!(r.value, TelemetryMode::Disabled);
+        assert_eq!(r.source, ConfigSource::Default);
+
+        // session_metrics also must not silently enable metrics phone-home path
+        let cfg = Config {
+            remote_settings: Some(crate::util::config::RemoteSettings {
+                telemetry_mode: Some("session_metrics".into()),
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+        let r = cfg.resolve_telemetry_mode();
+        assert_eq!(
+            r.value,
+            TelemetryMode::Disabled,
+            "remote session_metrics must not enable when local unset"
+        );
     }
     #[test]
     #[serial]

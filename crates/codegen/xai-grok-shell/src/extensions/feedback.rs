@@ -81,9 +81,10 @@ async fn handle_btw(agent: &MvpAgent, args: &acp::ExtRequest) -> ExtResult {
 
 async fn handle_feedback(agent: &MvpAgent, args: &acp::ExtRequest) -> ExtResult {
     if !agent.cfg.borrow().is_feedback_enabled() {
+        // Quiet fork (OPS-02 / D-15): do not advertise env opt-in as the
+        // primary user-facing CTA — product path is phone-home disabled.
         return Err(acp::Error::internal_error().data(
-            "Feedback is disabled. To enable, set GROK_FEEDBACK_ENABLED=true or \
-             [features] feedback = true in config.toml.",
+            "Feedback is disabled in bum (no phone-home).",
         ));
     }
 
