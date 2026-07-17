@@ -269,7 +269,8 @@ pub struct PagerLocalSnapshot {
     pub plan_mode_active: bool,
     /// `[cli].show_tips` mirror. `None` = no TOML override → default `true`.
     pub show_tips: Option<bool>,
-    /// `[cli].auto_update` mirror. `None` = no TOML override → default `true`.
+    /// `[cli].auto_update` mirror. `None` = no TOML override → default `false`
+    /// (quiet fork: stock channel off).
     pub auto_update: Option<bool>,
     /// Process-wide vim-mode scrollback flag. Mirrors
     /// `appearance::cache::load_vim_mode()` at snapshot time.
@@ -664,9 +665,10 @@ pub fn current_value_for(
         "plan_mode" => Some(SettingValue::Enum(
             crate::app::actions::PlanModeKind::from_bool(pager.plan_mode_active).as_canonical(),
         )),
-        // CLI batch: snapshot mirrors; `None` → effective default `true`.
+        // CLI batch: snapshot mirrors. `show_tips` None → true; `auto_update`
+        // None → false (quiet fork / OPS-01 stock channel hard-off default).
         "show_tips" => Some(SettingValue::Bool(pager.show_tips.unwrap_or(true))),
-        "auto_update" => Some(SettingValue::Bool(pager.auto_update.unwrap_or(true))),
+        "auto_update" => Some(SettingValue::Bool(pager.auto_update.unwrap_or(false))),
         // fork_secondary_model: baseline value folds to empty string.
         "fork_secondary_model" => Some(SettingValue::String({
             let baseline = xai_grok_shell::models::default_model();
@@ -877,9 +879,10 @@ mod tests {
                 }
                 ("auto_update", SettingKind::Bool { default }) => {
                     assert!(
-                        *default,
-                        "auto_update registry default must be true \
-                         (matches auto_update.rs's `.unwrap_or(true)`)"
+                        !*default,
+                        "auto_update registry default must be false \
+                         (quiet fork OPS-01; matches auto_update.rs \
+                         `.unwrap_or(false)`)"
                     );
                 }
                 // vim_mode: Option<bool>; None → false.
@@ -1427,6 +1430,33 @@ mod tests {
         // Empty query returns everything.
         let all = reg.search("");
         assert_eq!(all.len(), reg.all().len());
+    }
+
+    /// Quiet fork OPS-01: auto_update registry default is false (D-07).
+    #[test]
+    fn p8_settings_auto_update_default_false() {
+        let reg = SettingsRegistry::defaults();
+        let meta = reg
+            .find("auto_update")
+            .expect("auto_update must be registered");
+        match &meta.kind {
+            SettingKind::Bool { default } => {
+                assert!(!*default, "auto_update SettingKind default must be false");
+            }
+            other => panic!("auto_update must be Bool, got {other:?}"),
+        }
+        assert!(
+            meta.description.contains("disabled in bum")
+                || meta.description.contains("Stock update channel"),
+            "description must match UI-SPEC disabled stock channel wording: {}",
+            meta.description
+        );
+        let pager = PagerLocalSnapshot::default();
+        assert_eq!(
+            current_value_for("auto_update", &UiConfig::default(), &pager),
+            Some(SettingValue::Bool(false)),
+            "None auto_update mirror must resolve effective false"
+        );
     }
 
     /// `default_value_for` returns the registered default verbatim.

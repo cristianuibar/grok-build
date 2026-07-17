@@ -1719,7 +1719,7 @@ fn defaults_round_trip_through_registry() {
             "voice_stt_language" => SettingValue::Enum("en"),
             "plan_mode" => SettingValue::Enum("off"),
             "show_tips" => SettingValue::Bool(true),
-            "auto_update" => SettingValue::Bool(true),
+            "auto_update" => SettingValue::Bool(false),
             "fork_secondary_model" => SettingValue::String(String::new()),
             "show_thinking_blocks" => SettingValue::Bool(true),
             "prompt_suggestions" => SettingValue::Bool(true),
@@ -5255,11 +5255,8 @@ fn pr10_plan_mode_picker_esc_does_not_dispatch_action() {
     );
 }
 
-/// Snapshot-driven seeding: `PagerLocalSnapshot { plan_mode_active:
-/// true             provider_auth: crate::app::app_view::ProviderAuthUsableSnapshot::UNKNOWN,
-            model_auth_hints: Vec::new(),
-        }` makes Enter on the row open the picker seeded at the
-/// "on" choice.
+/// Snapshot-driven seeding: `PagerLocalSnapshot { plan_mode_active: true }`
+/// makes Enter on the row open the picker seeded at the "on" choice.
 #[test]
 fn pr10_picker_seeds_choices_idx_from_pager_snapshot_plan_mode_active() {
     let snapshot = PagerLocalSnapshot {
@@ -5922,7 +5919,8 @@ fn pr13_space_on_auto_update_dispatches_typed_setter() {
     let mut s = make_state();
     navigate_to(&mut s, "auto_update");
     let outcome = handle_settings_key(&mut s, &press(KeyCode::Char(' ')));
-    assert_set_bool_action(outcome, "auto_update", false);
+    // Default is false (quiet fork); Space toggles to true.
+    assert_set_bool_action(outcome, "auto_update", true);
 }
 
 /// Value-column click on `show_tips` toggles in one click.
@@ -5959,14 +5957,14 @@ fn pr13_mouse_click_on_auto_update_two_stage_select_then_toggle() {
         "first click on a different row body should only select, got: {outcome:?}"
     );
 
-    // Second click on the SAME row should now toggle.
+    // Second click on the SAME row should now toggle (default false → true).
     let outcome = handle_settings_mouse(
         &mut s,
         MouseEventKind::Down(crossterm::event::MouseButton::Left),
         10,
         row_y,
     );
-    assert_set_bool_action(outcome, "auto_update", false);
+    assert_set_bool_action(outcome, "auto_update", true);
 }
 
 /// CLI-batch settings are all `restart_required: true`.
@@ -5995,14 +5993,14 @@ fn pr13_cli_batch_defaults_roundtrip_via_current_value_for() {
     use xai_grok_pager::settings::current_value_for;
     let ui = UiConfig::default();
     let pager = PagerLocalSnapshot::default();
-    for (key, expected) in [("show_tips", true), ("auto_update", true)] {
+    for (key, expected) in [("show_tips", true), ("auto_update", false)] {
         let value = current_value_for(key, &ui, &pager)
             .unwrap_or_else(|| panic!("current_value_for(`{key}`) must resolve"));
         assert_eq!(
             value,
             SettingValue::Bool(expected),
             "PR 13: `{key}` defaults to {expected} (matches the consumer's \
-             .unwrap_or(...) at the original read site)",
+             .unwrap_or(...) at the original read site; auto_update quiet-fork off)",
         );
     }
 }
