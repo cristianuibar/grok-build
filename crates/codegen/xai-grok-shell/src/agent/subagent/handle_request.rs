@@ -43,6 +43,146 @@ pub(super) fn task_model_override_error(
     )
 }
 
+/// Credential gate for a resolved child model id (Plan 03 pure helpers).
+///
+/// Shared by `handle_subagent_request` and async `preflight_subagent_spawn`
+/// so login-shaped deny cannot drift between UX preflight and spawn authority.
+pub(crate) fn missing_provider_spawn_gate_message(
+    model_id: &str,
+    ctx: &SubagentSpawnContext,
+) -> Option<String> {
+    let entry = crate::agent::config::find_model_by_id(&ctx.available_models, model_id)?;
+    let target_provider = entry.info.provider;
+    let auth_path = ctx
+        .auth_json_path_override
+        .clone()
+        .unwrap_or_else(|| crate::util::grok_home::grok_home().join("auth.json"));
+    let live_xai = matches!(target_provider, crate::agent::config::ModelProvider::Xai)
+        .then(|| ctx.auth_manager.current_or_expired())
+        .flatten();
+    let slot_usable = crate::agent::config::oauth_provider_slot_usable(
+        &auth_path,
+        target_provider,
+        live_xai.as_ref(),
+    );
+    crate::agent::config::missing_provider_gate_error(
+        target_provider,
+        model_id,
+        entry.has_own_credentials(),
+        slot_usable,
+    )
+    .map(|_| {
+        crate::agent::config::missing_provider_spawn_error_message(target_provider, model_id)
+    })
+}
+
+/// Resolve effective child model id for spawn credential preflight (C3-M1).
+///
+/// Same precedence as `handle_subagent_request` early gate: role/persona pins via
+/// [`resolve_effective_overrides`], resume source model pin, fork_context parent
+/// pin, then [`resolve_effective_model_config`] (runtime override → config pin →
+/// agent def → live parent inherit via ChatStateHandle).
+///
+/// Side-effect free: no pending/worktree/spawn.
+pub(crate) async fn resolve_effective_child_model_for_spawn(
+    subagent_type: &str,
+    runtime_overrides: &SubagentRuntimeOverrides,
+    resume_from: Option<&str>,
+    fork_context: bool,
+    ctx: &SubagentSpawnContext,
+    coordinator: &std::cell::RefCell<SubagentCoordinator>,
+) -> Option<acp::ModelId> {
+    let definition = resolve_agent_definition(subagent_type, ctx)?;
+    let (role, role_key) = {
+        let by_type = ctx.subagent_roles.get(subagent_type);
+        if by_type.is_some() {
+            (by_type, Some(subagent_type.to_string()))
+        } else {
+            let by_persona = runtime_overrides
+                .persona
+                .as_deref()
+                .and_then(|p| ctx.subagent_roles.get(p));
+            let key = if by_persona.is_some() {
+                runtime_overrides.persona.clone()
+            } else {
+                None
+            };
+            (by_persona, key)
+        }
+    };
+    let cwd = ctx
+        .parent_session_info
+        .as_ref()
+        .map(|i| std::path::Path::new(&i.cwd));
+    let mut effective_runtime = resolve_effective_overrides(
+        runtime_overrides,
+        role,
+        &ctx.subagent_personas,
+        cwd,
+        role_key,
+    );
+    // Resume pin: source model wins for gate (model override soft-ignored).
+    let resume_source_model = if let Some(resume_id) = resume_from.filter(|s| is_valid_resume_id(s))
+    {
+        let coord = coordinator.borrow();
+        coord
+            .resumable_source_for(resume_id, &ctx.parent_session_id, &ctx.parent_cwd)
+            .and_then(|s| s.model_id.clone())
+    } else {
+        None
+    };
+    if resume_source_model.is_some() {
+        effective_runtime.model = None;
+    }
+    if fork_context {
+        effective_runtime.model = Some(ctx.model_id.0.to_string());
+    }
+    let mut preflight_model = effective_runtime.model.clone();
+    if let Some(source_model) = resume_source_model {
+        preflight_model = Some(source_model);
+    }
+    let (_cfg, model_id) = resolve_effective_model_config(
+        preflight_model.as_deref(),
+        subagent_type,
+        &definition.model,
+        ctx,
+    )
+    .await;
+    Some(model_id)
+}
+
+/// Async UX preflight for Task tool (AGENT-05 / C2-H1): live effective model +
+/// credential gate. Does not insert_pending, create worktree, or spawn.
+pub(crate) async fn preflight_subagent_spawn(
+    input: &SubagentPreflightInput,
+    ctx: &SubagentSpawnContext,
+    coordinator: &std::cell::RefCell<SubagentCoordinator>,
+) -> SubagentPreflightOutcome {
+    let Some(model_id) = resolve_effective_child_model_for_spawn(
+        &input.subagent_type,
+        &input.runtime_overrides,
+        input.resume_from.as_deref(),
+        input.fork_context,
+        ctx,
+        coordinator,
+    )
+    .await
+    else {
+        // Unknown type — spawn path will reject; credential preflight no-ops.
+        return SubagentPreflightOutcome::Ok;
+    };
+    let gate_model_id = model_id.0.as_ref();
+    if let Some(msg) = missing_provider_spawn_gate_message(gate_model_id, ctx) {
+        tracing::warn!(
+            model_id = %gate_model_id,
+            subagent_type = %input.subagent_type,
+            "subagent preflight: missing usable provider credentials — denied before started"
+        );
+        return SubagentPreflightOutcome::Denied { message: msg };
+    }
+    SubagentPreflightOutcome::Ok
+}
+
 /// Apply explicit `reasoning_effort` to child sampling config (D-04 / AGENT-03).
 ///
 /// - Parse first via [`ReasoningEffort::from_str`] (canonical tokens + aliases).
@@ -292,40 +432,14 @@ pub(crate) async fn handle_subagent_request(
         )
         .await;
     let gate_model_id = preflight_model_id.0.as_ref();
-    if let Some(entry) =
-        crate::agent::config::find_model_by_id(&ctx.available_models, gate_model_id)
-    {
-        let target_provider = entry.info.provider;
-        let auth_path = ctx.auth_json_path_override.clone().unwrap_or_else(|| {
-            crate::util::grok_home::grok_home().join("auth.json")
-        });
-        let live_xai = matches!(target_provider, crate::agent::config::ModelProvider::Xai)
-            .then(|| ctx.auth_manager.current_or_expired())
-            .flatten();
-        let slot_usable = crate::agent::config::oauth_provider_slot_usable(
-            &auth_path,
-            target_provider,
-            live_xai.as_ref(),
+    if let Some(msg) = missing_provider_spawn_gate_message(gate_model_id, &ctx) {
+        tracing::warn!(
+            subagent_id = %request.id,
+            model_id = %gate_model_id,
+            "subagent spawn: missing usable provider credentials — rejected before pending/worktree"
         );
-        if let Some(_err) = crate::agent::config::missing_provider_gate_error(
-            target_provider,
-            gate_model_id,
-            entry.has_own_credentials(),
-            slot_usable,
-        ) {
-            let msg = crate::agent::config::missing_provider_spawn_error_message(
-                target_provider,
-                gate_model_id,
-            );
-            tracing::warn!(
-                subagent_id = %request.id,
-                model_id = %gate_model_id,
-                provider = %target_provider.as_str(),
-                "subagent spawn: missing usable provider credentials — rejected before pending/worktree"
-            );
-            send_pre_spawn_failure(request, &msg, coordinator, &ctx, gateway);
-            return;
-        }
+        send_pre_spawn_failure(request, &msg, coordinator, &ctx, gateway);
+        return;
     }
     // Gate passed (or no catalog entry to gate) — durable side effects begin.
     coordinator

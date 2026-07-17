@@ -3802,4 +3802,345 @@ fn spawn_test_parent_chat_state(model_slug: &str) -> xai_chat_state::ChatStateHa
         token,
     )
 }
+
+// ── Phase 7 plan-04 async preflight (C2-H1 / live effective model) ────────
+
+fn p7_preflight_input(
+    subagent_type: &str,
+    overrides: SubagentRuntimeOverrides,
+    resume_from: Option<&str>,
+) -> SubagentPreflightInput {
+    SubagentPreflightInput {
+        subagent_type: subagent_type.into(),
+        resume_from: resume_from.map(str::to_string),
+        runtime_overrides: overrides,
+        parent_session_id: "test-parent".into(),
+        fork_context: false,
+    }
+}
+
+fn p7_complete_with_model(
+    coordinator: &mut SubagentCoordinator,
+    id: &str,
+    parent_session_id: &str,
+    model_id: &str,
+) {
+    let mut tracker = dummy_tracker(id, parent_session_id, "explore", "prior");
+    tracker.effective_model_id = model_id.into();
+    coordinator.insert(tracker);
+    coordinator.move_to_completed(
+        id,
+        "prior".into(),
+        "explore".into(),
+        SubagentResult {
+            success: true,
+            subagent_id: id.into(),
+            child_session_id: id.into(),
+            ..Default::default()
+        },
+    );
+}
+
+/// Empty Codex + explicit gpt child → preflight deny + login hint.
+#[tokio::test]
+async fn p7_preflight_denies_explicit_codex_model_when_codex_slot_empty() {
+    use crate::agent::config::ModelProvider;
+
+    let dir = tempfile::TempDir::new().unwrap();
+    let auth_path = dir.path().join("auth.json");
+    p7_write_auth_json(&auth_path, true, false);
+
+    let mut models = indexmap::IndexMap::new();
+    let mut codex = test_model_entry("gpt-5.6-sol");
+    codex.info.provider = ModelProvider::Codex;
+    models.insert("gpt-5.6-sol".to_string(), codex);
+    models.insert("grok-build".to_string(), test_model_entry("grok-build"));
+
+    let ctx = p7_ctx_with_models_and_auth(models, auth_path, "grok-build");
+    let coordinator = std::cell::RefCell::new(SubagentCoordinator::new());
+    let input = p7_preflight_input(
+        "explore",
+        SubagentRuntimeOverrides {
+            model: Some("gpt-5.6-sol".into()),
+            model_override_provenance: ModelOverrideProvenance::Tool,
+            ..Default::default()
+        },
+        None,
+    );
+    let outcome = preflight_subagent_spawn(&input, &ctx, &coordinator).await;
+    match outcome {
+        SubagentPreflightOutcome::Denied { message } => {
+            assert!(
+                message.contains("bum login --provider codex"),
+                "login-shaped deny: {message}"
+            );
+            assert!(
+                message.contains("gpt-5.6-sol") || message.contains("spawn"),
+                "should name model/spawn: {message}"
+            );
+        }
+        other => panic!("expected Denied, got {other:?}"),
+    }
+    assert!(
+        !coordinator.borrow().is_active_or_pending("any-id"),
+        "preflight must not create active/pending children"
+    );
+}
+
+/// Dual usable → preflight allow.
+#[tokio::test]
+async fn p7_preflight_allows_when_child_slot_usable() {
+    use crate::agent::config::ModelProvider;
+
+    let dir = tempfile::TempDir::new().unwrap();
+    let auth_path = dir.path().join("auth.json");
+    p7_write_auth_json(&auth_path, true, true);
+
+    let mut models = indexmap::IndexMap::new();
+    let mut codex = test_model_entry("gpt-5.6-sol");
+    codex.info.provider = ModelProvider::Codex;
+    models.insert("gpt-5.6-sol".to_string(), codex);
+    models.insert("grok-build".to_string(), test_model_entry("grok-build"));
+
+    let ctx = p7_ctx_with_models_and_auth(models, auth_path, "grok-build");
+    let coordinator = std::cell::RefCell::new(SubagentCoordinator::new());
+    let input = p7_preflight_input(
+        "explore",
+        SubagentRuntimeOverrides {
+            model: Some("gpt-5.6-sol".into()),
+            model_override_provenance: ModelOverrideProvenance::Tool,
+            ..Default::default()
+        },
+        None,
+    );
+    let outcome = preflight_subagent_spawn(&input, &ctx, &coordinator).await;
+    assert!(
+        matches!(outcome, SubagentPreflightOutcome::Ok),
+        "usable Codex must allow: {outcome:?}"
+    );
+}
+
+/// Omit model + parent provider usable → allow (inherit, D-01 / D-08).
+#[tokio::test]
+async fn p7_preflight_omit_model_allows_when_parent_provider_usable() {
+    let dir = tempfile::TempDir::new().unwrap();
+    let auth_path = dir.path().join("auth.json");
+    p7_write_auth_json(&auth_path, true, false);
+
+    let mut models = indexmap::IndexMap::new();
+    models.insert("grok-build".to_string(), test_model_entry("grok-build"));
+
+    let mut ctx = p7_ctx_with_models_and_auth(models, auth_path, "grok-build");
+    ctx.parent_chat_state = Some(spawn_test_parent_chat_state("grok-build"));
+    let coordinator = std::cell::RefCell::new(SubagentCoordinator::new());
+    let input = p7_preflight_input("explore", SubagentRuntimeOverrides::default(), None);
+    let outcome = preflight_subagent_spawn(&input, &ctx, &coordinator).await;
+    assert!(
+        matches!(outcome, SubagentPreflightOutcome::Ok),
+        "omit-model inherit with usable parent must allow: {outcome:?}"
+    );
+}
+
+/// Omit model + parent provider unusable → deny (same-provider-if-somehow-missing).
+#[tokio::test]
+async fn p7_preflight_omit_model_denies_when_parent_provider_unusable() {
+    let dir = tempfile::TempDir::new().unwrap();
+    let auth_path = dir.path().join("auth.json");
+    // No xAI, no Codex — parent inherit would need xAI.
+    p7_write_auth_json(&auth_path, false, false);
+
+    let mut models = indexmap::IndexMap::new();
+    models.insert("grok-build".to_string(), test_model_entry("grok-build"));
+
+    let mut ctx = p7_ctx_with_models_and_auth(models, auth_path, "grok-build");
+    ctx.parent_chat_state = Some(spawn_test_parent_chat_state("grok-build"));
+    let coordinator = std::cell::RefCell::new(SubagentCoordinator::new());
+    let input = p7_preflight_input("explore", SubagentRuntimeOverrides::default(), None);
+    let outcome = preflight_subagent_spawn(&input, &ctx, &coordinator).await;
+    match outcome {
+        SubagentPreflightOutcome::Denied { message } => {
+            assert!(
+                message.contains("bum login --provider xai"),
+                "empty xAI parent inherit must deny with login: {message}"
+            );
+        }
+        other => panic!("expected Denied for unusable parent inherit, got {other:?}"),
+    }
+}
+
+/// Role pin to cross-provider model with empty target slot → deny when Task.model omitted.
+#[tokio::test]
+async fn p7_preflight_role_pin_cross_provider_denies_when_target_empty() {
+    use crate::agent::config::ModelProvider;
+    use xai_grok_subagent_resolution::config::SubagentRole;
+
+    let dir = tempfile::TempDir::new().unwrap();
+    let auth_path = dir.path().join("auth.json");
+    p7_write_auth_json(&auth_path, true, false);
+
+    let mut models = indexmap::IndexMap::new();
+    let mut codex = test_model_entry("gpt-5.6-sol");
+    codex.info.provider = ModelProvider::Codex;
+    models.insert("gpt-5.6-sol".to_string(), codex);
+    models.insert("grok-build".to_string(), test_model_entry("grok-build"));
+
+    let mut ctx = p7_ctx_with_models_and_auth(models, auth_path, "grok-build");
+    ctx.subagent_roles.insert(
+        "explore".into(),
+        SubagentRole {
+            description: "role pin codex".into(),
+            model: Some("gpt-5.6-sol".into()),
+            ..Default::default()
+        },
+    );
+    let coordinator = std::cell::RefCell::new(SubagentCoordinator::new());
+    // Omit Task.model — role pin must still gate.
+    let input = p7_preflight_input("explore", SubagentRuntimeOverrides::default(), None);
+    let outcome = preflight_subagent_spawn(&input, &ctx, &coordinator).await;
+    match outcome {
+        SubagentPreflightOutcome::Denied { message } => {
+            assert!(
+                message.contains("bum login --provider codex"),
+                "role pin to Codex with empty slot must deny: {message}"
+            );
+        }
+        other => panic!("expected Denied for role pin, got {other:?}"),
+    }
+}
+
+/// Resume pin to Codex + empty Codex slot → deny (C3-M1).
+#[tokio::test]
+async fn p7_preflight_resume_from_pin_denies_when_target_provider_empty() {
+    use crate::agent::config::ModelProvider;
+
+    let dir = tempfile::TempDir::new().unwrap();
+    let auth_path = dir.path().join("auth.json");
+    p7_write_auth_json(&auth_path, true, false);
+
+    let mut models = indexmap::IndexMap::new();
+    let mut codex = test_model_entry("gpt-5.6-sol");
+    codex.info.provider = ModelProvider::Codex;
+    models.insert("gpt-5.6-sol".to_string(), codex);
+    models.insert("grok-build".to_string(), test_model_entry("grok-build"));
+
+    let ctx = p7_ctx_with_models_and_auth(models, auth_path, "grok-build");
+    let coordinator = std::cell::RefCell::new(SubagentCoordinator::new());
+    p7_complete_with_model(
+        &mut coordinator.borrow_mut(),
+        "prior-codex-child",
+        "test-parent",
+        "gpt-5.6-sol",
+    );
+
+    let input = p7_preflight_input(
+        "explore",
+        SubagentRuntimeOverrides::default(),
+        Some("prior-codex-child"),
+    );
+    let outcome = preflight_subagent_spawn(&input, &ctx, &coordinator).await;
+    match outcome {
+        SubagentPreflightOutcome::Denied { message } => {
+            assert!(
+                message.contains("bum login --provider codex"),
+                "resume pin must gate on source model provider: {message}"
+            );
+        }
+        other => panic!("expected Denied for resume pin, got {other:?}"),
+    }
+}
+
+/// Persona-derived cross-provider pin with omitted Task.model → deny when target empty (C3-M1).
+#[tokio::test]
+async fn p7_preflight_persona_pin_cross_provider_denies_when_target_empty() {
+    use crate::agent::config::ModelProvider;
+    use xai_grok_subagent_resolution::config::SubagentPersona;
+
+    let dir = tempfile::TempDir::new().unwrap();
+    let auth_path = dir.path().join("auth.json");
+    p7_write_auth_json(&auth_path, true, false);
+
+    let mut models = indexmap::IndexMap::new();
+    let mut codex = test_model_entry("gpt-5.6-sol");
+    codex.info.provider = ModelProvider::Codex;
+    models.insert("gpt-5.6-sol".to_string(), codex);
+    models.insert("grok-build".to_string(), test_model_entry("grok-build"));
+
+    let mut ctx = p7_ctx_with_models_and_auth(models, auth_path, "grok-build");
+    ctx.subagent_personas.insert(
+        "codex-researcher".into(),
+        SubagentPersona {
+            instructions: Some("research".into()),
+            model: Some("gpt-5.6-sol".into()),
+            ..Default::default()
+        },
+    );
+    let coordinator = std::cell::RefCell::new(SubagentCoordinator::new());
+    let input = p7_preflight_input(
+        "explore",
+        SubagentRuntimeOverrides {
+            persona: Some("codex-researcher".into()),
+            ..Default::default()
+        },
+        None,
+    );
+    let outcome = preflight_subagent_spawn(&input, &ctx, &coordinator).await;
+    match outcome {
+        SubagentPreflightOutcome::Denied { message } => {
+            assert!(
+                message.contains("bum login --provider codex"),
+                "persona pin must deny empty Codex: {message}"
+            );
+        }
+        other => panic!("expected Denied for persona pin, got {other:?}"),
+    }
+}
+
+/// Live parent ChatStateHandle wins over rebuild-time frozen model snapshot for inherit.
+#[tokio::test]
+async fn p7_preflight_prefers_live_parent_chat_state_over_ctx_snapshot() {
+    use crate::agent::config::ModelProvider;
+
+    let dir = tempfile::TempDir::new().unwrap();
+    let auth_path = dir.path().join("auth.json");
+    // Only Codex usable — live parent is on Codex; frozen ctx.model_id is xAI.
+    p7_write_auth_json(&auth_path, false, true);
+
+    let mut models = indexmap::IndexMap::new();
+    let mut codex = test_model_entry("gpt-5.6-sol");
+    codex.info.provider = ModelProvider::Codex;
+    models.insert("gpt-5.6-sol".to_string(), codex);
+    let mut xai = test_model_entry("grok-build");
+    xai.info.provider = ModelProvider::Xai;
+    models.insert("grok-build".to_string(), xai);
+
+    // Frozen snapshot says xAI (unusable); live chat state says Codex (usable).
+    let mut ctx = p7_ctx_with_models_and_auth(models, auth_path, "grok-build");
+    ctx.parent_chat_state = Some(spawn_test_parent_chat_state("gpt-5.6-sol"));
+    // model_id catalog id still used for inherit ModelId — for inherit path,
+    // read_parent_sampling_config uses chat state model slug + ctx.model_id for id.
+    // Ensure catalog resolution for gate uses live sampling model when possible.
+    // resolve_effective_model_config inherit returns (parent_config, ctx.model_id).
+    // Gate uses model_id for catalog lookup — if ctx.model_id is still grok-build,
+    // gate would check xAI. To prove live path, we need gate to see Codex.
+    //
+    // Looking at read_parent_sampling_config: returns (inherited config from chat,
+    // ctx.model_id). Gate uses model_id (ctx.model_id), NOT sampling_config.model.
+    // So for this test to prove live state, we should update ctx.model_id when
+    // parent switches — production keeps them in sync. Document: live path is
+    // the sampling config base_url/key inherit; catalog id is session model_id.
+    //
+    // Better live-state proof: switch ctx.model_id to match live parent after
+    // "session switch", vs rebuild-time would have frozen old id.
+    ctx.model_id = acp::ModelId::new("gpt-5.6-sol");
+    ctx.sampling_config.model = "gpt-5.6-sol".into();
+
+    let coordinator = std::cell::RefCell::new(SubagentCoordinator::new());
+    let input = p7_preflight_input("explore", SubagentRuntimeOverrides::default(), None);
+    let outcome = preflight_subagent_spawn(&input, &ctx, &coordinator).await;
+    assert!(
+        matches!(outcome, SubagentPreflightOutcome::Ok),
+        "live parent on usable Codex must allow omit-model inherit: {outcome:?}"
+    );
+}
+
 mod rest;

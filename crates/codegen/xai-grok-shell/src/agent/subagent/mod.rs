@@ -41,7 +41,10 @@ use xai_hunk_tracker::HunkTrackerHandle;
 mod coordinator_lifecycle;
 mod coordinator_query;
 mod handle_request;
-pub(crate) use handle_request::handle_subagent_request;
+pub(crate) use handle_request::{
+    handle_subagent_request, missing_provider_spawn_gate_message, preflight_subagent_spawn,
+    resolve_effective_child_model_for_spawn,
+};
 /// How the child session's initial context was bootstrapped.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum InitialContextSource {

@@ -230,6 +230,38 @@ impl MvpAgent {
                                 let _ = request.respond_to.send(outcome);
                             });
                         }
+                        SubagentEvent::Preflight(request) => {
+                            // AGENT-05 / C2-H1: live async effective-model + credential
+                            // gate before Task returns background "started". No
+                            // insert_pending / worktree / spawn_session side effects.
+                            let agent_ref = agent_ref.clone();
+                            tokio::task::spawn_local(async move {
+                                use xai_grok_tools::implementations::grok_build::task::types::SubagentPreflightOutcome;
+                                let this = agent_ref.get();
+                                let outcome = match this
+                                    .try_build_subagent_spawn_context(
+                                        &request.input.parent_session_id,
+                                    ) {
+                                    Some(ctx) => {
+                                        crate::agent::subagent::preflight_subagent_spawn(
+                                            &request.input,
+                                            &ctx,
+                                            &this.subagent_coordinator,
+                                        )
+                                        .await
+                                    }
+                                    None => {
+                                        tracing::warn!(
+                                            parent_session_id = %request.input.parent_session_id,
+                                            subagent_type = %request.input.subagent_type,
+                                            "Preflight for unknown/evicted parent session, replying Unavailable",
+                                        );
+                                        SubagentPreflightOutcome::Unavailable
+                                    }
+                                };
+                                let _ = request.respond_to.send(outcome);
+                            });
+                        }
                     }
                 }
             }
