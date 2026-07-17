@@ -32,7 +32,12 @@ enum EnforcementOutcome {
 /// User-facing enforcement failures; `Display` is printed to stderr.
 /// `AutoUpdateDisabled` and `NoInstaller` share copy but stay separate so
 /// telemetry can distinguish them.
+///
+/// Quiet-fork note: the public min-version entry is a hard no-op, so several
+/// install-path variants are currently only constructed from the retained
+/// private `enforce_minimum_version` helper (allowed dead_code).
 #[derive(Debug, thiserror::Error)]
+#[allow(dead_code)]
 pub(crate) enum MinimumVersionError {
     /// `source` chains via `Error::source()`; omitted from `Display`.
     #[error(
@@ -187,8 +192,9 @@ fn pick_target_version(latest: Option<&str>, minimum: &str) -> String {
     }
 }
 
-/// Call once at startup, before any user-facing UI. On `Ok(Upgraded)` the
-/// caller MUST restart. On `Err`, print and exit non-zero.
+/// Inner floor enforcement (install path). Retained for unit tests of floor
+/// evaluation; public entry is a quiet-fork hard no-op.
+#[allow(dead_code)] // Public `enforce_minimum_version_or_exit` is the hard no-op entry.
 async fn enforce_minimum_version(
     minimum_version: Option<&str>,
     update_config: &UpdateConfig,
@@ -259,41 +265,36 @@ async fn enforce_minimum_version(
     Ok(EnforcementOutcome::Upgraded)
 }
 
-/// Single chokepoint for the pager + tui startup paths. Re-execs after a
-/// floor-driven install. Prints + exits non-zero on `Err`.
+/// Single chokepoint for the pager + tui startup paths.
 ///
-/// `GROK_TEST_VERSION` lets devs override the running version to skip
-/// enforcement on a `cargo run` build.
-pub async fn enforce_minimum_version_or_exit(update_config: &UpdateConfig) {
-    let min = match resolve_floor_or_error() {
-        Ok(None) => return,
-        Ok(Some(m)) => m,
-        Err(e) => {
-            eprintln!("{e}");
-            std::process::exit(1);
-        }
-    };
-    match enforce_minimum_version(Some(&min), update_config).await {
-        Ok(EnforcementOutcome::Allowed) => {}
-        Ok(EnforcementOutcome::Upgraded) => {
-            // TODO: restart_grok uses exec() which carries the same
-            // SIGABRT risk as the old piped-stderr update path if the
-            // child process ever writes to a broken pipe. For now this
-            // path is rare (only fires when the server pushes a minimum
-            // version bump), so print a relaunch message instead.
-            eprintln!("Update installed. Run `grok` to start.");
-            std::process::exit(0);
-        }
-        Err(e) => {
-            eprintln!("{e}");
-            std::process::exit(1);
-        }
-    }
+/// Quiet fork (OPS-01 / D-06): **hard no-op**. Managed/remote `minimum_version`
+/// floors must never force-install stock Grok Build over bum. Entry-level
+/// return — does not resolve floor, network, install, or `process::exit`.
+///
+/// The inner `enforce_minimum_version` helper is retained for unit tests of
+/// floor evaluation logic but is not invoked from this public entry.
+pub async fn enforce_minimum_version_or_exit(_update_config: &UpdateConfig) {
+    // Intentionally empty: quiet-fork hard-off of stock min-version upgrades.
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn p8_min_version_or_exit_is_noop() {
+        // Hard no-op: returns without network, install, or process::exit (D-06).
+        let cfg = UpdateConfig {
+            proxy_base_url: "http://127.0.0.1".into(),
+            auth_scope: "test".into(),
+            deployment_key: None,
+            alpha_test_key: None,
+            channel: "stable".into(),
+            npm_registry: None,
+        };
+        // If this hung, networked, or exited the process, the test would fail.
+        enforce_minimum_version_or_exit(&cfg).await;
+    }
 
     #[test]
     fn evaluate_minimum_version_decisions() {

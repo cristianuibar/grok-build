@@ -56,6 +56,37 @@ pub struct UpdateStatus {
     pub error: Option<String>,
 }
 
+/// Product name used in local version status lines (ID-02 / quiet fork).
+pub(crate) const UPDATE_STATUS_PRODUCT_NAME: &str = "bum";
+
+/// Effective stock auto-update enablement (OPS-01 / D-07).
+///
+/// Quiet fork: `None` means **off** (historically defaulted on via
+/// `unwrap_or(true)`). Only explicit `Some(true)` enables the stock channel
+/// path inside this crate; composition-root gates still hard-off probes.
+pub fn effective_auto_update_enabled(auto_update: Option<bool>) -> bool {
+    auto_update.unwrap_or(false)
+}
+
+/// First-run persistence policy for `cli.auto_update` (OPS-01 / D-07).
+///
+/// Returns the value to write when resolving a first-run config, or `None`
+/// to leave the field unset. Quiet fork: **never** persists `true` to opt
+/// users into the stock channel.
+pub fn first_run_auto_update_persist_value(auto_update: Option<bool>) -> Option<bool> {
+    // Leave None unset; never write Some(true). Explicit Some(false)/Some(true)
+    // are already set and do not need first-run mutation here.
+    let _ = auto_update;
+    None
+}
+
+/// Format a local version status prefix (`bum - vX`).
+pub(crate) fn format_product_version_line(current_version: &str, suffix: &str) -> String {
+    format!(
+        "{UPDATE_STATUS_PRODUCT_NAME} - v{current_version}{suffix}"
+    )
+}
+
 /// Format and print an [`UpdateStatus`] to stdout.
 pub fn print_update_status(status: &UpdateStatus, json: bool) -> anyhow::Result<()> {
     if json {
@@ -66,8 +97,11 @@ pub fn print_update_status(status: &UpdateStatus, json: bool) -> anyhow::Result<
 
     if let Some(error) = status.error.as_deref() {
         println!(
-            "Grok Build - v{} [{}]",
-            status.current_version, status.channel
+            "{}",
+            format_product_version_line(
+                &status.current_version,
+                &format!(" [{}]", status.channel)
+            )
         );
         println!("Update check failed: {error}");
         return Ok(());
@@ -78,24 +112,30 @@ pub fn print_update_status(status: &UpdateStatus, json: bool) -> anyhow::Result<
     if status.update_available {
         if let Some(latest_version) = status.latest_version.as_deref() {
             println!(
-                "A new version of Grok Build is available: {} -> {}{}",
+                "A new version of {UPDATE_STATUS_PRODUCT_NAME} is available: {} -> {}{}",
                 status.current_version, latest_version, channel_label
             );
         } else {
-            println!("A new version of Grok Build is available.");
+            println!("A new version of {UPDATE_STATUS_PRODUCT_NAME} is available.");
         }
         return Ok(());
     }
 
     if let Some(latest_version) = status.latest_version.as_deref() {
         println!(
-            "Grok Build - v{} (latest: {}){}",
-            status.current_version, latest_version, channel_label
+            "{}",
+            format_product_version_line(
+                &status.current_version,
+                &format!(" (latest: {latest_version}){channel_label}")
+            )
         );
         return Ok(());
     }
 
-    println!("Grok Build - v{}{}", status.current_version, channel_label);
+    println!(
+        "{}",
+        format_product_version_line(&status.current_version, &channel_label)
+    );
     Ok(())
 }
 
@@ -395,7 +435,8 @@ pub async fn check_update_background(update_config: &UpdateConfig) -> Background
     }
 
     let current_config = config::load_config().await;
-    if current_config.cli.auto_update == Some(false) {
+    // Quiet fork: None defaults off — only explicit Some(true) continues.
+    if !effective_auto_update_enabled(current_config.cli.auto_update) {
         return BackgroundUpdateCheck::none();
     }
 
@@ -478,18 +519,18 @@ pub async fn run_update_if_available(
 
     let current_config = config::load_config().await;
 
-    // Skip update check if auto-update is explicitly disabled.
-    if current_config.cli.auto_update == Some(false) {
+    // Quiet fork (OPS-01 / D-07): None defaults to false; no first-run true persist.
+    let auto_update = effective_auto_update_enabled(current_config.cli.auto_update);
+    if !auto_update {
         return Ok(false);
     }
 
-    // Resolve effective auto_update: None defaults to true (first-run).
-    let auto_update = current_config.cli.auto_update.unwrap_or(true);
-
-    if current_config.cli.auto_update.is_none()
+    // First-run: never opt users into the stock channel by writing Some(true).
+    // `first_run_auto_update_persist_value` returns None → leave field unset.
+    if let Some(persist) = first_run_auto_update_persist_value(current_config.cli.auto_update)
         && let Err(e) = config::update_config(|st| {
             if st.cli.auto_update.is_none() {
-                st.cli.auto_update = Some(true);
+                st.cli.auto_update = Some(persist);
             }
         })
         .await
@@ -523,7 +564,7 @@ pub async fn run_update_if_available(
     let channel_label = format!(" [{}]", update_config.channel);
     if auto_update {
         eprintln!(
-            "A new version of Grok Build is available: {} -> {}{}",
+            "A new version of {UPDATE_STATUS_PRODUCT_NAME} is available: {} -> {}{}",
             current_version, latest_version, channel_label
         );
         if interactive {
@@ -551,7 +592,7 @@ pub async fn run_update_if_available(
             return Ok(false);
         }
         eprintln!(
-            "A new version of Grok Build is available: {} -> {}{}",
+            "A new version of {UPDATE_STATUS_PRODUCT_NAME} is available: {} -> {}{}",
             current_version, latest_version, channel_label
         );
         if interactive {
@@ -2190,7 +2231,7 @@ pub async fn run_update(
             anyhow::bail!("{e}");
         }
         eprintln!(
-            "Installing Grok {} (current: {})...",
+            "Installing {UPDATE_STATUS_PRODUCT_NAME} {} (current: {})...",
             version, current_version
         );
         eprintln!();
@@ -2301,12 +2342,15 @@ pub async fn run_update(
         .unwrap_or(true)
     {
         eprintln!(
-            "Forcing reinstall of Grok {} (already up to date)",
+            "Forcing reinstall of {UPDATE_STATUS_PRODUCT_NAME} {} (already up to date)",
             effective_current
         );
         &effective_current
     } else {
-        eprintln!("Updating Grok {} → {}", effective_current, install_target);
+        eprintln!(
+            "Updating {UPDATE_STATUS_PRODUCT_NAME} {} → {}",
+            effective_current, install_target
+        );
         &install_target
     };
 
@@ -3375,6 +3419,57 @@ mod tests {
         assert!(json.ends_with('}'), "must be a JSON object: {json}");
         // Single line: no embedded newlines (the wire format is one line).
         assert!(!json.contains('\n'), "must be single line: {json}");
+    }
+
+    // ──────────────────────────────────────────────────────────────────────
+    // OPS-01: auto_update default off + no first-run true (D-07)
+    // ──────────────────────────────────────────────────────────────────────
+
+    #[test]
+    fn p8_auto_update_default_none_is_off() {
+        assert!(
+            !effective_auto_update_enabled(None),
+            "None must mean stock auto-update off (quiet fork)"
+        );
+        assert!(
+            !effective_auto_update_enabled(Some(false)),
+            "Some(false) must stay off"
+        );
+        assert!(
+            effective_auto_update_enabled(Some(true)),
+            "Some(true) remains explicit on (settings/CLI may still set it; \
+             composition-root gate still hard-offs probes)"
+        );
+    }
+
+    #[test]
+    fn p8_auto_update_first_run_does_not_persist_true() {
+        assert_eq!(
+            first_run_auto_update_persist_value(None),
+            None,
+            "first-run must not write Some(true) when auto_update is None"
+        );
+        assert_eq!(
+            first_run_auto_update_persist_value(Some(false)),
+            None,
+            "already-set false needs no first-run persist of true"
+        );
+        assert_eq!(
+            first_run_auto_update_persist_value(Some(true)),
+            None,
+            "first-run helper never invents a true write"
+        );
+    }
+
+    #[test]
+    fn p8_auto_update_status_product_prefix_is_bum() {
+        assert_eq!(UPDATE_STATUS_PRODUCT_NAME, "bum");
+        let line = format_product_version_line("1.2.3", " [stable]");
+        assert_eq!(line, "bum - v1.2.3 [stable]");
+        assert!(
+            !line.contains("Grok Build"),
+            "status line must not use stock product name: {line}"
+        );
     }
 
     // ──────────────────────────────────────────────────────────────────────
