@@ -906,7 +906,7 @@ async fn run_agent_command(
             ))
         );
         if should_check_for_updates(no_auto_update) {
-            auto_update::run_update_if_available(
+            stock_run_update_if_available(
                 auto_update::UpdateRunMode::NonBlocking,
                 false,
                 update_config,
@@ -985,7 +985,7 @@ async fn run_agent_command(
     {
         let update_config = update_config.clone();
         tokio::spawn(async move {
-            auto_update::run_update_if_available(
+            stock_run_update_if_available(
                 auto_update::UpdateRunMode::NonBlocking,
                 false,
                 &update_config,
@@ -1221,7 +1221,7 @@ async fn run_agent_command(
                             ) {
                                 return false;
                             }
-                            match auto_update::ensure_latest_on_disk(&uc).await {
+                            match stock_ensure_latest_on_disk(&uc).await {
                                 Ok(outcome) => {
                                     if let Some(v) = &outcome.installed {
                                         if let Err(e) = xai_grok_shell::managed_config::sync().await
@@ -1922,7 +1922,7 @@ async fn async_main() -> Result<()> {
             let wait_slot = bg_update_wait.clone();
             let (tx, rx) = tokio::sync::oneshot::channel();
             tokio::spawn(async move {
-                let check = auto_update::check_update_background(&update_config).await;
+                let check = stock_check_update_background(&update_config).await;
                 if let Some(mut child) = check.download {
                     *wait_slot.lock().await = Some(tokio::spawn(async move { child.wait().await }));
                 }
@@ -2034,7 +2034,6 @@ fn note_stock_update_helper_call() {
 /// Thin seam around stock `run_update_if_available` for hermetic proofs.
 /// Production call sites that remain behind `should_check_for_updates` use this
 /// so tests can prove the gate never reaches the stock channel.
-#[allow(dead_code)]
 async fn stock_run_update_if_available(
     run_mode: auto_update::UpdateRunMode,
     interactive: bool,
@@ -2045,7 +2044,26 @@ async fn stock_run_update_if_available(
     auto_update::run_update_if_available(run_mode, interactive, update_config).await
 }
 
+/// Thin seam around stock `ensure_latest_on_disk` (leader hourly check path).
+async fn stock_ensure_latest_on_disk(
+    update_config: &UpdateConfig,
+) -> Result<auto_update::EnsureLatestOutcome> {
+    #[cfg(test)]
+    note_stock_update_helper_call();
+    auto_update::ensure_latest_on_disk(update_config).await
+}
+
+/// Thin seam around stock `check_update_background` (TUI background probe path).
+async fn stock_check_update_background(
+    update_config: &UpdateConfig,
+) -> auto_update::BackgroundUpdateCheck {
+    #[cfg(test)]
+    note_stock_update_helper_call();
+    auto_update::check_update_background(update_config).await
+}
+
 /// Thin seam around stock `check_update_status` (explicit update --check path).
+/// Not used on the quiet-fork hard-off CLI path; retained for hermetic proofs.
 #[allow(dead_code)]
 async fn stock_check_update_status(
     update_config: &UpdateConfig,
@@ -2056,6 +2074,7 @@ async fn stock_check_update_status(
 }
 
 /// Thin seam around stock `run_update` (explicit install path).
+/// Not used on the quiet-fork hard-off CLI path; retained for hermetic proofs.
 #[allow(dead_code)]
 async fn stock_run_update(
     force_reinstall: bool,
