@@ -1,11 +1,12 @@
 ---
 phase: 9
 reviewers: [codex]
-reviewed_at: 2026-07-17T17:52:00Z
+reviewed_at: 2026-07-17T15:01:18Z
 plans_reviewed: ['09-01-PLAN.md', '09-02-PLAN.md', '09-03-PLAN.md', '09-04-PLAN.md', '09-05-PLAN.md']
-cycle: 1
+cycle: 2
+prior_cycle: 1
 current_high: 0
-current_actionable: 0
+current_actionable: 3
 verdict: REPLAN
 replanned_at: 2026-07-17
 ---
@@ -235,7 +236,93 @@ All 14 actionable findings incorporated into PLAN.md executable content. `curren
 
 ### Review Feedback Deferred / Rejected
 
-None — all cycle-1 actionable findings incorporated.
+None — all cycle-1 actionable findings claimed incorporated in replan (cycle 2 re-verifies below).
+
+---
+
+## Codex review (cycle 2) — 2026-07-17T15:01:18Z
+
+Post-replan disposition audit of all 14 cycle-1 findings against executable PLAN.md content (not disposition tables alone). Source-grounded Codex review.
+
+### Status of prior findings
+
+| Finding | Status | Evidence |
+|---|---|---|
+| C1-M1 | RESOLVED | Single required `p9_` residual, explicit ban on dual p7 clones, discovery ≤3: [09-01-PLAN.md](.planning/phases/09-daily-driver-end-to-end-validation/09-01-PLAN.md:128), [09-01-PLAN.md](.planning/phases/09-daily-driver-end-to-end-validation/09-01-PLAN.md:141) |
+| C1-M2 | RESOLVED | Full P0/P1 inventory SoT + Task 2 verify runs every listed filter: [09-02-PLAN.md](.planning/phases/09-daily-driver-end-to-end-validation/09-02-PLAN.md:100), [09-02-PLAN.md](.planning/phases/09-daily-driver-end-to-end-validation/09-02-PLAN.md:175) |
+| C1-M3 | RESOLVED | Disposable workspace + initial/final `git status` + cleanup required: [09-03-PLAN.md](.planning/phases/09-daily-driver-end-to-end-validation/09-03-PLAN.md:116) |
+| C1-M4 | RESOLVED | CLI chrome preflight + residual Grok chrome blocker decision: [09-03-PLAN.md](.planning/phases/09-daily-driver-end-to-end-validation/09-03-PLAN.md:118) |
+| C1-M5 | RESOLVED | Conditional may-modify paths + SUMMARY path recording: [09-04-PLAN.md](.planning/phases/09-daily-driver-end-to-end-validation/09-04-PLAN.md:115), frontmatter `files_modified` |
+| C1-M6 | RESOLVED | OPS-06 structured fields; start-without-return is not PASS: [09-04-PLAN.md](.planning/phases/09-daily-driver-end-to-end-validation/09-04-PLAN.md:129) |
+| C1-M7 | RESOLVED | Final-gate restore-original / forbid thin wrappers: [09-05-PLAN.md](.planning/phases/09-daily-driver-end-to-end-validation/09-05-PLAN.md:104) |
+| C1-M8 | PARTIAL | Hard policy requires content + path + phase-diff ([09-05-PLAN.md](.planning/phases/09-daily-driver-end-to-end-validation/09-05-PLAN.md:114)), but Task 3 automated verify only checks `auth.json` (not token-like paths / phase-diff content) and ends with masking `\|\| true` ([09-05-PLAN.md](.planning/phases/09-daily-driver-end-to-end-validation/09-05-PLAN.md:206)) |
+| C1-L1 | RESOLVED | Optional route residual labeled metadata-only; bearer stays `p7_isolation_*`: [09-01-PLAN.md](.planning/phases/09-daily-driver-end-to-end-validation/09-01-PLAN.md:128) |
+| C1-L2 | RESOLVED | home_isolation discover-before-execute in Plan 02 SoT/verify: [09-02-PLAN.md](.planning/phases/09-daily-driver-end-to-end-validation/09-02-PLAN.md:147), [09-02-PLAN.md](.planning/phases/09-daily-driver-end-to-end-validation/09-02-PLAN.md:175) |
+| C1-L3 | RESOLVED | List both isolation dirs; execute aggregate `p7_isolation` once: [09-02-PLAN.md](.planning/phases/09-daily-driver-end-to-end-validation/09-02-PLAN.md:146), [09-02-PLAN.md](.planning/phases/09-daily-driver-end-to-end-validation/09-02-PLAN.md:175) |
+| C1-L4 | PARTIAL | UAT task requires path + phase-diff checks ([09-03-PLAN.md](.planning/phases/09-daily-driver-end-to-end-validation/09-03-PLAN.md:119)); script only “may print” suggestions and Task 2 verify checks only `auth.json` ([09-03-PLAN.md](.planning/phases/09-daily-driver-end-to-end-validation/09-03-PLAN.md:147), [09-03-PLAN.md](.planning/phases/09-daily-driver-end-to-end-validation/09-03-PLAN.md:152)) |
+| C1-L5 | RESOLVED | Outcome taxonomy PASS \| PRODUCT BLOCKER \| AUTH/ACCOUNT BLOCKED \| PROVIDER OUTAGE/LIMIT: [09-04-PLAN.md](.planning/phases/09-daily-driver-end-to-end-validation/09-04-PLAN.md:102) |
+| C1-L6 | RESOLVED | Final-gate home_isolation discover-before-execute: [09-05-PLAN.md](.planning/phases/09-daily-driver-end-to-end-validation/09-05-PLAN.md:148), [09-05-PLAN.md](.planning/phases/09-daily-driver-end-to-end-validation/09-05-PLAN.md:156) |
+
+### HIGH
+
+None.
+
+### MEDIUM
+
+- **[C2-M1] Final secrets verify is a no-op (C1-M8 residual).** Plan 05 Task 3 automated chain ends with `... && git diff --check ... || true`, so shell precedence makes the entire verify succeed even when artifact checks, JWT/private-key scans, or tracked `auth.json` fail. It also never runs a mandatory phase-diff secret-content inspection. Fix: remove trailing broad `|| true`; isolate optional `git diff --check` so it cannot mask required gates; add path guard for token-like credential filenames and scoped phase-diff content scan. Evidence: [09-05-PLAN.md:201](.planning/phases/09-daily-driver-end-to-end-validation/09-05-PLAN.md), [09-05-PLAN.md:206](.planning/phases/09-daily-driver-end-to-end-validation/09-05-PLAN.md).
+
+- **[C2-M2] Plan 04 Task 3 post-fix residual re-run is prose-only.** Task 3 authorizes may-modify fixes across switch/spawn/auth/cli/tools, but automated verify re-runs only `p9_`. Require discover+execute of the affected p6/p7/p8 filters based on changed path / failure class (not solely narrative action). Evidence: [09-04-PLAN.md:223](.planning/phases/09-daily-driver-end-to-end-validation/09-04-PLAN.md), [09-04-PLAN.md:231](.planning/phases/09-daily-driver-end-to-end-validation/09-04-PLAN.md).
+
+### LOW
+
+- **[C2-L1] Preflight secrets path/diff promise not mechanical (C1-L4 residual).** Make token-like path patterns and an explicit scoped `git diff` inspection required in the preflight script or Task 2 verify, rather than optional “may print” suggestions. Evidence: [09-03-PLAN.md:147](.planning/phases/09-daily-driver-end-to-end-validation/09-03-PLAN.md), [09-03-PLAN.md:152](.planning/phases/09-daily-driver-end-to-end-validation/09-03-PLAN.md).
+
+### Verdict
+
+**REPLAN** — no HIGH findings; 12/14 cycle-1 items fully RESOLVED; remaining enforcement gaps: final secret-gate verify can be bypassed (`|| true`), post-blocker residual re-run is not executable in Task 3 verify, and preflight secrets path/diff stay advisory.
+
+### Summary
+
+The replan substantively landed inventory completeness, disposable UAT workspace, chrome preflight, OPS-06 structured evidence, outcome taxonomy, thin-wrapper ban, and isolation hygiene. Residual risk is **verification enforcement**: the final GREEN secrets command can mask failures, and conditional product fixes lack a bound automated residual recheck.
+
+CYCLE_SUMMARY: current_high=0 current_actionable=3
+
+### Findings index (cycle 2 residual)
+
+| ID | Sev | Plan | One-liner | Origin |
+|----|-----|------|-----------|--------|
+| C2-M1 | MEDIUM | 09-05 | Task 3 secrets verify ends in `\|\| true` / incomplete path+diff | C1-M8 residual + new |
+| C2-M2 | MEDIUM | 09-04 | Task 3 verify only re-runs `p9_`, not affected p6/p7/p8 | new |
+| C2-L1 | LOW | 09-03 | Token-path + phase-diff preflight not mechanical | C1-L4 residual |
+
+### Cycle 1 → cycle 2 disposition rollup
+
+| Bucket | Count |
+|--------|-------|
+| C1 fully RESOLVED | 12 (M1–M7, L1–L3, L5–L6) |
+| C1 PARTIAL (still actionable) | 2 (M8→C2-M1, L4→C2-L1) |
+| New cycle-2 actionable | 1 (C2-M2) |
+| **current_actionable** | **3** |
+
+## Consensus Summary (cycle 2)
+
+Single reviewer (Codex). Disposition audit + residual enforcement review.
+
+### Agreed Strengths
+
+- Hybrid methodology, full P0/P1 inventory SoT, and live dual-login bar remain intact post-replan.
+- Disposable UAT workspace, chrome preflight, OPS-06 structure, and outcome taxonomy are now executable plan content.
+- Final-gate thin-wrapper ban and isolation discover hygiene are real (not table-only).
+
+### Agreed Concerns
+
+- Final secrets GREEN verify can succeed despite failures (`|| true` precedence).
+- Post-blocker automated residual is under-specified in Plan 04 Task 3 verify.
+- Preflight secrets path/diff still mostly advisory.
+
+### Divergent Views
+
+N/A — single reviewer.
 
 ## Current HIGH Concerns
 
@@ -243,4 +330,6 @@ None.
 
 ## Current Actionable Non-HIGH Concerns
 
-None remaining after replan (cycle 1 dispositions above).
+- **C2-M1 (09-05):** Remove trailing `|| true` from Task 3 secrets verify; enforce auth.json + token-like path guards and phase-diff content scan as required gates.
+- **C2-M2 (09-04):** Expand Task 3 automated verify to discover+execute affected p6/p7/p8 residual filters after product may-modify fixes (not only `p9_`).
+- **C2-L1 (09-03):** Make token-like path + scoped phase-diff secret checks required in preflight script or Task 2 verify.
