@@ -416,9 +416,9 @@ fn version_with_channel() -> &'static str {
 }
 #[derive(Debug, Clone, Parser)]
 #[command(
-    name = "grok",
+    name = "bum",
     version = version_with_channel(),
-    about = "Grok Build TUI",
+    about = "bum TUI",
     disable_version_flag = true,
     next_display_order = None,
     help_template = "\
@@ -1380,15 +1380,56 @@ mod tests {
     }
 
     /// Phase 8 wave-1 harness smoke: discoverable under `p8_` / `p8_wave1`.
-    /// Does **not** assert clap product brand (stock still `name=grok` / about Grok Build —
-    /// Plan 02 owns `p8_cli_brand` green flip with product strings).
     #[test]
     fn p8_wave1_harness_smoke_compiles() {
-        // Clap parse infrastructure alive; argv0 is not the product brand assert.
         let args = PagerArgs::try_parse_from(["bum", "login"]).expect("login parses for harness");
         assert!(
             matches!(args.command, Some(Command::Login { .. })),
             "Phase 8 pager lib p8_ discovery scaffold must stay green"
+        );
+    }
+
+    /// Phase 8 Plan 02 (D-12): clap product name is `bum`.
+    #[test]
+    fn p8_cli_brand_name_is_bum() {
+        use clap::CommandFactory;
+        assert_eq!(PagerArgs::command().get_name(), "bum");
+    }
+
+    /// Phase 8 Plan 02 (D-12 / UI-SPEC): clap about is exact `bum TUI`.
+    #[test]
+    fn p8_cli_brand_about_is_bum_tui() {
+        use clap::CommandFactory;
+        let about = PagerArgs::command()
+            .get_about()
+            .map(|s| s.to_string())
+            .unwrap_or_default();
+        assert_eq!(about, "bum TUI");
+    }
+
+    /// Phase 8 Plan 02 (D-12): help/about must not present stock product about.
+    #[test]
+    fn p8_cli_brand_help_not_stock_product_tui() {
+        use clap::CommandFactory;
+        let mut cmd = PagerArgs::command();
+        let about = cmd
+            .get_about()
+            .map(|s| s.to_string())
+            .unwrap_or_default();
+        let help = cmd.render_long_help().to_string();
+        assert!(
+            !about.contains("Grok Build TUI"),
+            "about must not be stock product: {about}"
+        );
+        assert!(
+            !help.lines().next().unwrap_or("").contains("Grok Build TUI"),
+            "help header must not be stock product: {}",
+            help.lines().next().unwrap_or("")
+        );
+        assert!(
+            help.starts_with("bum TUI"),
+            "help must open with bum TUI: {}",
+            help.lines().next().unwrap_or("")
         );
     }
 }
