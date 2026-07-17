@@ -1248,6 +1248,8 @@ fn builtin_tools_fragment(name: BuiltinAgentName) -> String {
     subagent.render_tools(&SUBAGENT_TOOL_NAMING)
 }
 const TASK_MODEL_PARAM: &str = "${{ params.task.model }}";
+const TASK_REASONING_EFFORT_PARAM: &str = "${{ params.task.reasoning_effort }}";
+
 fn task_model_guidance(model_slugs: &[String]) -> String {
     let mut model_slugs = model_slugs.to_vec();
     model_slugs.sort_unstable();
@@ -1269,6 +1271,19 @@ fn task_model_guidance(model_slugs: &[String]) -> String {
          If the user does not explicitly request a model, omit `{TASK_MODEL_PARAM}` to inherit the parent model."
     )
 }
+
+/// Light NL guidance so the parent may set Task.reasoning_effort when the user asks
+/// (e.g. Codex Sol medium-effort research). One-shot Task call only — no workflow engine.
+fn task_effort_guidance() -> String {
+    format!(
+        "\n\nIf the user asks for a specific reasoning effort on a subagent/task \
+         (e.g. medium-effort research), set `{TASK_REASONING_EFFORT_PARAM}` to one of: \
+         low, medium, high, xhigh (alias max maps to xhigh). \
+         Omit `{TASK_REASONING_EFFORT_PARAM}` to use the child's role/model default. \
+         Invalid values are rejected."
+    )
+}
+
 /// Build the Task tool description with the effective subagent list.
 ///
 /// Maps each [`SubagentEntry`] to the shared
@@ -1297,6 +1312,7 @@ pub(crate) fn build_task_description(
         .collect();
     let mut description = xai_tool_types::build_task_description(&descriptors, &TASK_TOOL_NAMING);
     description.push_str(&task_model_guidance(model_slugs));
+    description.push_str(&task_effort_guidance());
     description
 }
 /// Resolve the shell name for the system prompt.
@@ -1525,6 +1541,39 @@ mod tests {
             CHILD_TASK_DESCRIPTION.len()
         );
     }
+    /// AGENT-06 / D-13: parent-facing Task description documents reasoning_effort.
+    #[test]
+    fn p7_build_task_description_includes_effort_guidance() {
+        let subagents = vec![entry(
+            "explore",
+            "Explore.",
+            SubagentSource::Builtin(BuiltinAgentName::Explore),
+        )];
+        let desc = build_task_description(&subagents, &["gpt-5.6-sol".to_string()]);
+        assert!(
+            desc.contains("params.task.reasoning_effort")
+                || desc.contains("${{ params.task.reasoning_effort }}"),
+            "description should mention reasoning_effort param; got: {desc}"
+        );
+        assert!(
+            desc.contains("medium"),
+            "effort guidance should list product token medium; got: {desc}"
+        );
+        assert!(
+            desc.contains("xhigh") || desc.contains("high"),
+            "effort guidance should list product tokens; got: {desc}"
+        );
+        assert!(
+            !desc.to_lowercase().contains("workflow engine"),
+            "must not claim a workflow engine"
+        );
+        // Model guidance still present for NL orchestration (model + effort).
+        assert!(
+            desc.contains("params.task.model") || desc.contains("${{ params.task.model }}"),
+            "model guidance must still be present alongside effort"
+        );
+    }
+
     #[test]
     fn build_task_description_contains_resume_from_guidance() {
         let subagents = vec![entry(
