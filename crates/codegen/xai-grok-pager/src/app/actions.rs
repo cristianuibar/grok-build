@@ -2313,8 +2313,9 @@ pub enum TaskResult {
     },
     /// Dual-slot provider usable flags refreshed from disk (or injected in tests).
     ///
-    /// `None` usable = IO/parse failure — keep last known cache (stale-on-error).
-    /// `Some` applies pure booleans; never carries tokens.
+    /// `None` usable = soft/transient failure — keep last known cache.
+    /// Hard auth-file read/parse errors emit `Some(false)` for both slots
+    /// (fail-closed, WR-06). `Some` applies pure booleans; never carries tokens.
     ///
     /// `generation` is threaded from [`Effect::RefreshProviderAuthStatus`] for
     /// deferred Login-now poll cancel; `None` means untagged (badge/auth paths).

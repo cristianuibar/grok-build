@@ -1600,7 +1600,9 @@ pub(crate) fn execute(
         }
         Effect::RefreshProviderAuthStatus { generation } => {
             // Dual-slot usable booleans only — never log auth file contents.
-            // On IO/parse failure emit None flags so dispatch keeps last cache.
+            // Hard auth-file read/parse failure fail-closes both slots to false
+            // (WR-06) so badges and try_apply cannot treat a corrupt/unreadable
+            // auth.json as still logged-in. Soft join errors stay None (stale).
             tasks.spawn(async move {
                 let result = tokio::task::spawn_blocking(|| {
                     let path = xai_grok_shell::util::grok_home::grok_home().join("auth.json");
@@ -1611,11 +1613,13 @@ pub(crate) fn execute(
                             (Some(slots.xai.usable), Some(slots.codex.usable))
                         }
                         Err(e) => {
-                            tracing::debug!(
+                            tracing::warn!(
                                 error = %e,
-                                "RefreshProviderAuthStatus: status unreadable; keeping last cache"
+                                "RefreshProviderAuthStatus: status unreadable; fail-closed both slots"
                             );
-                            (None, None)
+                            // Distinct from soft None: force unusable so shell
+                            // gate and badge cache agree (WR-06).
+                            (Some(false), Some(false))
                         }
                     }
                 })
