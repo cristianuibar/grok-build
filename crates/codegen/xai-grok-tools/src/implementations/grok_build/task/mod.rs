@@ -2517,4 +2517,113 @@ mod tests {
             other => panic!("Expected SubagentCompleted, got {other:?}"),
         }
     }
+
+    // ── Phase 7 wave-1 p7_ green scaffold (gap locks; no reasoning_effort field) ──
+
+    /// AGENT-02 regression: explicit Task.model still threads into SubagentRequest.
+    #[tokio::test]
+    async fn p7_task_model_threads_to_runtime_overrides_still_sets_model() {
+        let (backend, mut rx) = make_backend();
+        let resources = resources_for_task(backend);
+        let shared = resources.into_shared();
+
+        let handle = tokio::spawn(async move {
+            let request = unwrap_spawn(rx.recv().await.unwrap());
+            assert_eq!(
+                request.runtime_overrides.model.as_deref(),
+                Some("gpt-5.6-sol"),
+                "explicit model must reach SubagentRuntimeOverrides"
+            );
+            assert_eq!(
+                request.runtime_overrides.model_override_provenance,
+                ModelOverrideProvenance::Tool,
+            );
+            request
+                .result_tx
+                .send(SubagentResult {
+                    success: true,
+                    output: "ok".into(),
+                    subagent_id: request.id.clone(),
+                    child_session_id: request.id.clone(),
+                    ..Default::default()
+                })
+                .unwrap();
+        });
+
+        let mut input = task_input("general-purpose", false);
+        input.model = Some("gpt-5.6-sol".into());
+        let result = xai_tool_runtime::Tool::run(&TaskTool, test_ctx(shared), input)
+            .await
+            .unwrap();
+        handle.await.unwrap();
+        match result {
+            ToolOutput::SubagentCompleted(sub) => assert!(sub.output.contains("ok")),
+            other => panic!("Expected SubagentCompleted, got {other:?}"),
+        }
+    }
+
+    /// AGENT-03 gap lock: Task still hardcodes reasoning_effort: None until Plan 02.
+    ///
+    /// Documents current behavior so Plan 02 can replace/extend with positive wire tests
+    /// after `TaskToolInput.reasoning_effort` lands. Do not assert Some(effort) here.
+    #[tokio::test]
+    async fn p7_reasoning_effort_override_is_none_until_schema_lands() {
+        let (backend, mut rx) = make_backend();
+        let resources = resources_for_task(backend);
+        let shared = resources.into_shared();
+
+        let handle = tokio::spawn(async move {
+            let request = unwrap_spawn(rx.recv().await.unwrap());
+            assert!(
+                request.runtime_overrides.reasoning_effort.is_none(),
+                "gap lock: Task still hardcodes reasoning_effort None (Plan 02 wires it); got {:?}",
+                request.runtime_overrides.reasoning_effort
+            );
+            assert_eq!(
+                request.runtime_overrides.model.as_deref(),
+                Some("gpt-5.6-sol"),
+            );
+            request
+                .result_tx
+                .send(SubagentResult {
+                    success: true,
+                    output: "ok".into(),
+                    subagent_id: request.id.clone(),
+                    child_session_id: request.id.clone(),
+                    ..Default::default()
+                })
+                .unwrap();
+        });
+
+        let mut input = task_input("general-purpose", false);
+        input.model = Some("gpt-5.6-sol".into());
+        // No TaskToolInput.reasoning_effort field exists yet — Plan 02 owns that API.
+        let result = xai_tool_runtime::Tool::run(&TaskTool, test_ctx(shared), input)
+            .await
+            .unwrap();
+        handle.await.unwrap();
+        match result {
+            ToolOutput::SubagentCompleted(sub) => assert!(sub.output.contains("ok")),
+            other => panic!("Expected SubagentCompleted, got {other:?}"),
+        }
+    }
+
+    /// AGENT-03/D-13 schema surface readiness: model property present (effort lands Plan 02).
+    #[test]
+    fn p7_task_tool_input_schema_includes_model_property() {
+        let schema = serde_json::to_value(schemars::schema_for!(TaskToolInput)).unwrap();
+        let props = schema["properties"]
+            .as_object()
+            .expect("TaskToolInput schema must expose properties");
+        assert!(
+            props.contains_key("model"),
+            "schemars properties must include model; keys: {:?}",
+            props.keys().collect::<Vec<_>>()
+        );
+        // Do not assert reasoning_effort property until Plan 02 adds the field.
+        assert!(
+            !props.contains_key("reasoning_effort"),
+            "gap lock: reasoning_effort must not appear on TaskToolInput schema until Plan 02"
+        );
+    }
 }
