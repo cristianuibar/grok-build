@@ -430,3 +430,31 @@ None.
 2. **C3-L1 (LOW, 09-03)** — Apply the same scoped path-guard pattern to Plan 03 preflight action/verify/script requirements.
 
 CYCLE_SUMMARY: current_high=0 current_actionable=2
+
+---
+
+## Planner replan dispositions (cycle 3) — 2026-07-17
+
+Narrow replan after cycle-3 findings: scope credential path guards only (no bare `*token*` basename ban).
+
+### Status of prior findings
+
+| Finding | Status | Evidence |
+|---|---|---|
+| C3-M1 | INCORPORATED | Plan 05 Secrets GREEN gate prose, Task 3 action, Task 3 `<automated>` verify, must_haves, and T-09-13 use scoped credential/artifact basenames only: `(^|/)(auth\.json\|credentials\.json\|\.oauth\|[^/]+\.pem\|[^/]+\.p12\|[^/]+\.pfx\|id_rsa\|id_ed25519\|id_ecdsa)($\|/)` — does not match `token.rs` / `token_type.rs` / `xai-token-estimation/*` |
+| C3-L1 | INCORPORATED | Plan 03 Task 2 action + verify + preflight script requirements mirror the same scoped pattern; mechanical token list requires `credentials.json` / `.oauth` / `.pem` rather than bare `token` path ban |
+| C2-M1 residual | RESOLVED via C3-M1 | Structural fail-closed chain retained; false-positive token-path removed |
+| C2-L1 residual | RESOLVED via C3-L1 | Mechanical preflight path gate now non-false-positive on this tree |
+
+### Review Feedback Deferred / Rejected (cycle 3)
+
+None.
+
+### Findings index (cycle 3 — post-replan)
+
+| ID | Sev | Plan | Disposition | Where |
+|----|-----|------|-------------|-------|
+| C3-M1 | MEDIUM | 09-05 | INCORPORATED | Task 3 secrets path guard scoped to credential/artifact basenames (no bare `*token*`) |
+| C3-L1 | LOW | 09-03 | INCORPORATED | Task 2 preflight action/verify/script same scoped path guard |
+
+CYCLE_SUMMARY: current_high=0 current_actionable=0
