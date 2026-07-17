@@ -45,7 +45,8 @@ patterns-established:
   - "Phase 7 green scaffold: p7_ discovery ≥1 per crate subgroup before product waves"
   - "cross_provider_subagent binary mirrors model_switch_gate BUM_HOME OnceLock sandbox"
 
-requirements-completed: [AGENT-01, AGENT-02, AGENT-03, AGENT-04, AGENT-05, AGENT-06]
+# Plan 01 is discovery/scaffold only — product AGENT-* complete in Plans 02–06
+requirements-completed: []
 
 coverage:
   - id: D1

@@ -4,14 +4,14 @@ milestone: v1.0
 milestone_name: milestone
 current_phase: 7
 current_phase_name: Cross-provider multi-agent orchestration
-current_plan: Not started
-status: planning
+current_plan: 2
+status: in_progress
 stopped_at: Completed 07-01-PLAN.md
-last_updated: "2026-07-17T08:23:46.451Z"
+last_updated: "2026-07-17T08:24:30.000Z"
 last_activity: 2026-07-17
-last_activity_desc: Phase 6 complete (MOD-03/MOD-06), transitioned to Phase 7
+last_activity_desc: Completed 07-01 p7_ green harness; next 07-02 Task schema effort wire
 progress:
-  total_phases: 7
+  total_phases: 9
   completed_phases: 6
   total_plans: 36
   completed_plans: 30
@@ -24,18 +24,18 @@ progress:
 See: .planning/PROJECT.md (updated 2026-07-16)
 
 **Core value:** One CLI (`bum`) can log into both xAI and Codex and freely switch between Grok and GPT-5.6 models in a real coding session — including cross-provider subagent orchestration.
-**Current focus:** Phase 7 — Cross-provider multi-agent orchestration (ready to plan)
+**Current focus:** Phase 7 — Cross-provider multi-agent orchestration (Plan 02 next)
 
 ## Current Position
 
 Phase: 7 of 9 (Cross-provider multi-agent orchestration)
-Plan: Not started
-Status: Ready to plan
-Last activity: 2026-07-17 — Phase 6 complete (MOD-03/MOD-06), transitioned to Phase 7
-Current Plan: Not started
-Total Plans in Phase: TBD
+Plan: 2 of 6
+Status: In progress — Plan 01 complete (wave 1 p7_ green harness)
+Last activity: 2026-07-17 — Completed 07-01-PLAN.md (p7_ tools + shell scaffold)
+Current Plan: 2
+Total Plans in Phase: 6
 
-Progress: [████████░░] 83% (6/9 phases)
+Progress: [████████░░] 83% (30/36 plans)
 
 ## Performance Metrics
 
@@ -85,8 +85,9 @@ Progress: [████████░░] 83% (6/9 phases)
 - [Phase ?]: try_apply_deferred only when required provider slot usable; stale poll generation ignored
 - [Phase ?]: Phase 6 gate uses --lib discover for shell unit + pager because bare package list fails on unrelated integration targets
 - [Phase ?]: Phase 6 validation complete: per-subgroup p6_ discovery ≥1 for MOD-03/MOD-06
-- [Phase ?]: Plan 01: no TaskToolInput.reasoning_effort until Plan 02; p7_ green-only protocol
-- [Phase ?]: Plan 01: Tool unknown-model is existing task_model_override_error reject; route isolation via public resolve_provider_route
+- [Phase 7]: Plan 01: no TaskToolInput.reasoning_effort until Plan 02; p7_ green-only protocol
+- [Phase 7]: Plan 01: Tool unknown-model is existing task_model_override_error reject; route isolation via public resolve_provider_route
+- [Phase 7]: Plan 01 scaffold does not mark AGENT-01..06 complete (product proofs in Plans 02–06)
 
 ## Session
 
