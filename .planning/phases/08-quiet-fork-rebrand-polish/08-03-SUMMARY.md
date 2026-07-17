@@ -133,7 +133,7 @@ status: complete
 2. **Task 2: pager-minimal welcome product name → bum** - `2887ff1` (feat)
 3. **Task 3: pager-bin banner + residual server/crash identity** - `9cfcb0e` (feat)
 
-**Plan metadata:** (final docs commit after state update)
+**Plan metadata:** `7d88bda` (docs: complete plan)
 
 ## Files Created/Modified
 
