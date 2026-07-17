@@ -8,13 +8,17 @@
 //! - Public Phase 4 route isolation (base_url host + credential_slot differ both ways)
 //! - Tool unknown-model / effort pure composition anchors (Plan 03 Task 2)
 //!
-//! **Not in this file (later plans):**
-//! - Plan 04: eager Task preflight for child credentials
-//! - Plan 05: dual-token mock HTTP Authorization proofs
-//! - Plan 06: full same-provider spawn/resume lifecycle gate
+//! **Plan 05 (in-crate seam — preferred for pub(crate) spawn paths):**
+//! Dual-token mock HTTP Authorization + missing-slot no-outbound live in
+//! `src/agent/subagent/tests/mod.rs` under filters:
+//! - `p7_isolation` (both Grok↔Codex directions + never_cross_slot + effort)
+//! - `p7_parent_model` (real `handle_subagent_request` parent stability)
+//! - `p7_missing_child` (login-shaped fail + mock request_count == 0 both dirs)
 //!
-//! Prefer:
 //! ```text
+//! cargo test -p xai-grok-shell --lib p7_isolation -- --nocapture
+//! cargo test -p xai-grok-shell --lib p7_parent_model -- --nocapture
+//! cargo test -p xai-grok-shell --lib p7_missing_child -- --nocapture
 //! cargo test -p xai-grok-shell --test cross_provider_subagent p7_ -- --nocapture
 //! ```
 //!
@@ -261,8 +265,9 @@ fn p7_tool_unknown_model_catalog_reject_shape() {
 
 /// D-09 route isolation via public Phase 4 resolvers (not private override→config).
 ///
-/// Full dual-token Authorization proofs are Plan 05; this locks base_url host and
-/// credential_slot differ for Grok vs gpt-5.6-sol catalog providers.
+/// Wire Authorization both directions lives in lib `p7_isolation_*` (Plan 05
+/// in-crate seam). This locks base_url host and credential_slot differ for Grok
+/// vs gpt-5.6-sol catalog providers as a public complement.
 #[test]
 fn p7_resolve_route_isolates_base_url_key_prefix_both_directions() {
     let endpoints = deterministic_endpoints();
@@ -301,7 +306,7 @@ fn p7_resolve_route_isolates_base_url_key_prefix_both_directions() {
 // ───────────────────────── harness smoke ─────────────────────────
 
 /// Infrastructure smoke: dual-slot fixture tokens readable under BUM_HOME sandbox.
-/// Plan 05 owns Authorization/routing proofs; this only locks fixture plumbing.
+/// Authorization/routing proofs: `cargo test -p xai-grok-shell --lib p7_isolation`.
 #[test]
 #[serial]
 fn p7_wave0_harness_smoke_compiles_and_runs() {
