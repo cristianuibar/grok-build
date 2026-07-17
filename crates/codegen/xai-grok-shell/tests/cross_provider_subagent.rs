@@ -358,3 +358,97 @@ fn p7_empty_codex_slot_reads_none_with_xai_present() {
         "missing Codex provider key must read as None"
     );
 }
+
+// ───────────────────────── Phase 9 daily-driver residual ─────────────────────────
+//
+// Discover filter: `cargo test -p xai-grok-shell --test cross_provider_subagent p9_`
+// Single composition residual (C1-M1): dual-slot readable + empty-slot login-hint in one
+// test — not a re-copy of p7_wave0_harness_smoke + p7_missing_provider_gate_error.
+// Fixture-only; no live network (D-04, D-11, D-12). Bearer isolation remains p7_isolation_*.
+
+const XAI_FAKE_P9: &str = "xai-fake-token-p9";
+const CODEX_FAKE_P9: &str = "codex-fake-token-p9";
+
+/// Phase 9 daily-driver composition residual (D-11): under temp BUM_HOME,
+/// dual-slot fixture auth is readable for both providers, and an empty Codex
+/// slot still fail-closes with the product CLI login hint — one discoverable
+/// `p9_` test rather than dual p7 clones (C1-M1).
+#[test]
+#[serial]
+fn p9_daily_driver_dual_slot_readable_and_empty_codex_login_hint() {
+    let home = ensure_sandbox();
+
+    // 1) Dual-slot write — both providers present and selectable.
+    write_auth_document(
+        home,
+        Some(sample_oidc(XAI_FAKE_P9, Some("xai-rt-p9"), false)),
+        Some(sample_oidc(CODEX_FAKE_P9, Some(CODEX_REFRESH), false)),
+    );
+    let path = auth_path(home);
+
+    let xai_store = read_provider_auth_store(&path, PROVIDER_XAI)
+        .expect("xai store read")
+        .expect("xai slot present for dual-login residual");
+    let codex_store = read_provider_auth_store(&path, PROVIDER_CODEX)
+        .expect("codex store read")
+        .expect("codex slot present for dual-login residual");
+
+    assert!(
+        provider_slot_usable(Some(&xai_store)),
+        "xAI dual-slot fixture must be usable"
+    );
+    assert!(
+        provider_slot_usable(Some(&codex_store)),
+        "Codex dual-slot fixture must be usable"
+    );
+    assert_eq!(
+        select_provider_access_token(&xai_store)
+            .expect("xai token")
+            .key,
+        XAI_FAKE_P9
+    );
+    assert_eq!(
+        select_provider_access_token(&codex_store)
+            .expect("codex token")
+            .key,
+        CODEX_FAKE_P9
+    );
+
+    // 2) Empty Codex slot composition: rewrite document with xAI only, assert
+    //    store reads + fail-closed login hint in the same residual (not a
+    //    separate p9_ clone of p7_missing_provider_gate_error_*).
+    write_auth_document(
+        home,
+        Some(sample_oidc(XAI_FAKE_P9, Some("xai-rt-p9"), false)),
+        None,
+    );
+    assert!(
+        read_provider_auth_store(&path, PROVIDER_XAI)
+            .expect("xai read after rewrite")
+            .is_some(),
+        "xAI remains after empty-Codex rewrite"
+    );
+    assert!(
+        read_provider_auth_store(&path, PROVIDER_CODEX)
+            .expect("codex read after rewrite")
+            .is_none(),
+        "empty Codex slot must read as None"
+    );
+
+    let slot = oauth_provider_slot_usable(&path, ModelProvider::Codex, None);
+    assert!(!slot, "empty Codex slot must be unusable");
+    let err = missing_provider_gate_error(ModelProvider::Codex, CODEX_MODEL, false, slot)
+        .expect("empty Codex slot must fail closed with login hint");
+    assert_eq!(err.provider, "codex");
+    assert_eq!(err.model_id, CODEX_MODEL);
+    assert_eq!(err.suggestion, "bum login --provider codex");
+    let msg = err.into_acp_error().message;
+    assert!(
+        msg.contains("bum login --provider codex"),
+        "message must include product CLI suggestion: {msg}"
+    );
+    // No secret leakage into gate messages (T-09-01).
+    assert!(!msg.contains(XAI_FAKE_P9));
+    assert!(!msg.contains(CODEX_FAKE_P9));
+    assert!(!msg.contains("Bearer"));
+}
