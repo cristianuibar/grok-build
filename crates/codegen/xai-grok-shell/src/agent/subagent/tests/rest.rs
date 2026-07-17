@@ -2850,23 +2850,18 @@ async fn resolve_subagent_agent_definition_unknown_model_falls_through_to_inheri
     assert_eq!(model_id.0.as_ref(), "grok-4.5");
 }
 #[test]
-fn key_prefix_truncates_to_8_chars() {
+fn api_key_present_true_for_nonempty() {
     let key = Some("eyJ0eXAiOiJhbGciOiJSUzI1NiJ9".to_string());
-    assert_eq!(key_prefix(& key), "eyJ0eXAi");
+    assert!(api_key_present(&key));
 }
 #[test]
-fn key_prefix_short_key_not_truncated() {
-    let key = Some("abc".to_string());
-    assert_eq!(key_prefix(& key), "abc");
+fn api_key_present_false_for_none() {
+    assert!(!api_key_present(&None));
 }
 #[test]
-fn key_prefix_none_returns_placeholder() {
-    assert_eq!(key_prefix(& None), "<none>");
-}
-#[test]
-fn key_prefix_empty_string() {
+fn api_key_present_false_for_empty_string() {
     let key = Some(String::new());
-    assert_eq!(key_prefix(& key), "");
+    assert!(!api_key_present(&key));
 }
 #[test]
 fn non_cursor_persona_injected_as_system_reminder() {
