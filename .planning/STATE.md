@@ -4,17 +4,17 @@ milestone: v1.0
 milestone_name: milestone
 current_phase: 10
 current_phase_name: Codex Responses wire parity
-current_plan: 3 of 7 (Plans 01, 06, and 07 complete; Plan 02 SSE fallback next)
+current_plan: 4 of 7 (Plans 01, 02, 06, and 07 complete; Plan 03 cross-provider safety next)
 status: executing
-stopped_at: Phase 10 Plan 07 complete; proceeding with the sampler SSE fallback before cross-provider switch safety
-last_updated: "2026-07-18T11:41:30+03:00"
+stopped_at: Phase 10 Plan 02 complete; proceeding with cross-provider encrypted-history safety
+last_updated: "2026-07-18T11:52:48+03:00"
 last_activity: 2026-07-18
-last_activity_desc: Phase 10 Plan 07 completed; shell library and provider-routing test targets compile
+last_activity_desc: Phase 10 Plan 02 completed; Responses SSE fallback prevents post-success Empty retries
 progress:
   total_phases: 12
   completed_phases: 8
   total_plans: 50
-  completed_plans: 47
+  completed_plans: 48
 ---
 
 # Project State
@@ -28,20 +28,20 @@ See: .planning/PROJECT.md (updated 2026-07-17)
 
 ## Current Position
 
-Phase: 10 of 12 (Codex Responses wire parity) — Plans 01, 06, and 07 complete; fixture baseline restored
-Plan: 3 of 7
+Phase: 10 of 12 (Codex Responses wire parity) — Plans 01, 02, 06, and 07 complete; SSE retry repair verified
+Plan: 4 of 7
 Status: Executing — Phase 9 live UAT remains blocked only on honest post-fix evidence
-Last activity: 2026-07-18 — Plan 07 restored shell unit and provider-routing test compilation
-Current Plan: 10-02 (Responses SSE text fallback and retry-storm regression)
+Last activity: 2026-07-18 — Plan 02 fixed delta-only SSE completion without weakening genuine Empty retries
+Current Plan: 10-03 (cross-provider encrypted-reasoning history sanitizer)
 Total Plans in Phase: 7
 
-Progress: [█████████░] Phase 9 remains 3/5 summaries; Phase 10 is 3/7 complete through Wave 5
+Progress: [█████████░] Phase 9 remains 3/5 summaries; Phase 10 is 4/7 complete through Wave 5
 
 ## Performance Metrics
 
 **Velocity:**
 
-- Total plans completed: 47 SUMMARY files (phases 1–8 + 09-01 + 09-02 + 09-03 + 10-01 + 10-06 + 10-07)
+- Total plans completed: 48 SUMMARY files (phases 1–8 + 09-01 + 09-02 + 09-03 + 10-01 + 10-02 + 10-06 + 10-07)
 - Phase 5: 6 plans
 - Phase 6: 6 plans
 - Phase 7: 6 plans
@@ -61,7 +61,7 @@ Progress: [█████████░] Phase 9 remains 3/5 summaries; Phase 
 | 07 | 6/6 | complete — AGENT-01..06 |
 | 08 | 6/6 | complete — ID-02, OPS-01, OPS-02 |
 | 09 | 3/5 SUMMARY | 09-01 + 09-02 + 09-03; OPS-03..06 live still pending |
-| 10 | 3/7 | In progress — typed profile plus production and fixture compatibility complete; 10-02 SSE next |
+| 10 | 4/7 | In progress — typed profile, compatibility, and SSE retry repair complete; 10-03 switch safety next |
 
 ---
 **Per-Plan Metrics:**
@@ -80,6 +80,7 @@ Progress: [█████████░] Phase 9 remains 3/5 summaries; Phase 
 | Phase 10 P01 | 11min | 3 tasks | 5 files |
 | Phase 10 P06 | 10min | 3 tasks | 7 files |
 | Phase 10 P07 | ~20min | 3 tasks | 6 files |
+| Phase 10 P02 | ~25min | 2 tasks | 2 files |
 
 ## Decisions
 
@@ -103,6 +104,7 @@ Progress: [█████████░] Phase 9 remains 3/5 summaries; Phase 
 
 - [Phase 10]: Seven internally checked execution plans preserve a trust-gated Codex profile, terminal SSE reconstruction, narrow cross-provider encrypted-history sanitation, and honest live OPS-04/OPS-05 proof.
 - [Phase 10]: Adding the typed sampler profile makes existing full shell `SamplerConfig` literals field-incomplete; Plans 10-06 and 10-07 executed immediately after Plan 10-01 and restored production plus test compilation while keeping the profile disabled everywhere.
+- [Process]: A mutating workspace formatter can reflow unrelated tracked files even from a clean scoped task; use check-only formatting by default and reverse accidental formatter spill with explicit `apply_patch` deltas, never checkout/reset.
 - [Process]: Grok research/review keeps web search enabled by default and uses a direct review prompt rather than `--permission-mode plan`; blank or cancelled output is an unavailable review lane, not approval. See `phases/10-codex-responses-wire-parity/10-PLANNING-LEARNINGS.md`.
 
 ### Phase 8 (Quiet fork & rebrand polish)
@@ -124,12 +126,12 @@ Progress: [█████████░] Phase 9 remains 3/5 summaries; Phase 
 
 ## Session
 
-**Last session:** 2026-07-18 (Phase 10 Plan 07 complete)
-**Stopped at:** Plan 10-07 restored fixture compatibility; Plan 10-02 is next, then Plan 10-03 can implement cross-provider history safety.
-**Resume file:** `.planning/phases/10-codex-responses-wire-parity/10-07-SUMMARY.md`
+**Last session:** 2026-07-18 (Phase 10 Plan 02 complete)
+**Stopped at:** Plan 10-02 repaired delta-only Responses completion and retained genuine Empty retries; Plan 10-03 can now implement cross-provider history safety.
+**Resume file:** `.planning/phases/10-codex-responses-wire-parity/10-02-SUMMARY.md`
 **Next:**
 
-1. **Continue:** `/gsd-execute-phase 10` — execute Plan 10-02 (SSE fallback), then Plan 10-03 (cross-provider encrypted-history safety)
+1. **Continue:** `/gsd-execute-phase 10` — execute Plan 10-03 (cross-provider encrypted-history safety), then Plan 10-04 trusted shell activation
 2. Phase 10 must-haves: fix post-reply retry storm; strip/omit foreign `encrypted_content` on provider switch; broaden encrypted-error match (`encrypted content` phrase)
 3. Optional Phase 10/11: Codex thinking/summary UI; ultra effort
 4. Re-run live OPS-04..06 → sign-off → Plan 04 Task 3 + Plan 05 hybrid close
