@@ -4,17 +4,17 @@ milestone: v1.0
 milestone_name: milestone
 current_phase: 10
 current_phase_name: Codex Responses wire parity
-current_plan: 5 of 7 (Plans 01, 02, 03, 06, and 07 complete; Plan 04 trusted shell activation next)
+current_plan: 6 of 7 (Plans 01, 02, 03, 04, 06, and 07 complete; Plan 05 final validation and human checkpoint next)
 status: executing
-stopped_at: Phase 10 Plan 03 complete; proceeding with trusted Codex shell activation and recovery handling
-last_updated: "2026-07-18T13:13:55+03:00"
+stopped_at: Phase 10 Plan 04 accepted after trusted-route and actor-identity hardening; proceeding with final validation
+last_updated: "2026-07-18T14:27:00+03:00"
 last_activity: 2026-07-18
-last_activity_desc: Phase 10 Plan 03 completed; actor-serialized encrypted-reasoning cleanup closes the two-switch race
+last_activity_desc: Phase 10 Plan 04 completed; trusted Codex route/header authority and bounded encrypted-400 recovery verified
 progress:
   total_phases: 12
   completed_phases: 8
   total_plans: 50
-  completed_plans: 49
+  completed_plans: 50
 ---
 
 # Project State
@@ -28,20 +28,20 @@ See: .planning/PROJECT.md (updated 2026-07-17)
 
 ## Current Position
 
-Phase: 10 of 12 (Codex Responses wire parity) — Plans 01, 02, 03, 06, and 07 complete; provider-history race safety verified
-Plan: 5 of 7
-Status: Executing — Phase 9 live UAT remains blocked only on honest post-fix evidence
-Last activity: 2026-07-18 — Plan 03 closed encrypted-reasoning replay races across provider transitions
-Current Plan: 10-04 (trusted Codex OAuth profile/headers and encrypted-error recovery)
+Phase: 10 of 12 (Codex Responses wire parity) — Plans 01, 02, 03, 04, 06, and 07 complete; trusted Codex route, header, and recovery contracts verified
+Plan: 6 of 7
+Status: Executing — final automated evidence is next; Phase 9 live UAT remains blocked only on honest post-fix evidence
+Last activity: 2026-07-18 — Plan 04 closed trusted-route lookalike and non-UUID identity gaps before acceptance
+Current Plan: 10-05 (consolidated validation evidence and blocking redacted dual-login checkpoint)
 Total Plans in Phase: 7
 
-Progress: [█████████░] Phase 9 remains 3/5 summaries; Phase 10 is 5/7 complete through Wave 5
+Progress: [█████████░] Phase 9 remains 3/5 summaries; Phase 10 is 6/7 complete and awaiting validation/live proof
 
 ## Performance Metrics
 
 **Velocity:**
 
-- Total plans completed: 49 SUMMARY files (phases 1–8 + 09-01 + 09-02 + 09-03 + 10-01 + 10-02 + 10-03 + 10-06 + 10-07)
+- Total plans completed: 50 SUMMARY files (phases 1–8 + 09-01 + 09-02 + 09-03 + 10-01 + 10-02 + 10-03 + 10-04 + 10-06 + 10-07)
 - Phase 5: 6 plans
 - Phase 6: 6 plans
 - Phase 7: 6 plans
@@ -61,7 +61,7 @@ Progress: [█████████░] Phase 9 remains 3/5 summaries; Phase 
 | 07 | 6/6 | complete — AGENT-01..06 |
 | 08 | 6/6 | complete — ID-02, OPS-01, OPS-02 |
 | 09 | 3/5 SUMMARY | 09-01 + 09-02 + 09-03; OPS-03..06 live still pending |
-| 10 | 5/7 | In progress — typed profile, compatibility, SSE repair, and two-switch history safety complete; 10-04 trusted shell next |
+| 10 | 6/7 | In progress — typed profile, compatibility, SSE repair, two-switch history safety, and trusted shell activation complete; 10-05 validation/human checkpoint next |
 
 ---
 **Per-Plan Metrics:**
@@ -82,6 +82,7 @@ Progress: [█████████░] Phase 9 remains 3/5 summaries; Phase 
 | Phase 10 P07 | ~20min | 3 tasks | 6 files |
 | Phase 10 P02 | ~25min | 2 tasks | 2 files |
 | Phase 10 P03 | ~2h | 2 tasks + atomic review follow-up | 16 initially + 5 authorized chat-state files |
+| Phase 10 P04 | ~3h | 2 tasks + trusted-boundary hardening follow-up | 10 files |
 
 ## Decisions
 
@@ -108,6 +109,9 @@ Progress: [█████████░] Phase 9 remains 3/5 summaries; Phase 
 - [Process]: A mutating workspace formatter can reflow unrelated tracked files even from a clean scoped task; use check-only formatting by default and reverse accidental formatter spill with explicit `apply_patch` deltas, never checkout/reset.
 - [Phase 10]: The encrypted-reasoning sanitizer and model prompt rewrite must both mutate conversation state through actor commands; caller-side whole-history read/replace can restore foreign payloads across two switches. The atomic clear plus `replace_system_head` and held two-switch regression close this race.
 - [Process]: Grok research/review keeps web search enabled by default and uses a direct review prompt rather than `--permission-mode plan`; blank or cancelled output is an unavailable review lane, not approval. See `phases/10-codex-responses-wire-parity/10-PLANNING-LEARNINGS.md`.
+- [Phase 10]: Trusted Codex authority is scheme + host + effective port + exact-or-slash-descendant path; alternate ports and raw-prefix lookalikes such as `codexevil` fail closed, while an explicitly configured root remains authority-wide.
+- [Phase 10]: Trusted Codex session/thread/request metadata uses one actor-lifetime UUID: retain a valid supplied session UUID, otherwise generate one fallback for legacy ACP and model-issued subagent IDs, and preserve it across provider switches.
+- [Process]: The final Plan 04 Grok source-aware and inline-corpus review attempts used the web-enabled direct-review recipe but returned empty results; both were recorded unavailable, and a fresh independent source review supplied the acceptance check.
 
 ### Phase 8 (Quiet fork & rebrand polish)
 
@@ -128,12 +132,12 @@ Progress: [█████████░] Phase 9 remains 3/5 summaries; Phase 
 
 ## Session
 
-**Last session:** 2026-07-18 (Phase 10 Plan 03 complete)
-**Stopped at:** Plan 10-03 passed 338 chat-state unit tests and 20 model-switch integration tests; Plan 10-04 can activate trusted Codex behavior and encrypted-error recovery.
-**Resume file:** `.planning/phases/10-codex-responses-wire-parity/10-03-SUMMARY.md`
+**Last session:** 2026-07-18 (Phase 10 Plan 04 complete)
+**Stopped at:** Plan 10-04 passed trusted-route, header-isolation, legacy/subagent UUID, and encrypted-400 recovery checks; final independent review found no blockers.
+**Resume file:** `.planning/phases/10-codex-responses-wire-parity/10-04-SUMMARY.md`
 **Next:**
 
-1. **Continue:** `/gsd-execute-phase 10` — execute Plan 10-04 (trusted Codex shell activation/recovery), then Plan 10-05 validation and live checkpoint
-2. Phase 10 must-haves: fix post-reply retry storm; strip/omit foreign `encrypted_content` on provider switch; broaden encrypted-error match (`encrypted content` phrase)
+1. **Continue:** `/gsd-execute-phase 10` — execute Plan 10-05: record the consolidated focused automated evidence, then pause at the mandatory redacted live dual-login checkpoint
+2. Do not mark OPS-04/OPS-05, Phase 9, or Phase 10 green from fixtures; the user must provide the actual redacted GPT-5.6 turn and same-process Grok-to-GPT-5.6 switch evidence
 3. Optional Phase 10/11: Codex thinking/summary UI; ultra effort
 4. Re-run live OPS-04..06 → sign-off → Plan 04 Task 3 + Plan 05 hybrid close
