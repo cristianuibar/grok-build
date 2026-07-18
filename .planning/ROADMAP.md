@@ -253,7 +253,7 @@ Plans:
   4. Automated tests assert no `role: system` in Responses `input` and non-empty `instructions` when system history present
   5. Live OPS-04 re-run stays PASS after wire tweaks
 
-**Plans**: 6/7 complete — `10-01` establishes the disabled typed Responses profile; `10-06` and `10-07` restore compatibility; `10-02` repairs terminal SSE text fallback; `10-03` closes encrypted-history transition races; `10-04` activates trusted first-party Codex identity and bounded encrypted-400 recovery. `10-05` remains for consolidated automated evidence and the mandatory human live checkpoint.
+**Plans**: 6/7 implementation complete; `10-05` automated half recorded (26/26 focused behavior PASS in `10-VALIDATION.md`, 2026-07-18) — **human live OPS-04/OPS-05 checkpoint still open** (not plan-complete; Phase 9/10 not green).
 
 ### Phase 11: Codex effort & catalog fidelity
 
