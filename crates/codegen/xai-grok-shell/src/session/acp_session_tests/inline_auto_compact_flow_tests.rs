@@ -72,6 +72,7 @@ async fn create_test_actor(
         auth_method_id: test_auth_method_id("test-auth"),
         model_auth_facts: std::cell::RefCell::new(None),
         provider_transition: std::cell::Cell::new(Default::default()),
+        pending_provider_history_sanitization: std::cell::Cell::new(None),
         attribution_callback: None,
         auth_manager: None,
         state,
@@ -508,6 +509,7 @@ async fn create_test_actor_with_memory(
         auth_method_id: test_auth_method_id("test-auth"),
         model_auth_facts: std::cell::RefCell::new(None),
         provider_transition: std::cell::Cell::new(Default::default()),
+        pending_provider_history_sanitization: std::cell::Cell::new(None),
         attribution_callback: None,
         auth_manager: None,
         state,
@@ -1261,6 +1263,7 @@ async fn test_e2e_idle_resume_refreshes_model_metadata() {
                 auth_method_id: test_auth_method_id("cached_token"),
                 model_auth_facts: std::cell::RefCell::new(None),
                 provider_transition: std::cell::Cell::new(Default::default()),
+                pending_provider_history_sanitization: std::cell::Cell::new(None),
                 auth_manager: {
                     let dir = tempfile::tempdir().unwrap();
                     let mgr = std::sync::Arc::new(crate::auth::AuthManager::new(

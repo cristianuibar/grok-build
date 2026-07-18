@@ -112,6 +112,7 @@ async fn persist_ack_waits_for_disk_flush_before_success() {
                 auth_method_id: test_auth_method_id("test-auth"),
                 model_auth_facts: std::cell::RefCell::new(None),
                 provider_transition: std::cell::Cell::new(Default::default()),
+                pending_provider_history_sanitization: std::cell::Cell::new(None),
                 attribution_callback: None,
                 auth_manager: None,
                 state: TokioMutex::new(State {
@@ -568,6 +569,7 @@ async fn first_turn_memory_injection_disabled_does_not_persist_to_chat_history()
                 auth_method_id: test_auth_method_id("test-auth"),
                 model_auth_facts: std::cell::RefCell::new(None),
                 provider_transition: std::cell::Cell::new(Default::default()),
+                pending_provider_history_sanitization: std::cell::Cell::new(None),
                 attribution_callback: None,
                 auth_manager: None,
                 state: TokioMutex::new(State {
@@ -841,6 +843,7 @@ async fn cancel_running_task_teardown_clears_running_and_pending_work() {
                 auth_method_id: test_auth_method_id("test-auth"),
                 model_auth_facts: std::cell::RefCell::new(None),
                 provider_transition: std::cell::Cell::new(Default::default()),
+                pending_provider_history_sanitization: std::cell::Cell::new(None),
                 attribution_callback: None,
                 auth_manager: None,
                 state,
@@ -1887,6 +1890,7 @@ async fn cancel_propagates_to_sampler_handle_so_no_further_emission() {
                 auth_method_id: test_auth_method_id("test-auth"),
                 model_auth_facts: std::cell::RefCell::new(None),
                 provider_transition: std::cell::Cell::new(Default::default()),
+                pending_provider_history_sanitization: std::cell::Cell::new(None),
                 attribution_callback: None,
                 auth_manager: None,
                 state,
