@@ -1,8 +1,10 @@
 # bum
 
+**Expansion:** **BUM** = **Build Using Multiagents**
+
 ## What This Is
 
-**bum** is a full-product fork of Grok Build (this repo): a terminal AI coding agent TUI/CLI that you launch as `bum` instead of `grok`. v1 keeps the Grok Build agent/TUI harness and makes it a multi-provider daily driver — xAI OAuth for Grok models, ChatGPT/Codex OAuth for GPT-5.6 models, with per-model routing and an isolated `~/.bum` identity. Later milestones will layer custom agentic workflows on the same harness.
+**bum** (*Build Using Multiagents*) is a full-product fork of Grok Build (this repo): a terminal AI coding agent TUI/CLI that you launch as `bum` instead of `grok`. v1 keeps the Grok Build agent/TUI harness and makes it a multi-provider daily driver — xAI OAuth for Grok models, ChatGPT/Codex OAuth for GPT-5.6 models, with per-model routing and an isolated `~/.bum` identity. Later milestones will layer custom agentic workflows on the same harness.
 
 ## Core Value
 

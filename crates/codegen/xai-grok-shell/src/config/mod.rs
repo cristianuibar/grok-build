@@ -1597,9 +1597,9 @@ pub fn dismissed_plugin_ctas_in_file(
         })
         .unwrap_or_default()
 }
-/// Validate that a hook path is safe to add to `~/.grok/hooks-paths`.
+/// Validate that a hook path is safe to add to `~/.bum/hooks-paths`.
 ///
-/// CWE-427: Only paths under `~/.grok/` are allowed to prevent
+/// CWE-427: Only paths under `~/.bum/` (or `$BUM_HOME`) are allowed to prevent
 /// arbitrary hook path injection that bypasses the project trust gate.
 /// Paths are canonicalized (resolving symlinks and `..`) before checking.
 pub fn validate_hooks_path(path: &str) -> Result<(), Box<dyn std::error::Error>> {
@@ -1630,7 +1630,7 @@ pub fn validate_hooks_path(path: &str) -> Result<(), Box<dyn std::error::Error>>
     let canonical_home = dunce::canonicalize(&grok_home).unwrap_or_else(|_| grok_home.clone());
     if !canonical.starts_with(&canonical_home) {
         return Err(format!(
-            "Hook path must be under ~/.grok/ ({}). Got: {}",
+            "Hook path must be under ~/.bum/ ({}). Got: {}",
             canonical_home.display(),
             canonical.display()
         )

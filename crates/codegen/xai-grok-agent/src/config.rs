@@ -1461,47 +1461,47 @@ impl AgentDefinition {
     pub fn default_grok_build() -> Self {
         Self::base(
             BuiltinAgentName::GrokBuild,
-            "Grok Build agent for software engineering tasks.",
+            "bum agent for software engineering tasks.",
         )
     }
-    /// Grok Build Concise agent definition — concise output format for SFT/RL.
+    /// Concise bum agent definition — concise output format for SFT/RL.
     pub fn grok_build_concise() -> Self {
         Self {
             tool_config: grok_build_concise_toolset(),
             agents_md: false,
             ..Self::base(
                 BuiltinAgentName::GrokBuildConcise,
-                "Grok Build agent with concise output format.",
+                "bum agent with concise output format.",
             )
         }
     }
-    /// Grok Build agent with plan mode tools.
+    /// bum agent with plan mode tools.
     pub fn grok_build_plan() -> Self {
         Self {
             tool_config: grok_build_plan_toolset(),
             ..Self::base(
                 BuiltinAgentName::GrokBuildPlan,
-                "Grok Build agent with plan mode support.",
+                "bum agent with plan mode support.",
             )
         }
     }
-    /// Grok Build + plan mode WITHOUT subagent tools.
+    /// bum + plan mode WITHOUT subagent tools.
     pub fn grok_build_plan_no_subagents() -> Self {
         Self {
             tool_config: grok_build_plan_no_subagents_toolset(),
             ..Self::base(
                 BuiltinAgentName::GrokBuildPlanNoSubagents,
-                "Grok Build agent with plan mode (no subagents).",
+                "bum agent with plan mode (no subagents).",
             )
         }
     }
-    /// Default Grok Build agent with the `ask_user_question` tool.
+    /// Default bum agent with the `ask_user_question` tool.
     pub fn grok_build_ask_user() -> Self {
         Self {
             tool_config: grok_build_ask_user_toolset(),
             ..Self::base(
                 BuiltinAgentName::GrokBuildAskUser,
-                "Grok Build agent with ask-user-question tool.",
+                "bum agent with ask-user-question tool.",
             )
         }
     }
@@ -1573,7 +1573,7 @@ impl AgentDefinition {
             )
         }
     }
-    /// Grok Build Orchestrator — GBL model with full GrokBuild tools
+    /// bum Orchestrator — GBL model with full bum tools
     /// (skills, MCPs, plan mode) that delegates coding/exploration to
     /// subagents.
     ///
@@ -1587,7 +1587,7 @@ impl AgentDefinition {
             prompt_body: Some(ORCHESTRATOR_PROMPT_BODY.to_string()),
             ..Self::base(
                 BuiltinAgentName::GrokBuildOrchestrator,
-                "GrokBuild orchestrator that delegates coding to specialized subagents",
+                "bum orchestrator that delegates coding to specialized subagents",
             )
         }
     }

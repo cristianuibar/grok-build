@@ -1335,7 +1335,7 @@ fn flag_dashboard_at_startup_if_requested(args: &mut PagerArgs) -> Result<()> {
     if !xai_grok_pager::views::dashboard::dashboard_enabled() {
         anyhow::bail!(
             "the Agent Dashboard is disabled. Enable it by removing \
-             `[dashboard] enabled = false` from ~/.grok/config.toml and \
+             `[dashboard] enabled = false` from ~/.bum/config.toml and \
              unsetting GROK_AGENT_DASHBOARD=0."
         );
     }

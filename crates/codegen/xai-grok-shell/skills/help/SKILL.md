@@ -1,26 +1,27 @@
 ---
 name: help
 description: >
-  Grok documentation and configuration help. Use when users ask about
+  bum documentation and configuration help. Use when users ask about
   setup, configuration, MCP servers, authentication, skills, slash commands,
-  keyboard shortcuts, or any Grok feature. Also use proactively when you
+  keyboard shortcuts, or any bum feature. Also use proactively when you
   detect a user is having trouble with setup or onboarding.
 metadata:
-  short-description: "Grok docs — config, MCP, auth, skills, commands"
+  short-description: "bum docs — config, MCP, auth, skills, commands"
 ---
 
-# Grok Help
+# bum Help
 
-Answer the user's question about Grok setup, configuration, or features.
+Answer the user's question about bum setup, configuration, or features.
 
 ## Steps
 
 1. If the question is about **current config** (what MCP servers, models, or settings are active),
-   read `~/.grok/config.toml`. MCP servers are under `[mcp_servers.*]` sections.
+   read `~/.bum/config.toml` (or `$BUM_HOME/config.toml`). MCP servers are under `[mcp_servers.*]` sections.
 
 2. If the question is about **how to do something** (setup, adding MCP servers, creating skills,
    authentication, keyboard shortcuts, troubleshooting), first check the user-guide docs at
-   `~/.grok/docs/user-guide/`. The available guides are:
+   `~/.bum/docs/user-guide/` (when installed) or the in-tree guides under the pager crate.
+   The available guides are:
    - `01-getting-started.md` -- Installation, first launch, basic interaction
    - `02-authentication.md` -- Browser login, API keys, OIDC, external auth
    - `03-keyboard-shortcuts.md` -- Complete key bindings reference
@@ -43,9 +44,11 @@ Answer the user's question about Grok setup, configuration, or features.
    - `20-background-tasks.md` -- Background tasks and monitoring
    - `21-terminal-support.md` -- tmux, SSH, truecolor, clipboard, /terminal-setup
    Read the relevant guide(s) for the user's question. If none match, fall back to
-   `~/.grok/README.md` for the comprehensive reference.
+   `~/.bum/README.md` for the comprehensive reference.
 
-3. To **modify config** for the user, edit `~/.grok/config.toml` with search_replace.
+3. To **modify config** for the user, edit `~/.bum/config.toml` with search_replace.
 
-4. To **create a skill** for the user, create `~/.grok/skills/<name>/SKILL.md`
-   (read `~/.grok/docs/user-guide/08-skills.md` for the SKILL.md format).
+4. To **create a skill** for the user:
+   - User-wide: `~/.bum/skills/<name>/SKILL.md` (or `$BUM_HOME/skills/...`)
+   - Project-local: `<repo>/.grok/skills/<name>/SKILL.md` (project dir name is still `.grok` for discovery)
+   (read the skills user-guide for the SKILL.md format).
