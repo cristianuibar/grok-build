@@ -1797,10 +1797,6 @@ impl SessionActor {
             );
         }
         loop {
-            // A prior turn can have errored or been cancelled after a
-            // cross-provider switch. Consume its deferred history cleanup
-            // before this request snapshots/sends the new provider route.
-            self.sanitize_pending_provider_history().await;
             self.emit_event(crate::session::events::Event::LoopStarted { loop_index });
             loop_index += 1;
             self.drain_pending_interjections().await;
@@ -2085,11 +2081,6 @@ impl SessionActor {
                     }
                 }
             }
-            // If the provider changed while this request was in flight, the
-            // late items above are now safely enqueued. Clear any older
-            // encrypted reasoning before a tool-loop resample or next turn
-            // can build a request for the new provider.
-            self.sanitize_pending_provider_history().await;
             if let Some(text) = fallback_text {
                 tracing::warn!(
                     text_len = text.len(),

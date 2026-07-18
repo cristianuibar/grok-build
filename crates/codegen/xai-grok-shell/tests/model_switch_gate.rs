@@ -1166,6 +1166,124 @@ async fn held_grok_response_after_codex_switch_is_sanitized() {
 
 #[tokio::test(flavor = "current_thread")]
 #[serial]
+async fn held_grok_response_after_two_switches_is_sanitized() {
+    let local = tokio::task::LocalSet::new();
+    local
+        .run_until(async {
+            let (xai, codex) = dual_usable_auth();
+            let h = GateHarness::start(Some(xai), Some(codex)).await;
+            let sid = h.new_session_on_xai().await;
+
+            // Keep an old-provider terminal response in flight while both
+            // model transitions run. The second, same-provider Codex switch
+            // exercises prompt-rewrite ordering against the first switch's
+            // encrypted-history sanitation.
+            h.server.hold_scripted_sse_terminal();
+            let before_held_request_count = h.server.request_count();
+            h.server.enqueue_response(
+                "/v1/responses",
+                ScriptedResponse::sse(encrypted_reasoning_events(XAI_MODEL))
+                    .for_agent_turn()
+                    .hold_terminal_event(),
+            );
+            let prompt_fut = h.client.prompt(acp::PromptRequest::new(
+                sid.clone(),
+                vec![acp::ContentBlock::Text(acp::TextContent::new(
+                    PROVIDER_HISTORY_MARKER.to_owned(),
+                ))],
+            ));
+            tokio::pin!(prompt_fut);
+            let held_fut = h.server.wait_for_scripted_sse_terminal();
+            tokio::pin!(held_fut);
+            tokio::select! {
+                biased;
+                result = &mut prompt_fut => {
+                    panic!("scripted Grok prompt completed before terminal hold: {result:?}");
+                }
+                () = &mut held_fut => {}
+                () = tokio::time::sleep(Duration::from_secs(30)) => {
+                    panic!("scripted Grok response did not reach terminal hold");
+                }
+            }
+
+            let (held_path, _, held_body) = h.last_inference_after(before_held_request_count);
+            assert_eq!(held_path, "/v1/responses", "Grok uses Responses API");
+            let held_body = held_body.expect("held scripted request must have JSON body");
+            assert!(
+                held_body.to_string().contains(PROVIDER_HISTORY_MARKER),
+                "scripted terminal gate must hold the primary agent request: {held_body:#?}"
+            );
+            assert!(
+                held_body
+                    .get("tools")
+                    .and_then(Value::as_array)
+                    .is_some_and(|tools| tools.len() >= 2),
+                "scripted terminal gate must hold an agent turn: {held_body:#?}"
+            );
+
+            assert_switch_ok(
+                h.set_model(&sid, CODEX_MODEL).await,
+                "cross-provider switch while scripted Grok response is held",
+            );
+            assert_switch_ok(
+                h.set_model(&sid, CODEX_MODEL_TERRA).await,
+                "same-provider Codex switch while scripted Grok response is held",
+            );
+            tokio::select! {
+                biased;
+                result = &mut prompt_fut => {
+                    panic!("two-switch model updates must not complete the held Grok prompt: {result:?}");
+                }
+                () = tokio::time::sleep(Duration::from_millis(80)) => {}
+            }
+
+            h.server.release_scripted_sse_terminal();
+            let held_response = tokio::time::timeout(Duration::from_secs(60), &mut prompt_fut)
+                .await
+                .expect("held scripted Grok prompt timed out after release")
+                .expect("held scripted Grok prompt must succeed after release");
+            assert!(
+                matches!(held_response.stop_reason, acp::StopReason::EndTurn),
+                "released scripted Grok turn must complete: {:?}",
+                held_response.stop_reason
+            );
+
+            let before_count = h.server.request_count();
+            h.server.set_response("p10-codex-terra-followup-response");
+            let next = h
+                .prompt(&sid, "p10 next Codex Terra prompt after two switches")
+                .await
+                .expect("next Codex Terra prompt must succeed");
+            assert!(matches!(next.stop_reason, acp::StopReason::EndTurn));
+
+            let (path, _, body) = h.last_inference_after(before_count);
+            assert_eq!(path, "/v1/responses", "Codex uses Responses API");
+            let body = body.expect("captured Codex Terra request must have JSON body");
+            assert_eq!(
+                body.get("model").and_then(Value::as_str),
+                Some(CODEX_MODEL_TERRA),
+                "the second switch must own the next request route"
+            );
+            let serialized = body.to_string();
+            assert!(
+                serialized.contains(PROVIDER_HISTORY_MARKER),
+                "ordinary user history must survive two switches: {body:#?}"
+            );
+            assert!(
+                serialized.contains(PROVIDER_HISTORY_REPLY),
+                "ordinary assistant history must survive two switches: {body:#?}"
+            );
+            assert!(
+                !serialized.contains(ENCRYPTED_REASONING),
+                "no foreign encrypted reasoning may survive two switches: {body:#?}"
+            );
+            assert_reasoning_request(&body, None);
+        })
+        .await;
+}
+
+#[tokio::test(flavor = "current_thread")]
+#[serial]
 async fn codex_to_codex_transition_retains_encrypted_reasoning() {
     let local = tokio::task::LocalSet::new();
     local

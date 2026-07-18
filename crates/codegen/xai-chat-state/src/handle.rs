@@ -214,6 +214,19 @@ impl ChatStateHandle {
         .await
     }
 
+    /// Atomically clear encrypted reasoning payloads while retaining every
+    /// history item and all non-encrypted reasoning fields.
+    ///
+    /// The mutation runs in the chat-state actor so it serializes with turn
+    /// pushes and system-head replacement. Returns `Some(changed)`, or `None`
+    /// if the actor is dead.
+    pub async fn clear_encrypted_reasoning(&self) -> Option<bool> {
+        self.query("ClearEncryptedReasoning", |reply| {
+            ChatStateCommand::ClearEncryptedReasoning { reply }
+        })
+        .await
+    }
+
     /// Cache prompt text for rewind preview.
     pub fn cache_prompt_text(&self, text: String) {
         let _ = self.cmd_tx.send(ChatStateCommand::CachePromptText { text });

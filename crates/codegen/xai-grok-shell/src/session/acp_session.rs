@@ -592,11 +592,6 @@ pub(crate) struct SessionActor {
     /// generations: its only contract is keeping late sampler responses from
     /// restoring provider-scoped encrypted reasoning after a route change.
     pub(crate) provider_transition: std::cell::Cell<ProviderTransition>,
-    /// Cross-provider history cleanup deferred while a sampler turn is still
-    /// writing response items. Deferring avoids a stale get/replace snapshot
-    /// clobbering the late response; the turn drains this before its next
-    /// sampler request.
-    pub(crate) pending_provider_history_sanitization: std::cell::Cell<Option<ProviderTransition>>,
     /// 401-attribution callback. Joined with the bearer the
     /// sampler sends on the wire to emit an `auth 401 attribution`
     /// event at each of the six `OaiCompatClient` 401 arms in

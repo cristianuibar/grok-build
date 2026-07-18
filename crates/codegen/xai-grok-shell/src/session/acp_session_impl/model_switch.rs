@@ -50,30 +50,17 @@ impl SessionActor {
         self.provider_transition.get()
     }
 
-    /// Clear encrypted reasoning from persisted history while no sampler turn
-    /// can concurrently append a response item.
+    /// Clear encrypted reasoning from persisted history through the chat-state
+    /// actor, so concurrent turn inserts and prompt rewrites cannot restore a
+    /// stale whole-history snapshot.
     async fn sanitize_provider_history(&self, transition: ProviderTransition) {
-        let mut conversation = self.chat_state_handle.get_conversation().await;
-        if clear_encrypted_reasoning(&mut conversation) {
+        if self.chat_state_handle.clear_encrypted_reasoning().await == Some(true) {
             tracing::info!(
                 session_id = %self.session_info.id.0,
                 target_provider = ?transition.active_provider,
                 transition_epoch = transition.epoch,
                 "cleared encrypted reasoning before provider transition"
             );
-            self.chat_state_handle.replace_conversation(conversation);
-        }
-    }
-
-    /// Drain a history cleanup deferred by a mid-turn provider switch.
-    ///
-    /// The caller runs this only after response items have been enqueued or
-    /// immediately before creating the next sampler request. That ordering
-    /// keeps `get_conversation` + `replace_conversation` from overwriting a
-    /// late response that belongs to the old provider.
-    pub(super) async fn sanitize_pending_provider_history(&self) {
-        if let Some(transition) = self.pending_provider_history_sanitization.take() {
-            self.sanitize_provider_history(transition).await;
         }
     }
 
@@ -126,22 +113,8 @@ impl SessionActor {
             provider,
         );
         if should_sanitize_history {
-            let transition = self.provider_transition.get();
-            if self.state.lock().await.running_task.is_some() {
-                // The in-flight sampler can enqueue response items between a
-                // history snapshot and replacement. Let the turn drain this
-                // after it has sanitized and enqueued those late items.
-                self.pending_provider_history_sanitization
-                    .set(Some(transition));
-                tracing::debug!(
-                    session_id = %self.session_info.id.0,
-                    target_provider = ?provider,
-                    transition_epoch = transition.epoch,
-                    "deferred encrypted reasoning cleanup until in-flight turn reaches a safe point"
-                );
-            } else {
-                self.sanitize_provider_history(transition).await;
-            }
+            self.sanitize_provider_history(self.provider_transition.get())
+                .await;
         }
         let new_context_window = self.compaction.context_window_override.unwrap_or_else(|| {
             std::num::NonZeroU64::new(sampling_config.context_window).unwrap_or_else(|| {
@@ -199,21 +172,22 @@ impl SessionActor {
         self.signals_handle()
             .record_model_usage(&sampling_config.model);
         if apply_prompt_override && !skip_prompt_rewrite {
-            let mut conversation = self.chat_state_handle.get_conversation().await;
-            for item in conversation.iter_mut() {
-                if let ConversationItem::System(sys) = item {
-                    if use_concise {
-                        sys.content = std::sync::Arc::<str>::from(
-                            xai_grok_agent::prompt::template::COMPACT_SYSTEM_PROMPT,
-                        );
-                    } else {
-                        sys.content =
-                            std::sync::Arc::<str>::from(self.agent.borrow().system_prompt());
-                    }
-                    break;
-                }
+            let prompt = if use_concise {
+                xai_grok_agent::prompt::template::COMPACT_SYSTEM_PROMPT.to_owned()
+            } else {
+                self.agent.borrow().system_prompt().to_owned()
+            };
+            if self
+                .chat_state_handle
+                .replace_system_head(&prompt)
+                .await
+                .is_none()
+            {
+                tracing::error!(
+                    session_id = %self.session_info.id.0,
+                    "failed to atomically rewrite system prompt during model switch"
+                );
             }
-            self.chat_state_handle.replace_conversation(conversation);
         } else if !apply_prompt_override {
             tracing::info!(
                 session_id = % self.session_info.id.0, model_id = % model_id.0,

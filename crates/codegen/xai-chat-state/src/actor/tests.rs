@@ -811,6 +811,61 @@ async fn replace_system_head_retains_concurrently_pushed_item() {
     assert!(matches!(conv[1], ConversationItem::Assistant(_)));
 }
 
+#[tokio::test]
+async fn clear_encrypted_reasoning_serializes_with_system_head_replacement() {
+    use xai_grok_sampling_types::rs;
+
+    let h = TestHarness::with_conversation(vec![
+        ConversationItem::system("old"),
+        ConversationItem::user("ordinary user"),
+        ConversationItem::Reasoning(rs::ReasoningItem {
+            id: "reasoning_1".to_string(),
+            summary: vec![rs::SummaryPart::SummaryText(rs::SummaryTextContent {
+                text: "visible summary".to_string(),
+            })],
+            content: Some(vec![rs::ReasoningTextContent {
+                text: "visible reasoning".to_string(),
+            }]),
+            encrypted_content: Some("provider-scoped-payload".to_string()),
+            status: None,
+        }),
+        ConversationItem::assistant("ordinary assistant"),
+    ]);
+
+    let clear = h.handle.clear_encrypted_reasoning();
+    let replace_head = h.handle.replace_system_head("new");
+    let (cleared, head_changed) = tokio::join!(clear, replace_head);
+    assert_eq!(cleared, Some(true));
+    assert_eq!(head_changed, Some(true));
+
+    let conversation = h.handle.get_conversation().await;
+    assert!(matches!(
+        &conversation[0],
+        ConversationItem::System(system) if system.content.as_ref() == "new"
+    ));
+    assert!(matches!(conversation[1], ConversationItem::User(_)));
+    let ConversationItem::Reasoning(reasoning) = &conversation[2] else {
+        panic!("reasoning item must remain in history");
+    };
+    assert_eq!(reasoning.id, "reasoning_1");
+    assert_eq!(reasoning.summary.len(), 1);
+    assert_eq!(
+        reasoning
+            .content
+            .as_ref()
+            .and_then(|content| content.first())
+            .map(|content| content.text.as_str()),
+        Some("visible reasoning")
+    );
+    assert!(reasoning.encrypted_content.is_none());
+    assert!(matches!(conversation[3], ConversationItem::Assistant(_)));
+    assert_eq!(
+        h.handle.clear_encrypted_reasoning().await,
+        Some(false),
+        "second atomic clear is a no-op"
+    );
+}
+
 /// A head swap during an active turn capture must not drop the in-flight
 /// turn's captured tail (regression: `mem::take`ing the conversation before
 /// `replace_conversation` snapshotted it emptied the tail — a `debug_assert`

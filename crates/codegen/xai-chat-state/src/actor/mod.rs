@@ -208,6 +208,10 @@ impl ChatStateActor {
                 let changed = self.replace_system_head(&prompt);
                 let _ = reply.send(changed);
             }
+            ChatStateCommand::ClearEncryptedReasoning { reply } => {
+                let changed = self.clear_encrypted_reasoning();
+                let _ = reply.send(changed);
+            }
             ChatStateCommand::CachePromptText { text } => {
                 self.state.prompt_texts.push(text);
             }

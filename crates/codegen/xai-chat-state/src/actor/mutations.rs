@@ -461,6 +461,30 @@ impl ChatStateActor {
         changed
     }
 
+    /// Clear only provider-scoped encrypted reasoning fields from the current
+    /// actor-owned conversation. The actor serializes this with all turn
+    /// inserts and system-head updates, avoiding stale whole-history
+    /// read-modify-write replacement by callers.
+    pub(super) fn clear_encrypted_reasoning(&mut self) -> bool {
+        let has_encrypted_reasoning = self.state.conversation.iter().any(|item| {
+            matches!(item, ConversationItem::Reasoning(reasoning) if reasoning.encrypted_content.is_some())
+        });
+        if !has_encrypted_reasoning {
+            return false;
+        }
+
+        // Clone rather than take so `replace_conversation` can snapshot an
+        // active turn-capture tail from the current actor state before swap.
+        let mut conversation = self.state.conversation.clone();
+        for item in &mut conversation {
+            if let ConversationItem::Reasoning(reasoning) = item {
+                reasoning.encrypted_content = None;
+            }
+        }
+        self.replace_conversation(conversation, false);
+        true
+    }
+
     /// Restore all state fields from a snapshot.
     pub(super) fn restore_snapshot(&mut self, snap: ChatStateSnapshot) {
         self.snapshot_turn_slice();

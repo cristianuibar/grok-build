@@ -143,6 +143,13 @@ pub enum ChatStateCommand {
         reply: oneshot::Sender<bool>,
     },
 
+    /// Clear only `Reasoning.encrypted_content` on actor-owned history.
+    ///
+    /// This field-level mutation is intentionally actor-serialized so callers
+    /// cannot lose concurrent turn inserts or system-head updates through a
+    /// caller-side `GetConversation` + `ReplaceConversation` cycle.
+    ClearEncryptedReasoning { reply: oneshot::Sender<bool> },
+
     /// Cache prompt text for rewind preview.
     CachePromptText { text: String },
 
@@ -389,6 +396,8 @@ mod tests {
             items: vec![],
             is_compaction: false,
         };
+        let (tx, _rx) = oneshot::channel();
+        let _ = ChatStateCommand::ClearEncryptedReasoning { reply: tx };
         let _ = ChatStateCommand::CachePromptText {
             text: "prompt".to_string(),
         };

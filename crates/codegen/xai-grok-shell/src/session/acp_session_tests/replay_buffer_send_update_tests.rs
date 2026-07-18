@@ -79,7 +79,6 @@ pub(super) async fn make_replay_send_update_fixture() -> ReplaySendUpdateFixture
         auth_method_id: test_auth_method_id("test-auth"),
         model_auth_facts: std::cell::RefCell::new(None),
         provider_transition: std::cell::Cell::new(Default::default()),
-        pending_provider_history_sanitization: std::cell::Cell::new(None),
         attribution_callback: None,
         auth_manager: None,
         state,
