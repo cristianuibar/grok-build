@@ -1,0 +1,93 @@
+#:schema https://dystroy.org/bacon/.bacon.schema.json
+#
+# BUM (Build Using Multiagents) — bacon jobs for this Cargo workspace.
+# Prefer package-scoped jobs; full-workspace check is very slow.
+
+default_job = "check-shell-lib"
+env.CARGO_TERM_COLOR = "always"
+
+# --- Fast feedback (default) ---
+
+[jobs.check-shell-lib]
+command = ["cargo", "check", "-p", "xai-grok-shell", "--lib"]
+need_stdout = false
+
+[jobs.check-sampler]
+command = ["cargo", "check", "-p", "xai-grok-sampler"]
+need_stdout = false
+
+[jobs.check-types]
+command = ["cargo", "check", "-p", "xai-grok-sampling-types"]
+need_stdout = false
+
+[jobs.check]
+command = ["cargo", "check", "-p", "xai-grok-shell", "--lib"]
+need_stdout = false
+
+[jobs.check-all]
+command = ["cargo", "check", "--all-targets", "-p", "xai-grok-shell"]
+need_stdout = false
+
+# --- Clippy (package-scoped) ---
+
+[jobs.clippy]
+command = ["cargo", "clippy", "-p", "xai-grok-shell", "--lib"]
+need_stdout = false
+
+[jobs.clippy-all]
+command = ["cargo", "clippy", "-p", "xai-grok-shell", "--all-targets"]
+need_stdout = false
+
+# --- Tests ---
+
+[jobs.test]
+command = ["cargo", "test", "-p", "xai-grok-sampling-types", "--lib"]
+need_stdout = true
+
+[jobs.nextest]
+command = [
+    "cargo", "nextest", "run",
+    "-p", "xai-grok-sampling-types",
+    "--hide-progress-bar", "--failure-output", "final",
+]
+need_stdout = true
+analyzer = "nextest"
+
+[jobs.nextest-shell-lib]
+command = [
+    "cargo", "nextest", "run",
+    "-p", "xai-grok-shell", "--lib",
+    "--hide-progress-bar", "--failure-output", "final",
+]
+need_stdout = true
+analyzer = "nextest"
+
+[jobs.nextest-switch]
+command = [
+    "cargo", "nextest", "run",
+    "-p", "xai-grok-shell",
+    "-E", "test(held_grok_response) + test(codex_to_codex_transition_retains)",
+    "--hide-progress-bar", "--failure-output", "final",
+]
+need_stdout = true
+analyzer = "nextest"
+
+# --- Docs / run ---
+
+[jobs.doc]
+command = ["cargo", "doc", "--no-deps", "-p", "xai-grok-shell"]
+need_stdout = false
+
+[jobs.run-bum]
+command = ["cargo", "run", "-p", "xai-grok-pager-bin", "--bin", "bum"]
+need_stdout = true
+allow_warnings = true
+background = true
+show_command_error_code = true
+scroll_anchor = "auto"
+
+[keybindings]
+c = "job:clippy"
+n = "job:nextest"
+s = "job:check-shell-lib"
+t = "job:test"

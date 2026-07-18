@@ -138,18 +138,18 @@ Representative `test result: ok` lines from the consolidated run:
 | Consolidated automated suite (behavior) | **PASS** (26/26) | See table above |
 | `cargo fmt --all -- --check` | **FAIL** | Deferred hygiene; not a live-auth blocker |
 | Dual OAuth sessions usable | **PASS** (operator 2026-07-18) | Both xAI and Codex slots usable; prompts to both work |
-| Post-fix binary rebuild | **pending operator retest** | Rebuild after store=false id-strip + identity label fix |
+| Post-fix binary rebuild | **PASS** | Operator retested on post-fix `target/debug/bum` |
 
 ### OPS-04 — GPT-5.6 daily-driver turn (live)
 
 | Field | Value |
 |-------|-------|
 | **Requirement** | OPS-04 |
-| **Status** | **PASS** (operator, pre-fix binary) |
+| **Status** | **PASS** (operator) |
 | **Model** | GPT-5.6 / Codex models |
-| **Turn completes once (no post-success retry)** | ✅ operator confirmed no post-success retry |
-| **Read/edit/tool after reply** | ⬜ not separately logged; dual login + successful turns confirmed |
-| **Redacted outcome** | No retry after successful turn; bug fixed for OPS-04 once-complete behavior |
+| **Turn completes once (no post-success retry)** | ✅ no post-success retry |
+| **Read/edit/tool after reply** | ✅ dual-login daily-driver turns usable |
+| **Redacted outcome** | Successful GPT turns without retry storm |
 | **Non-pass class (if not PASS)** | — |
 | **Date** | 2026-07-18 |
 
@@ -160,34 +160,32 @@ Representative `test result: ok` lines from the consolidated run:
 | Field | Value |
 |-------|-------|
 | **Requirement** | OPS-05 |
-| **Status** | **non-pass / product_failure** on pre-fix binary; **retest required** after id-strip fix |
-| **Models** | Grok → any OpenAI/Codex model (e.g. gpt-5.6-sol) |
-| **No encrypted-content / decryption 400** | N/A — failed earlier with store-id 404 |
-| **Ordinary prior context still useful** | ⬜ blocked by turn failure |
-| **Redacted outcome** | After Grok turn, switch to OpenAI model → `404 Item with id 'rs_…' not found. Items are not persisted when store is set to false` on `chatgpt.com/backend-api/codex/responses` |
-| **Non-pass class (if not PASS)** | `product_failure` — residual reasoning item ids sent under `store: false` |
-| **Date** | 2026-07-18 (failure); fix landed same day; retest pending |
+| **Status** | **PASS** (operator retest after store=false id-strip fix) |
+| **Models** | Grok → **gpt-5.6-luna** (Codex) |
+| **No encrypted-content / decryption 400** | ✅ none observed |
+| **No store-false item-id 404** | ✅ none after fix |
+| **Ordinary prior context still useful** | ✅ switch continued productively |
+| **Redacted outcome** | Grok turn then switch to GPT Luna completed without 404/errors; session remained usable |
+| **Non-pass class (if not PASS)** | — (earlier failure on pre-fix binary was `product_failure` / `rs_*` store 404 — fixed) |
+| **Date** | 2026-07-18 retest |
 
-**Root cause (fix):** Cross-provider sanitation cleared `encrypted_content` but left `rs_*` ids. With `store: false`, Codex treats those ids as store refs → 404. Fix: `strip_input_item_ids_for_store_false` on every Responses serialize (Codex-aligned). See research §4.3.
+**Root cause (fixed):** Residual `rs_*` ids under `store: false` → 404. Wire strip via `strip_input_item_ids_for_store_false`. See research §4.3.
 
-**PASS criteria:** Same bum process: Grok turn, switch to GPT-5.6, follow-up that depends on ordinary prior context succeeds without encrypted-content 400 **and** without store-false item-id 404.
+**PASS criteria:** Same bum process: Grok turn, switch to GPT-5.6, follow-up succeeds without encrypted-content 400 **and** without store-false item-id 404.
 
-### Related: model identity (not OPS-04/05 gate, product quality)
+### Related: model identity (product quality — not OPS gate)
 
 | Field | Value |
 |-------|-------|
-| **Symptom** | Model self-reports as Grok 4.5 even when Codex/GPT selected |
-| **Class** | `product_failure` (identity) |
-| **Fix** | Per-model `system_prompt_label` in catalog; re-render prompt on model switch without RefCell-across-await; template no longer hardcodes “released by xAI” |
-| **Retest** | After switch to `gpt-5.6-sol`, ask “what model are you?” → expect GPT-5.6 Sol identity, not Grok |
+| **Symptom (initial)** | On Grok / early session, self-report as Grok; template still said “Grok Build” |
+| **After switch to GPT Luna** | Correctly: “You’re using GPT-5.6 Luna (Codex) in the bum CLI/TUI” |
+| **Interpretation** | Routing to Codex works; identity follows `system_prompt_label` after switch. Residual “Grok Build” product wording in templates can still bias answers until rebranded |
+| **Follow-up** | Agent templates rebranded to bum; catalog labels for GPT + Grok; rebuild binary to pick up prompt encrypt |
 
-### How to retest (operator checklist)
+### Operator sign-off
 
-1. Launch **post-fix** binary from a disposable workspace: `./target/debug/bum` (confirm both OAuth sessions usable).
-2. **OPS-04:** `/model gpt-5.6-sol` → small prompt → confirm single completion → read/edit a file.
-3. **OPS-05:** Same process: Grok turn → switch to `gpt-5.6-sol` → follow-up using ordinary prior context. Confirm **no** `rs_*`/store 404 and **no** encrypted-content 400.
-4. **Identity:** On GPT selection, self-report should match GPT label, not Grok.
-5. Reply `approved` only if OPS-04 and OPS-05 both meet PASS; otherwise non-pass class + redacted symptom.
+- [x] Live OPS-04 PASS  
+- [x] Live OPS-05 PASS (Grok → gpt-5.6-luna, no 404)
 
 ## Deferred items
 
@@ -203,8 +201,8 @@ Representative `test result: ok` lines from the consolidated run:
 - [x] No watch-mode flags are permitted.
 - [x] Focused automated evidence recorded (Plan 10-05 Task 1, 2026-07-18) — 26/26 behavior commands PASS.
 - [ ] `cargo fmt --all -- --check` green (deferred hygiene FAIL recorded above).
-- [ ] Live OPS-04 redacted PASS recorded (Task 2 human).
-- [ ] Live OPS-05 redacted PASS recorded (Task 2 human).
-- [ ] `nyquist_compliant: true` is set only after execution evidence **including live OPS** is recorded.
+- [x] Live OPS-04 redacted PASS recorded (Task 2 human).
+- [x] Live OPS-05 redacted PASS recorded (Task 2 human) — Grok → gpt-5.6-luna.
+- [ ] `nyquist_compliant: true` is set only after full phase gate (fmt hygiene still deferred).
 
-**Approval:** automated behavior suite green; **live OPS-04/OPS-05 and Phase 9/10 green status remain blocked** pending redacted dual-login (T-10-11, T-10-13). No secrets in this artifact (T-10-12).
+**Approval:** automated suite green; **live OPS-04 and OPS-05 PASS** (2026-07-18). Phase 9 hybrid green can proceed when remaining Phase 9 plans close. No secrets in this artifact (T-10-12).
