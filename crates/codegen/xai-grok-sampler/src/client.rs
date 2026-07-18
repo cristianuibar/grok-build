@@ -1252,6 +1252,8 @@ impl SamplingClient {
         // it in post-serialize. This is the last surviving piece of the
         // old raw_output machinery.
         xai_grok_sampling_types::patch_reasoning_text_types(&mut request_body);
+        // Codex / ChatGPT store=false: never send item ids as store refs.
+        xai_grok_sampling_types::strip_input_item_ids_for_store_false(&mut request_body);
         let http_request = grok_headers
             .apply(self.post(self.endpoint("responses"))?)
             .json(&request_body);
@@ -1394,6 +1396,10 @@ impl SamplingClient {
             }
         }
         xai_grok_sampling_types::patch_reasoning_text_types(&mut request_body);
+        // Codex / ChatGPT store=false: never send item ids as store refs
+        // (official Codex prepare_response_items_for_request). Prevents
+        // Grok→Codex 404s on residual `rs_*` reasoning ids after sanitation.
+        xai_grok_sampling_types::strip_input_item_ids_for_store_false(&mut request_body);
         // Fresh per attempt so signals never leak across retries; `None`
         // (check disabled) sends no header and does no peek work per event.
         let doom_loop = self

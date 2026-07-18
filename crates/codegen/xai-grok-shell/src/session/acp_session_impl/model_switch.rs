@@ -173,10 +173,46 @@ impl SessionActor {
         self.signals_handle()
             .record_model_usage(&sampling_config.model);
         if apply_prompt_override && !skip_prompt_rewrite {
+            // Re-resolve identity for the target model so Codex/GPT does not
+            // keep a session-start Grok label after /model switch.
+            let models = self.models_manager.models();
+            let catalog = crate::agent::config::find_model_by_id(&models, &sampling_config.model);
+            let label = catalog
+                .and_then(|entry| entry.info.system_prompt_label.clone())
+                .filter(|s| !s.trim().is_empty())
+                .or_else(|| {
+                    // Prefer catalog display name over the default "Grok" when
+                    // no explicit system_prompt_label is configured.
+                    catalog
+                        .and_then(|entry| entry.info.name.clone())
+                        .filter(|s| !s.trim().is_empty())
+                })
+                .unwrap_or_else(|| xai_grok_agent::DEFAULT_SYSTEM_PROMPT_LABEL.to_string());
+            // Concurrent turns may hold agent.borrow() (held Grok SSE). Never
+            // require exclusive borrow_mut — patch identity under try_borrow_mut
+            // and always compute the conversation head from a shared borrow.
             let prompt = if use_concise {
                 xai_grok_agent::prompt::template::COMPACT_SYSTEM_PROMPT.to_owned()
             } else {
-                self.agent.borrow().system_prompt().to_owned()
+                let (old_label, current) = {
+                    let agent = self.agent.borrow();
+                    (
+                        agent.system_prompt_label().to_owned(),
+                        agent.system_prompt().to_owned(),
+                    )
+                };
+                let rebound = xai_grok_agent::rebind_system_prompt_label_prefix(
+                    &current, &old_label, &label,
+                );
+                if let Ok(mut agent) = self.agent.try_borrow_mut() {
+                    agent.rebind_system_prompt_label(label.clone());
+                } else {
+                    tracing::debug!(
+                        session_id = %self.session_info.id.0,
+                        "set_session_model: agent RefCell busy; identity applied to conversation head only"
+                    );
+                }
+                rebound
             };
             if self
                 .chat_state_handle

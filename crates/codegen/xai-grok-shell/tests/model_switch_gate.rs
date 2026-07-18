@@ -365,10 +365,16 @@ fn reasoning_input(body: &Value) -> &Value {
 
 fn assert_reasoning_request(body: &Value, encrypted_content: Option<&str>) {
     let reasoning = reasoning_input(body);
+    // store=false Responses policy (Codex-aligned): item ids are store refs and
+    // must not appear on the wire. Residual Grok `rs_*` ids caused live 404s.
+    assert!(
+        reasoning.get("id").is_none(),
+        "reasoning id must be stripped under store=false (Codex prepare_response_items): {reasoning:#?}"
+    );
     assert_eq!(
-        reasoning.get("id").and_then(Value::as_str),
-        Some(REASONING_ID),
-        "reasoning id must survive the provider transition"
+        body.get("store").and_then(Value::as_bool),
+        Some(false),
+        "Responses ZDR/ChatGPT path uses store=false"
     );
     assert_eq!(
         reasoning["summary"][0]["text"].as_str(),

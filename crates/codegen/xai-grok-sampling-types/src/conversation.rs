@@ -2252,6 +2252,31 @@ pub fn patch_reasoning_text_types(body: &mut serde_json::Value) {
     }
 }
 
+/// When `store` is false, Responses treats top-level input `id` values as
+/// server-store references. Official Codex clears those ids on every request
+/// (`prepare_response_items_for_request` with `store: false`).
+///
+/// Leaving prior-turn `rs_*` / message ids on the wire — especially after a
+/// Grok→Codex provider switch that kept reasoning structure but dropped
+/// encrypted payloads — produces:
+/// `404 Item with id 'rs_…' not found. Items are not persisted when store is set to false.`
+///
+/// Call after serializing `CreateResponse` and after
+/// [`patch_reasoning_text_types`]. Does not touch `call_id` (tool pairing).
+pub fn strip_input_item_ids_for_store_false(body: &mut serde_json::Value) {
+    if body.get("store").and_then(|v| v.as_bool()) != Some(false) {
+        return;
+    }
+    let Some(input) = body.get_mut("input").and_then(|v| v.as_array_mut()) else {
+        return;
+    };
+    for item in input.iter_mut() {
+        if let Some(obj) = item.as_object_mut() {
+            obj.remove("id");
+        }
+    }
+}
+
 /// Convert a ConversationItem to Responses API InputItem(s)
 fn conversation_item_to_input_items(item: &ConversationItem) -> Vec<rs::InputItem> {
     match item {
@@ -8940,6 +8965,56 @@ mod tests {
             msgs[0].reasoning_content.as_deref(),
             Some("step-by-step"),
             "reconstructed sibling folded onto assistant.reasoning_content"
+        );
+    }
+
+    #[test]
+    fn strip_input_item_ids_for_store_false_removes_ids_only_when_store_false() {
+        let mut body = serde_json::json!({
+            "store": false,
+            "input": [
+                {
+                    "type": "reasoning",
+                    "id": "rs_foreign_from_prior_provider",
+                    "encrypted_content": null,
+                    "summary": [{ "type": "summary_text", "text": "kept" }]
+                },
+                {
+                    "type": "function_call",
+                    "id": "fc_should_strip",
+                    "call_id": "call_keep_for_pairing",
+                    "name": "read_file",
+                    "arguments": "{}"
+                },
+                {
+                    "type": "message",
+                    "role": "user",
+                    "content": "hi"
+                }
+            ]
+        });
+        strip_input_item_ids_for_store_false(&mut body);
+        let input = body["input"].as_array().expect("input array");
+        assert!(input[0].get("id").is_none(), "reasoning id must strip under store=false");
+        assert!(
+            input[0].get("summary").is_some(),
+            "visible summary must remain after id strip"
+        );
+        assert!(input[1].get("id").is_none(), "function_call item id must strip");
+        assert_eq!(
+            input[1].get("call_id").and_then(|v| v.as_str()),
+            Some("call_keep_for_pairing"),
+            "call_id must survive — tool pairing depends on it"
+        );
+        // store=true (or missing) must not strip.
+        let mut store_true = serde_json::json!({
+            "store": true,
+            "input": [{ "type": "reasoning", "id": "rs_keep" }]
+        });
+        strip_input_item_ids_for_store_false(&mut store_true);
+        assert_eq!(
+            store_true["input"][0].get("id").and_then(|v| v.as_str()),
+            Some("rs_keep")
         );
     }
 

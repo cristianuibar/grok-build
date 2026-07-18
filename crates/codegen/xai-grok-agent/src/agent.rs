@@ -234,6 +234,48 @@ impl Agent {
             .unwrap_or_default();
     }
 
+    /// Update the system-prompt identity label and re-render (requires `&mut self`).
+    pub async fn set_system_prompt_label_and_rerender(&mut self, label: impl Into<String>) {
+        let label = label.into();
+        self.prompt_context.system_prompt_label = label.clone();
+        self.finalize_prompt().await;
+        // Prefer a cheap prefix rebind if render failed empty.
+        if self.system_prompt.is_empty() {
+            self.system_prompt = rebind_system_prompt_label_prefix(
+                self.system_prompt.as_str(),
+                "",
+                &label,
+            );
+        }
+    }
+
+    /// Current system-prompt identity label (not UI picker name).
+    pub fn system_prompt_label(&self) -> &str {
+        &self.prompt_context.system_prompt_label
+    }
+
+    /// Sync identity rebind for `RefCell` session actors: no `.await`, no exclusive
+    /// long holds. Rewrites the leading `You are {label}.` in the cached prompt.
+    ///
+    /// Prefer this during mid-session model switch when a concurrent turn may
+    /// already hold `agent.borrow()` — full re-render needs exclusive access.
+    pub fn rebind_system_prompt_label(&mut self, label: impl Into<String>) {
+        let new_label = label.into();
+        let old = self.prompt_context.system_prompt_label.clone();
+        if old == new_label {
+            return;
+        }
+        self.system_prompt =
+            rebind_system_prompt_label_prefix(&self.system_prompt, &old, &new_label);
+        self.prompt_context.system_prompt_label = new_label;
+    }
+
+    /// Install a prompt context + rendered system prompt string.
+    pub fn install_rendered_prompt(&mut self, ctx: PromptContext, system_prompt: String) {
+        self.prompt_context = ctx;
+        self.system_prompt = system_prompt;
+    }
+
     /// Re-render the system prompt for a different definition, reusing
     /// the existing ToolBridge. Used for mid-session mode switching.
     pub async fn render_prompt_for_definition(&self, definition: &AgentDefinition) -> String {
@@ -250,6 +292,38 @@ impl Agent {
 
         ctx.render(&self.tool_bridge).await.unwrap_or_default()
     }
+}
+
+/// Rewrite the leading identity prefix `You are {old}.` → `You are {new}.`.
+///
+/// Falls back to replacing the first `You are ….` span when the old label is
+/// unknown or the prompt was built with a different default.
+pub fn rebind_system_prompt_label_prefix(prompt: &str, old_label: &str, new_label: &str) -> String {
+    if old_label == new_label {
+        return prompt.to_owned();
+    }
+    if !old_label.is_empty() {
+        let old_prefix = format!("You are {old_label}.");
+        let new_prefix = format!("You are {new_label}.");
+        if let Some(rest) = prompt.strip_prefix(&old_prefix) {
+            return format!("{new_prefix}{rest}");
+        }
+        // Older templates: "You are {label} released by xAI."
+        let old_xai = format!("You are {old_label} released by xAI.");
+        let new_xai = format!("You are {new_label}.");
+        if let Some(rest) = prompt.strip_prefix(&old_xai) {
+            return format!("{new_xai}{rest}");
+        }
+    }
+    if let Some(rest) = prompt.strip_prefix("You are ") {
+        if let Some(dot) = rest.find(". ") {
+            return format!("You are {new_label}. {}", &rest[dot + 2..]);
+        }
+        if let Some(dot) = rest.find('.') {
+            return format!("You are {new_label}.{}", &rest[dot + 1..]);
+        }
+    }
+    prompt.to_owned()
 }
 
 #[cfg(test)]
@@ -292,5 +366,20 @@ mod tests {
         // 100% threshold → only triggers when fully used
         assert!(!should_auto_compact_check(99_999, 100_000, 100));
         assert!(should_auto_compact_check(100_000, 100_000, 100));
+    }
+
+    #[test]
+    fn rebind_system_prompt_label_prefix_rewrites_modern_and_legacy() {
+        use super::rebind_system_prompt_label_prefix;
+        let modern = "You are Grok. You are an interactive CLI tool.";
+        assert_eq!(
+            rebind_system_prompt_label_prefix(modern, "Grok", "GPT-5.6 Sol"),
+            "You are GPT-5.6 Sol. You are an interactive CLI tool."
+        );
+        let legacy = "You are Grok released by xAI. You are an interactive CLI tool.";
+        assert_eq!(
+            rebind_system_prompt_label_prefix(legacy, "Grok", "GPT-5.6 Sol"),
+            "You are GPT-5.6 Sol. You are an interactive CLI tool."
+        );
     }
 }

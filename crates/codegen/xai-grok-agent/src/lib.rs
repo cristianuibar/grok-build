@@ -17,7 +17,7 @@ pub mod repo;
 pub mod system_reminder;
 pub mod timing;
 
-pub use agent::Agent;
+pub use agent::{Agent, rebind_system_prompt_label_prefix};
 pub use builder::AgentBuilder;
 pub use compaction::CompactionPolicy;
 pub use config::AgentDefinition;
