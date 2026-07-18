@@ -4502,8 +4502,8 @@ pub fn resolve_provider_route(
 ///
 /// Allowlist:
 /// - HTTPS `chatgpt.com` / `www.chatgpt.com` on the default effective port
-///   with path prefix `/backend-api/codex`
-/// - Same scheme, host, effective port **and path prefix** as the configured
+///   at `/backend-api/codex` or one of its descendants
+/// - Same scheme, host, effective port **and path or descendant** as the configured
 ///   [`EndpointsConfig::resolve_codex_base_url`] (operator env/config override
 ///   of the product Codex endpoint). Host-only match is insufficient — product
 ///   session OAuth must not attach to arbitrary paths or ports on the Codex host
@@ -4523,7 +4523,7 @@ pub fn is_first_party_codex_url(url: &str, endpoints: &EndpointsConfig) -> bool 
     if parsed.scheme().eq_ignore_ascii_case("https")
         && parsed.port_or_known_default() == Some(443)
         && (host_l == "chatgpt.com" || host_l == "www.chatgpt.com")
-        && parsed.path().starts_with("/backend-api/codex")
+        && path_is_at_or_below(parsed.path(), "/backend-api/codex")
     {
         return true;
     }
@@ -4533,15 +4533,23 @@ pub fn is_first_party_codex_url(url: &str, endpoints: &EndpointsConfig) -> bool 
         && host.eq_ignore_ascii_case(cfg_host)
         && parsed.port_or_known_default() == configured.port_or_known_default()
     {
-        let cfg_path = configured.path().trim_end_matches('/');
-        let req_path = parsed.path();
-        // Empty or root configured path: host match is enough (operator set a
-        // bare-host Codex endpoint). Non-empty path: require prefix alignment.
-        if cfg_path.is_empty() || cfg_path == "/" || req_path.starts_with(cfg_path) {
+        if path_is_at_or_below(parsed.path(), configured.path()) {
             return true;
         }
     }
     false
+}
+
+/// Whether `request_path` is the normalized `base_path` itself or a descendant
+/// separated by `/`. A root (or empty) configured path intentionally trusts all
+/// paths on the already-matched authority.
+fn path_is_at_or_below(request_path: &str, base_path: &str) -> bool {
+    let base_path = base_path.trim_end_matches('/');
+    base_path.is_empty()
+        || request_path == base_path
+        || request_path
+            .strip_prefix(base_path)
+            .is_some_and(|suffix| suffix.starts_with('/'))
 }
 
 /// Resolve credentials for a model (single provider-slot key).

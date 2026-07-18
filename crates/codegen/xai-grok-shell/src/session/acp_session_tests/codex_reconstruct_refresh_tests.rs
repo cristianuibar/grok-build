@@ -81,7 +81,6 @@ async fn make_codex_actor(
     let (gateway_tx, _) = mpsc::unbounded_channel();
     let (persistence_tx, persistence_rx) = mpsc::unbounded_channel();
     let mut actor = create_test_actor(50_000, 100_000, 85, gateway_tx, persistence_tx).await;
-    actor.session_info.id = agent_client_protocol::SessionId::new(uuid::Uuid::new_v4().to_string());
     actor.auth_method_id = test_auth_method_id("cached_token");
     actor.model_auth_facts.replace(Some((
         "gpt-test-codex".to_string(),
@@ -156,6 +155,22 @@ fn assert_reserved_headers_absent(headers: &IndexMap<String, String>) {
             header_value(headers, name).is_none(),
             "untrusted route must not retain reserved Codex header {name}: {headers:?}"
         );
+    }
+}
+
+#[test]
+fn trusted_codex_wire_identity_normalizes_loaded_and_subagent_ids() {
+    let supplied = uuid::Uuid::new_v4();
+    assert_eq!(
+        ProviderTransition::for_session_id(&supplied.to_string()).trusted_codex_request_id,
+        supplied,
+        "valid loaded ACP session IDs stay the trusted wire identity"
+    );
+
+    for legacy_id in ["loaded-legacy-session", "subagent-task-id-42"] {
+        let identity = ProviderTransition::for_session_id(legacy_id).trusted_codex_request_id;
+        uuid::Uuid::try_parse(&identity.to_string())
+            .expect("non-UUID session origins must receive a valid wire UUID");
     }
 }
 
@@ -339,6 +354,11 @@ async fn trusted_codex_reconstruct_enables_profile_and_metadata() {
                 ModelByok::NotByok,
             )
             .await;
+            assert_eq!(
+                trusted.session_info.id.0.as_ref(),
+                "test-actor",
+                "fixture intentionally preserves a legacy non-UUID loaded session id"
+            );
             set_extra_headers(&trusted, mixed_case_reserved_headers()).await;
 
             let first = trusted.reconstruct_full_config().await;

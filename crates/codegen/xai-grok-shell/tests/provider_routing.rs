@@ -353,6 +353,75 @@ fn codex_first_party_requires_matching_effective_port() {
     );
 }
 
+/// A raw string prefix is insufficient for trusted Codex OAuth: the route must
+/// be the configured Codex path itself or a slash-delimited descendant, never
+/// a lookalike such as `/backend-api/codexevil`.
+#[test]
+fn codex_first_party_path_requires_segment_boundary() {
+    let endpoints = deterministic_endpoints();
+    for url in [
+        "https://chatgpt.com/backend-api/codex",
+        "https://chatgpt.com/backend-api/codex/",
+        "https://chatgpt.com/backend-api/codex/responses",
+    ] {
+        assert!(
+            is_first_party_codex_url(url, &endpoints),
+            "builtin Codex path {url} must remain first-party"
+        );
+    }
+    let builtin_lookalike = "https://chatgpt.com/backend-api/codexevil";
+    assert!(
+        !is_first_party_codex_url(builtin_lookalike, &endpoints),
+        "builtin lookalike path must fail closed"
+    );
+    assert!(
+        !resolve_provider_route(ModelProvider::Codex, &endpoints, Some(builtin_lookalike))
+            .session_oauth_allowed,
+        "builtin lookalike route must not allow session OAuth"
+    );
+
+    let configured = EndpointsConfig {
+        codex_base_url: "https://codex.enterprise.example/backend-api/codex/".to_owned(),
+        ..deterministic_endpoints()
+    };
+    for url in [
+        "https://codex.enterprise.example/backend-api/codex",
+        "https://codex.enterprise.example/backend-api/codex/",
+        "https://codex.enterprise.example/backend-api/codex/responses",
+    ] {
+        assert!(
+            is_first_party_codex_url(url, &configured),
+            "configured Codex path {url} must remain first-party"
+        );
+    }
+    let configured_lookalike = "https://codex.enterprise.example/backend-api/codexevil";
+    assert!(
+        !is_first_party_codex_url(configured_lookalike, &configured),
+        "configured lookalike path must fail closed"
+    );
+    assert!(
+        !resolve_provider_route(
+            ModelProvider::Codex,
+            &configured,
+            Some(configured_lookalike)
+        )
+        .session_oauth_allowed,
+        "configured lookalike route must not allow session OAuth"
+    );
+
+    let configured_root = EndpointsConfig {
+        codex_base_url: "https://codex-root.enterprise.example/".to_owned(),
+        ..deterministic_endpoints()
+    };
+    assert!(
+        is_first_party_codex_url(
+            "https://codex-root.enterprise.example/any/descendant",
+            &configured_root
+        ),
+        "a root configured Codex endpoint must continue to trust its authority's paths"
+    );
+}
+
 /// Host-only match on chatgpt.com must not allow session OAuth without the
 /// Codex backend path (configured endpoint path alignment).
 #[test]

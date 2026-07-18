@@ -350,7 +350,11 @@ impl SessionActor {
                 &endpoints,
                 codex_account_id.as_deref(),
             );
-            let session_id = self.session_info.id.to_string();
+            let session_id = self
+                .provider_transition
+                .get()
+                .trusted_codex_request_id
+                .to_string();
             extra_headers.insert("originator".to_string(), "bum".to_string());
             extra_headers.insert("session-id".to_string(), session_id.clone());
             extra_headers.insert("thread-id".to_string(), session_id.clone());

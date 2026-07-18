@@ -293,10 +293,33 @@ pub(crate) struct State {
 /// turn can then compare its snapshot with the live value before it persists
 /// response items, preventing provider-scoped encrypted reasoning from being
 /// replayed across a provider change.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct ProviderTransition {
     pub(crate) active_provider: Option<crate::agent::config::ModelProvider>,
     pub(crate) epoch: u64,
+    /// Stable UUID used by all trusted Codex request-identity headers. This
+    /// is captured once for the actor, rather than derived per request from a
+    /// legacy ACP or subagent session id that might not itself be a UUID.
+    pub(crate) trusted_codex_request_id: uuid::Uuid,
+}
+
+impl ProviderTransition {
+    /// Preserve a valid supplied session UUID; otherwise allocate an
+    /// actor-lifetime wire identity without changing the persisted session id.
+    pub(crate) fn for_session_id(session_id: &str) -> Self {
+        Self {
+            active_provider: None,
+            epoch: 0,
+            trusted_codex_request_id: uuid::Uuid::try_parse(session_id)
+                .unwrap_or_else(|_| uuid::Uuid::new_v4()),
+        }
+    }
+}
+
+impl Default for ProviderTransition {
+    fn default() -> Self {
+        Self::for_session_id("")
+    }
 }
 
 impl State {
@@ -591,6 +614,8 @@ pub(crate) struct SessionActor {
     /// This stays local to the session actor rather than reusing model-cache
     /// generations: its only contract is keeping late sampler responses from
     /// restoring provider-scoped encrypted reasoning after a route change.
+    /// It also carries the actor's stable trusted-Codex wire UUID, which must
+    /// survive every provider transition.
     pub(crate) provider_transition: std::cell::Cell<ProviderTransition>,
     /// 401-attribution callback. Joined with the bearer the
     /// sampler sends on the wire to emit an `auth 401 attribution`

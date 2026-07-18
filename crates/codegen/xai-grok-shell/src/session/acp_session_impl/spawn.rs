@@ -1112,7 +1112,9 @@ pub(crate) async fn spawn_session_actor(
         session_info: session_info.clone(),
         auth_method_id,
         model_auth_facts: std::cell::RefCell::new(None),
-        provider_transition: std::cell::Cell::new(Default::default()),
+        provider_transition: std::cell::Cell::new(ProviderTransition::for_session_id(
+            session_info.id.0.as_ref(),
+        )),
         attribution_callback,
         auth_manager,
         state,

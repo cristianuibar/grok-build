@@ -40,6 +40,7 @@ impl SessionActor {
                 .epoch
                 .checked_add(1)
                 .expect("provider transition epoch overflow"),
+            trusted_codex_request_id: previous.trusted_codex_request_id,
         };
         self.provider_transition.set(next);
         previous
