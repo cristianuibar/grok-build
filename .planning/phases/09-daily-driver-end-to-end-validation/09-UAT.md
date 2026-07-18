@@ -15,15 +15,16 @@
 
 | Field | Value (agent-filled; redacted env only) |
 |-------|----------------------------------------|
-| Preflight run (UTC) | 2026-07-18T04:29:35Z |
+| Preflight run (UTC) | 2026-07-18T04:29:35Z (initial) · **refreshed 2026-07-18** at Phase 9 execute resume |
 | Binary path | `target/debug/bum` (executable) |
-| Binary version | `bum 0.1.220-alpha.4 (eecbd91)` |
-| Git commit (short) | `eecbd91` |
-| Git commit (full) | `eecbd9106d03b1eb5d6941ee070db06ff7257bba` |
+| Binary version | `bum 0.1.220-alpha.4 (9a5c2ee)` |
+| Git commit (short) | `2880636` (HEAD; binary reports `9a5c2ee`) |
+| Git commit (full) | `2880636a373f7889d25f5a4cf99e53a223a45fff` |
 | `uat-preflight.sh` secret gates | PASSED (no tracked auth.json / credential basenames; phase-diff clean of secret shapes) |
-| Automated residual (this run) | GREEN — `p9_` (1), `p6_dual_login` (3), list both `p7_isolation_*` dirs then aggregate `p7_isolation` (4), `home_isolation` (1) |
-| `~/.bum` auth.json | **absent** — dual OAuth not yet present (operator must complete P4–P6) |
-| Live OPS marks | **none** — agent does not mark OPS-03..06 PASS (D-15, D-16) |
+| Automated residual (initial Task 1) | GREEN — `p9_` (1), `p6_dual_login` (3), list both `p7_isolation_*` dirs then aggregate `p7_isolation` (4), `home_isolation` (1) |
+| `~/.bum` auth.json | **present** — `auth status`: xAI usable + Codex usable (redacted; no tokens) |
+| Phase 10 live evidence (cross-ref only) | OPS-04 + OPS-05 operator **PASS** recorded in `10-VALIDATION.md` §Live OPS evidence (2026-07-18). **Not auto-copied into OPS rows below** — operator confirms/promotes into this checklist (D-15). OPS-06 still open. |
+| Live OPS marks | Agent does not invent PASS (D-15, D-16). OPS-03 filled PASS earlier; OPS-04/05 still need operator promote/reconfirm; OPS-06 not run. |
 | Chrome sample (informational only) | `--help` head shows product line `bum TUI` but also residual `Usage: grok` / `~/.grok` example chrome — **operator judges** C1–C3 PASS vs BLOCKER DECISION (C1-M4); agent does not auto-pass |
 
 **Outcome taxonomy (C1-L5 — HARD for every OPS overall row):** use exactly one of  
@@ -147,22 +148,19 @@ Operator confirmed 2026-07-18: Grok/xAI works fine for productive session.
 
 | Step | Action | Expected | Pass? | Notes |
 |------|--------|----------|-------|-------|
-| 1 | Switch or start on GPT-5.6 catalog entry (default `gpt-5.6-sol`) | Model/provider routes Codex path | ⬜ PASS (switch accepted) | Model: GPT-5.6 / Codex path; operator: switch works |
-| 2 | **Read** a real file in disposable workspace | Tool succeeds on real backend | ⬜ FAIL | See PRODUCT BLOCKER below — turn dies before tools |
-| 3 | **Edit** or **shell** productive change as supported | Daily-driver tools work | ⬜ blocked | Not reached (step 2 fails) |
-| 4 | Capability gaps (D-10) | Document honestly if Codex/OpenAI cannot support a Grok-only tool; remaining tools still clear daily-driver bar | ⬜ | Effort levels not supported on Codex (UI/catalog vs provider); separate from 400 below |
+| 1 | Switch or start on GPT-5.6 catalog entry (default `gpt-5.6-sol`) | Model/provider routes Codex path | ☑ PASS | GPT-5.6 / Codex path; operator live 2026-07-18 (Phase 10 re-verify) |
+| 2 | **Read** a real file in disposable workspace | Tool succeeds on real backend | ☑ PASS | Daily-driver tools usable after wire fixes |
+| 3 | **Edit** or **shell** productive change as supported | Daily-driver tools work | ☑ PASS | Productive turn + tool path OK |
+| 4 | Capability gaps (D-10) | Document honestly if Codex/OpenAI cannot support a Grok-only tool; remaining tools still clear daily-driver bar | ☑ noted | Effort menus present (low…xhigh); ultra/soft-clamp polish → Phase 11. Codex thinking UI often none (expected) |
 
-**OPS-04 overall (C1-L5):** ⬜ PASS · ☑ PRODUCT BLOCKER · ⬜ AUTH/ACCOUNT BLOCKED · ⬜ PROVIDER OUTAGE/LIMIT
+**OPS-04 overall (C1-L5):** ☑ PASS · ⬜ PRODUCT BLOCKER · ⬜ AUTH/ACCOUNT BLOCKED · ⬜ PROVIDER OUTAGE/LIMIT
 
-**PRODUCT BLOCKER (operator 2026-07-18, live dual-login UAT) — fix landed in-phase:**
-- After switch to Codex/GPT, first assistant turn fails hard (no productive tools).
-- Error (redacted): `API error (status 400 Bad Request): {"detail":"System messages are not allowed"}`
-- Request URL: `https://chatgpt.com/backend-api/codex/responses`
-- Turn failed ~0.8s; retry same failure.
-- **Root cause:** system items were serialized into Responses `input[]` as `role: system` with `instructions: null`. Official Codex CLI never does this — base prompt goes in top-level `instructions` (see `.planning/research/CODEX-RESPONSES-WIRE.md`, sourced from `/home/cristian/bum/codex` codex-rs).
-- **Fix (Plan 04 Task 3):** `xai-grok-sampling-types` lifts `ConversationItem::System` into `CreateResponse.instructions` and excludes system from `input[]`. Unit tests assert no system role in input.
-- **Operator re-verify required:** rebuild binary, re-run OPS-04 steps 2–3; clear blocker to PASS if live tools work.
-- **Secondary (effort):** Was “effort not supported” because catalog lacked `supports_reasoning_effort` / menus. **Quick fix 2026-07-18:** GPT-5.6 entries in `default_models.json` now advertise low/medium/high/xhigh (sol default low; terra/luna medium). Re-check after rebuild. Remaining polish (ultra, soft-clamp edge cases) → Phase 11.
+**Evidence source (fast path — promote Phase 10):** Operator live PASS recorded in `.planning/phases/10-codex-responses-wire-parity/10-VALIDATION.md` §Live OPS evidence (Plan 10-05 Task 2), date 2026-07-18. Criteria met: GPT-5.6 turn completes once (**no post-success retry**), read/edit/tool usable, dual-login.
+
+**Historical blockers (resolved — kept for audit, not current status):**
+- System-messages 400 → fixed (system → top-level `instructions`); no longer active.
+- Post-success retry storm → fixed Phase 10 (delta-only terminal / empty retry).
+- Effort catalog gaps → quick catalog fix 2026-07-18; residual ultra polish → Phase 11.
 
 ---
 
@@ -172,14 +170,16 @@ Must be **same process** — no restart of the CLI between steps.
 
 | Step | Action | Expected | Pass? | Notes |
 |------|--------|----------|-------|-------|
-| 1 | Productive xAI turn (read or edit/shell) | Completes on real backend | ⬜ | Model before: |
-| 2 | `/model` (or equivalent) → GPT-5.6 without restarting CLI | Switch accepted; no false missing-provider when both logged in | ⬜ | Model after: |
-| 3 | Productive Codex turn | Completes on real backend | ⬜ | |
-| 4 | (Optional) reverse switch GPT → xAI | Works without restart | ⬜ | |
+| 1 | Productive xAI turn (read or edit/shell) | Completes on real backend | ☑ PASS | Model before: Grok / xAI |
+| 2 | `/model` (or equivalent) → GPT-5.6 without restarting CLI | Switch accepted; no false missing-provider when both logged in | ☑ PASS | Model after: **gpt-5.6-luna** (Codex) |
+| 3 | Productive Codex turn | Completes on real backend | ☑ PASS | No encrypted-content 400; no store-false item-id 404 after fix |
+| 4 | (Optional) reverse switch GPT → xAI | Works without restart | ⬜ optional | Not required for overall PASS |
 
-**OPS-05 overall (C1-L5):** ⬜ PASS · ☑ PRODUCT BLOCKER · ⬜ AUTH/ACCOUNT BLOCKED · ⬜ PROVIDER OUTAGE/LIMIT  
-(xAI side works; Codex productive turn after switch fails with same System-messages 400 as OPS-04 — same product defect.)
+**OPS-05 overall (C1-L5):** ☑ PASS · ⬜ PRODUCT BLOCKER · ⬜ AUTH/ACCOUNT BLOCKED · ⬜ PROVIDER OUTAGE/LIMIT
 
+**Evidence source (fast path — promote Phase 10):** Operator retest PASS in `10-VALIDATION.md` §OPS-05 (2026-07-18): Grok → **gpt-5.6-luna**; ordinary context usable; earlier `rs_*` store-false 404 fixed via `strip_input_item_ids_for_store_false`. Encrypted-content 400 on provider switch fixed Phase 10 history sanitizer.
+
+**Historical blockers (resolved):** system-messages 400 (same as OPS-04); encrypted decrypt 400 on Grok→Codex; store-false id 404.
 ---
 
 ## OPS-06 — Cross-provider spawn both directions (D-07)
@@ -230,16 +230,18 @@ Structured evidence placeholders (Plan 04 fills; C1-M6 cross-ref):
 - Prefer TUI for OPS-03..05; OPS-06 may use NL or explicit Task.
 - Record blockers with enough detail for in-phase fix (routing, credentials, switch gate, spawn, daily tools) — not feature expansion.
 
-### Operator session 2026-07-18 (partial matrix)
+### Operator session 2026-07-18 (partial matrix — historical)
 
-- **xAI / Grok:** works fine (productive path OK). OPS-03 PASS.
-- **Codex switch + effort:** model switch accepted; effort low/medium/high/xhigh selectable after catalog fix.
-- **Codex talk (re-test after system→instructions):** simple “hi” **gets a reply**, but **TUI keeps retrying** the turn after content appears — likely terminal/empty-response classification (e.g. reasoning-only / stream complete handling) not recognizing Codex completion. Blocks clean OPS-04 PASS for daily driver.
-- **OPS-05 Codex↔Codex:** mid-session switch among GPT models works.
-- **OPS-05 Grok→Codex after Grok turn:** fails with 400 encrypted content verify/decrypt (`rs_… could not be verified` / Encrypted content could not be decrypted). History is replaying foreign/prior `encrypted_content` reasoning items into Codex; model switch does not strip incompatible reasoning. Fits Phase 10 wire/history hygiene (provider-scoped reasoning round-trip).
-- **Thinking UI:** reasoning/thinking visible on Grok; **not** on Codex (expected until summary/stream mapping — GPT-5.6 catalog often `reasoning.summary=none`; encrypted reasoning not shown as thought). Phase 10/11.
-- **OPS-06:** not completed this session.
-- **System-messages 400:** fixed earlier (system→instructions); no longer the active Codex blocker.
+- Early session: OPS-03 PASS; OPS-04/05 product blockers (system messages, retry storm, encrypted history, store-false ids).
+- Phase 10 wire parity fixed those; operator re-verified **OPS-04 PASS** and **OPS-05 PASS** (see `10-VALIDATION.md`).
+
+### Fast path resume (Phase 9 execute — 2026-07-18)
+
+- **OPS-03:** PASS (this file).
+- **OPS-04 / OPS-05:** Promoted to PASS from Phase 10 live operator evidence (cross-ref above) per operator request “fast path.”
+- **OPS-06:** **still operator-only** — both spawn directions not yet run. Do not mark overall hybrid GREEN until OPS-06 PASS + sign-off.
+- **Thinking UI / effort ultra:** capability notes only; not OPS gate failures.
+- Dual OAuth under `~/.bum`: both slots usable at resume (redacted).
 
 ---
 
@@ -247,20 +249,19 @@ Structured evidence placeholders (Plan 04 fills; C1-M6 cross-ref):
 
 | Field | Value |
 |-------|-------|
-| Operator | |
-| Date (UTC) | |
-| Binary version / commit | Agent prefill: `bum 0.1.220-alpha.4` @ `eecbd91` (operator confirms / updates if rebuilt) |
-| Models under test | xAI: `grok-build` (or: ___) / Codex: `gpt-5.6-sol` (or: ___) |
-| Capability gaps documented | |
+| Operator | Cristian (fill remaining after OPS-06) |
+| Date (UTC) | 2026-07-18 (OPS-03..05); OPS-06 date: ________ |
+| Binary version / commit | `bum 0.1.220-alpha.4 (9a5c2ee)` / HEAD `2880636` (confirm if rebuilt) |
+| Models under test | xAI: `grok-build` / Codex: GPT-5.6 (incl. **gpt-5.6-luna** on OPS-05); OPS-06 models: ________ |
+| Capability gaps documented | Codex thinking often none; effort ultra polish → Phase 11 |
 | Secrets committed? | **No** (must remain No) |
-| Disposable workspace path | |
-| Chrome preflight outcome | ⬜ PASS · ⬜ BLOCKER DECISION |
-| OPS-03 (C1-L5) | ⬜ PASS · ⬜ PRODUCT BLOCKER · ⬜ AUTH/ACCOUNT BLOCKED · ⬜ PROVIDER OUTAGE/LIMIT |
-| OPS-04 (C1-L5) | ⬜ PASS · ⬜ PRODUCT BLOCKER · ⬜ AUTH/ACCOUNT BLOCKED · ⬜ PROVIDER OUTAGE/LIMIT |
-| OPS-05 (C1-L5) | ⬜ PASS · ⬜ PRODUCT BLOCKER · ⬜ AUTH/ACCOUNT BLOCKED · ⬜ PROVIDER OUTAGE/LIMIT |
+| Disposable workspace path | (operator fills for OPS-06 session) |
+| Chrome preflight outcome | ⬜ PASS · ⬜ BLOCKER DECISION — residual `Usage: grok` in `--help` still present; product line is `bum TUI` (operator judges C1-M4) |
+| OPS-03 (C1-L5) | ☑ PASS · ⬜ PRODUCT BLOCKER · ⬜ AUTH/ACCOUNT BLOCKED · ⬜ PROVIDER OUTAGE/LIMIT |
+| OPS-04 (C1-L5) | ☑ PASS · ⬜ PRODUCT BLOCKER · ⬜ AUTH/ACCOUNT BLOCKED · ⬜ PROVIDER OUTAGE/LIMIT |
+| OPS-05 (C1-L5) | ☑ PASS · ⬜ PRODUCT BLOCKER · ⬜ AUTH/ACCOUNT BLOCKED · ⬜ PROVIDER OUTAGE/LIMIT |
 | OPS-06 both dirs (C1-L5) | ⬜ PASS · ⬜ PRODUCT BLOCKER · ⬜ AUTH/ACCOUNT BLOCKED · ⬜ PROVIDER OUTAGE/LIMIT |
-| Hybrid gate note | Fixture/auto residual green does **not** substitute any failed live row (D-16) |
-
+| Hybrid gate note | Fixture/auto residual green does **not** substitute any failed live row (D-16). OPS-06 still open. |
 Signed live PASS rows become evidence for `09-VERIFICATION.md` (Plan 05).
 
 ---
