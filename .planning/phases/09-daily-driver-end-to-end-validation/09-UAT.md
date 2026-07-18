@@ -11,6 +11,25 @@
 **Preflight helper (non-secret):**  
 `.planning/phases/09-daily-driver-end-to-end-validation/scripts/uat-preflight.sh`
 
+### Agent preflight notes (Plan 04 Task 1 — not live PASS)
+
+| Field | Value (agent-filled; redacted env only) |
+|-------|----------------------------------------|
+| Preflight run (UTC) | 2026-07-18T04:29:35Z |
+| Binary path | `target/debug/bum` (executable) |
+| Binary version | `bum 0.1.220-alpha.4 (eecbd91)` |
+| Git commit (short) | `eecbd91` |
+| Git commit (full) | `eecbd9106d03b1eb5d6941ee070db06ff7257bba` |
+| `uat-preflight.sh` secret gates | PASSED (no tracked auth.json / credential basenames; phase-diff clean of secret shapes) |
+| Automated residual (this run) | GREEN — `p9_` (1), `p6_dual_login` (3), list both `p7_isolation_*` dirs then aggregate `p7_isolation` (4), `home_isolation` (1) |
+| `~/.bum` auth.json | **absent** — dual OAuth not yet present (operator must complete P4–P6) |
+| Live OPS marks | **none** — agent does not mark OPS-03..06 PASS (D-15, D-16) |
+| Chrome sample (informational only) | `--help` head shows product line `bum TUI` but also residual `Usage: grok` / `~/.grok` example chrome — **operator judges** C1–C3 PASS vs BLOCKER DECISION (C1-M4); agent does not auto-pass |
+
+**Outcome taxonomy (C1-L5 — HARD for every OPS overall row):** use exactly one of  
+`PASS` · `PRODUCT BLOCKER` · `AUTH/ACCOUNT BLOCKED` · `PROVIDER OUTAGE/LIMIT`  
+Only **PASS** feeds Plan 05 hybrid GREEN. Do not collapse outage/auth into PASS or into PRODUCT BLOCKER without evidence. Fixture/auto residual green never substitutes live PASS (D-16).
+
 ---
 
 ## Disposable workspace (C1-M3 — required)
@@ -52,13 +71,13 @@ Run before any OPS row. Prefer `scripts/uat-preflight.sh` to print steps + run s
 
 | Step | Action | Expected | Pass? | Notes |
 |------|--------|----------|-------|-------|
-| P1 | `cargo build -p xai-grok-pager-bin` (or use already-built binary) | Binary at `target/debug/bum` (or installed `bum`) | ⬜ | Record commit SHA: |
+| P1 | `cargo build -p xai-grok-pager-bin` (or use already-built binary) | Binary at `target/debug/bum` (or installed `bum`) | ⬜ | Agent: binary ready at `target/debug/bum` — commit `eecbd91` / `bum 0.1.220-alpha.4` (operator still checks Pass?) |
 | P2 | Network + xAI account + ChatGPT/Codex account usable | IdP + API reachable | ⬜ | |
 | P3 | Optional isolation: `export BUM_HOME="$(mktemp -d /tmp/bum-uat-home-XXXXXX)"` **or** use real `~/.bum` | Credentials only under product home | ⬜ | Path: |
 | P4 | `./target/debug/bum login` (xAI default) | Login succeeds; slot usable | ⬜ | |
 | P5 | `./target/debug/bum login --provider codex` | Login succeeds; Codex slot usable | ⬜ | |
 | P6 | `./target/debug/bum auth status` | Both providers **usable** — **no token dump** in terminal notes or this file | ⬜ | Redacted only |
-| P7 | Record binary version / git commit | Traceable evidence for sign-off (D-09) | ⬜ | |
+| P7 | Record binary version / git commit | Traceable evidence for sign-off (D-09) | ⬜ | Agent prefill: `bum 0.1.220-alpha.4` @ `eecbd91` (full `eecbd9106d03b1eb5d6941ee070db06ff7257bba`) |
 
 ---
 
@@ -117,7 +136,8 @@ P=.planning/phases/09-daily-driver-end-to-end-validation
 | 2 | Ask agent to **read** a real file in disposable workspace | Tool succeeds on **real** backend (not fixture mock) | ⬜ | File: |
 | 3 | **Edit** or **shell** one productive change in disposable workspace | Succeeds on real backend | ⬜ | |
 
-**OPS-03 overall:** ⬜ PASS · ⬜ FAIL · ⬜ BLOCKED (network/auth)
+**OPS-03 overall (C1-L5):** ⬜ PASS · ⬜ PRODUCT BLOCKER · ⬜ AUTH/ACCOUNT BLOCKED · ⬜ PROVIDER OUTAGE/LIMIT  
+(Do not mark PASS without live backend evidence. Re-auth before PRODUCT BLOCKER on token expiry.)
 
 ---
 
@@ -132,7 +152,7 @@ P=.planning/phases/09-daily-driver-end-to-end-validation
 | 3 | **Edit** or **shell** productive change as supported | Daily-driver tools work | ⬜ | |
 | 4 | Capability gaps (D-10) | Document honestly if Codex/OpenAI cannot support a Grok-only tool; remaining tools still clear daily-driver bar | ⬜ | Gaps: |
 
-**OPS-04 overall:** ⬜ PASS · ⬜ FAIL · ⬜ BLOCKED
+**OPS-04 overall (C1-L5):** ⬜ PASS · ⬜ PRODUCT BLOCKER · ⬜ AUTH/ACCOUNT BLOCKED · ⬜ PROVIDER OUTAGE/LIMIT
 
 ---
 
@@ -147,7 +167,7 @@ Must be **same process** — no restart of the CLI between steps.
 | 3 | Productive Codex turn | Completes on real backend | ⬜ | |
 | 4 | (Optional) reverse switch GPT → xAI | Works without restart | ⬜ | |
 
-**OPS-05 overall:** ⬜ PASS · ⬜ FAIL · ⬜ BLOCKED
+**OPS-05 overall (C1-L5):** ⬜ PASS · ⬜ PRODUCT BLOCKER · ⬜ AUTH/ACCOUNT BLOCKED · ⬜ PROVIDER OUTAGE/LIMIT
 
 ---
 
@@ -159,35 +179,37 @@ Structured evidence placeholders (Plan 04 fills; C1-M6 cross-ref):
 
 ### Direction A — Grok parent → Codex child
 
-| Field | Value |
-|-------|-------|
-| Parent model | |
-| Child model | |
-| Effort | |
+| Field (C1-M6) | Value (operator fills; leave blank until live) |
+|---------------|-----------------------------------------------|
+| parent_model | |
+| child_model | |
+| effort | |
 | Spawn path (NL / Task) | |
-| Result returned to parent? | ⬜ yes · ⬜ no |
-| Parent model after child | |
-| Pass? | ⬜ |
+| result_returned | ⬜ yes · ⬜ no (start-without-return is **not** PASS) |
+| parent_model_after | (must match parent_model for PASS) |
+| error_class | if failed: PRODUCT BLOCKER / AUTH/ACCOUNT BLOCKED / PROVIDER OUTAGE/LIMIT |
+| Outcome | ⬜ PASS · ⬜ PRODUCT BLOCKER · ⬜ AUTH/ACCOUNT BLOCKED · ⬜ PROVIDER OUTAGE/LIMIT |
 
 ### Direction B — Codex parent → Grok child
 
-| Field | Value |
-|-------|-------|
-| Parent model | |
-| Child model | |
-| Effort | |
+| Field (C1-M6) | Value (operator fills; leave blank until live) |
+|---------------|-----------------------------------------------|
+| parent_model | |
+| child_model | |
+| effort | |
 | Spawn path (NL / Task) | |
-| Result returned to parent? | ⬜ yes · ⬜ no |
-| Parent model after child | |
-| Pass? | ⬜ |
+| result_returned | ⬜ yes · ⬜ no (start-without-return is **not** PASS) |
+| parent_model_after | (must match parent_model for PASS) |
+| error_class | if failed: PRODUCT BLOCKER / AUTH/ACCOUNT BLOCKED / PROVIDER OUTAGE/LIMIT |
+| Outcome | ⬜ PASS · ⬜ PRODUCT BLOCKER · ⬜ AUTH/ACCOUNT BLOCKED · ⬜ PROVIDER OUTAGE/LIMIT |
 
 | Step | Action | Expected | Pass? | Notes |
 |------|--------|----------|-------|-------|
 | 1 | Parent Grok → child Codex (NL or Task + model + effort) | Child completes; results return; parent model unchanged | ⬜ | |
 | 2 | Parent Codex → child Grok | Same | ⬜ | |
 
-**OPS-06 overall:** ⬜ PASS · ⬜ FAIL · ⬜ BLOCKED  
-(Requires **both** direction rows PASS.)
+**OPS-06 overall (C1-L5):** ⬜ PASS · ⬜ PRODUCT BLOCKER · ⬜ AUTH/ACCOUNT BLOCKED · ⬜ PROVIDER OUTAGE/LIMIT  
+(Requires **both** directions PASS with result_returned=yes and parent_model_after matching parent_model.)
 
 ---
 
@@ -205,16 +227,16 @@ Structured evidence placeholders (Plan 04 fills; C1-M6 cross-ref):
 |-------|-------|
 | Operator | |
 | Date (UTC) | |
-| Binary version / commit | |
+| Binary version / commit | Agent prefill: `bum 0.1.220-alpha.4` @ `eecbd91` (operator confirms / updates if rebuilt) |
 | Models under test | xAI: `grok-build` (or: ___) / Codex: `gpt-5.6-sol` (or: ___) |
 | Capability gaps documented | |
 | Secrets committed? | **No** (must remain No) |
 | Disposable workspace path | |
 | Chrome preflight outcome | ⬜ PASS · ⬜ BLOCKER DECISION |
-| OPS-03 | ⬜ PASS · ⬜ FAIL |
-| OPS-04 | ⬜ PASS · ⬜ FAIL |
-| OPS-05 | ⬜ PASS · ⬜ FAIL |
-| OPS-06 both dirs | ⬜ PASS · ⬜ FAIL |
+| OPS-03 (C1-L5) | ⬜ PASS · ⬜ PRODUCT BLOCKER · ⬜ AUTH/ACCOUNT BLOCKED · ⬜ PROVIDER OUTAGE/LIMIT |
+| OPS-04 (C1-L5) | ⬜ PASS · ⬜ PRODUCT BLOCKER · ⬜ AUTH/ACCOUNT BLOCKED · ⬜ PROVIDER OUTAGE/LIMIT |
+| OPS-05 (C1-L5) | ⬜ PASS · ⬜ PRODUCT BLOCKER · ⬜ AUTH/ACCOUNT BLOCKED · ⬜ PROVIDER OUTAGE/LIMIT |
+| OPS-06 both dirs (C1-L5) | ⬜ PASS · ⬜ PRODUCT BLOCKER · ⬜ AUTH/ACCOUNT BLOCKED · ⬜ PROVIDER OUTAGE/LIMIT |
 | Hybrid gate note | Fixture/auto residual green does **not** substitute any failed live row (D-16) |
 
 Signed live PASS rows become evidence for `09-VERIFICATION.md` (Plan 05).
