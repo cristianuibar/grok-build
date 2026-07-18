@@ -69,6 +69,38 @@ clean review.
 check returned `GROK_JSON_READY` with `stopReason: EndTurn` under the corrected defaults.
 **Source:** Phase 10 cross-AI review orchestration, 2026-07-18.
 
+### Split large source reviews into focused evidence slices
+
+The full Phase 10 source corpus exceeded the effective response capacity of external review lanes,
+but focused plan/source slices produced usable findings. Treat a focused review as scoped evidence,
+record unavailable whole-corpus attempts explicitly, and independently verify each recommendation
+against the source before revising plans.
+
+**Context:** Focused Claude and Grok lanes exposed test, late-response, outbound-header, and
+pre-compaction recovery gaps; one Grok suggestion about a single switch seam was rejected after
+source verification showed a late-response race.
+**Source:** Phase 10 cross-AI review and source-verification pass, 2026-07-18.
+
+### Fully qualify Rust library tests when using `--exact`
+
+Rust test harness names include their module path. A bare test function combined with
+`cargo test --lib … -- --exact` can succeed while running zero tests. Plan commands must either
+use the fully qualified harness name or add a non-vacuous discovery assertion before execution.
+
+**Context:** The Phase 10 revision audit found false-green filters in Plans 01–04 and the
+consolidated Plan 05 suite.
+**Source:** Phase 10 command audit, 2026-07-18.
+
+### Prove the claim at the turn-loop boundary
+
+A helper-level recovery test can establish classification but cannot prove that the actual loop
+avoids compaction and resubmission. When the requirement names an outbound request count or a
+retry/compaction side effect, use an end-to-end mock turn that observes that boundary directly.
+
+**Context:** The encrypted-content 400 recovery initially targeted `handle_sampling_failure`, while
+the resubmit occurs later in the turn loop.
+**Source:** Phase 10 source audit, 2026-07-18.
+
 ## Patterns
 
 ### Forward a reviewer flag through the entire GSD path

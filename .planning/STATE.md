@@ -2,14 +2,14 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-current_phase: 9
-current_phase_name: Daily-driver end-to-end validation
-current_plan: 4 of 5 (live UAT) — hybrid Plan 05 blocked
-status: paused
-stopped_at: Phase 9 Plan 04 UAT partial — OPS-03 PASS; Codex retry + encrypted-history blockers → Phase 10
-last_updated: "2026-07-18T07:08:35.263Z"
+current_phase: 10
+current_phase_name: Codex Responses wire parity
+current_plan: 0 of 7 (ready to execute)
+status: planned
+stopped_at: Phase 10 plan convergence complete; Phase 9 live UAT remains explicitly non-green pending Phase 10 evidence
+last_updated: "2026-07-18T07:58:40Z"
 last_activity: 2026-07-18
-last_activity_desc: Phase 10 wire-parity plan graph, pre-execution learnings, and cross-AI review setup
+last_activity_desc: Phase 10 converged after focused Claude/Grok evidence, source verification, and a fresh plan audit
 progress:
   total_phases: 12
   completed_phases: 8
@@ -24,18 +24,18 @@ progress:
 See: .planning/PROJECT.md (updated 2026-07-17)
 
 **Core value:** One CLI (`bum`) can log into both xAI and Codex and freely switch between Grok and GPT-5.6 models in a real coding session — including cross-provider subagent orchestration.
-**Current focus:** Phase 9 UAT incomplete — start **Phase 10** (Codex wire/history/stream) then re-close OPS-04..06
+**Current focus:** Phase 10 is ready to execute; Phase 9 UAT remains non-green until the Phase 10 OPS-04/OPS-05 live evidence is recorded.
 
 ## Current Position
 
-Phase: 9 of 12 (Daily-driver end-to-end validation) — plans 1–3 done; Plan 04 UAT partial
-Plan: 4 of 5
-Status: Paused — human UAT + Codex product blockers
-Last activity: 2026-07-18 — Phase 10 wire-parity plan graph, pre-execution learnings, and cross-AI review setup
-Current Plan: 4 of 5 (live UAT) — hybrid Plan 05 blocked
+Phase: 10 of 12 (Codex Responses wire parity) — seven plans converged
+Plan: 0 of 7
+Status: Ready to execute — Phase 9 live UAT remains blocked only on honest post-fix evidence
+Last activity: 2026-07-18 — Phase 10 plans converged after external-review evidence and fresh source audit
+Current Plan: 0 of 7 (Wave 1 ready)
 Total Plans in Phase: 7
 
-Progress: [█████████░] 90% (phase 9) · milestone now planned through Phase 12
+Progress: [█████████░] Phase 9 remains 3/5 summaries; Phase 10 is planned through Wave 5
 
 ## Performance Metrics
 
@@ -119,12 +119,12 @@ Progress: [█████████░] 90% (phase 9) · milestone now planne
 
 ## Session
 
-**Last session:** 2026-07-18 (Phase 10 planning and review setup in progress)
-**Stopped at:** Plan 04 partial UAT; Phase 10 has seven internally checked plans and awaits completed cross-AI review before execution; see `09-SESSION-HANDOFF.md` and `10-PLANNING-LEARNINGS.md`
-**Resume file:** `.planning/phases/09-daily-driver-end-to-end-validation/09-SESSION-HANDOFF.md`
+**Last session:** 2026-07-18 (Phase 10 plan convergence complete)
+**Stopped at:** Phase 10 is ready to execute; Phase 9's partial UAT remains intentionally unclosed; see `10-REVIEWS.md` and `10-PLANNING-LEARNINGS.md`
+**Resume file:** `.planning/phases/10-codex-responses-wire-parity/10-REVIEWS.md`
 **Next:**
 
-1. **New session:** complete the recorded cross-AI review, then `/gsd-execute-phase 10` — Codex Responses wire parity
+1. **New session:** `/gsd-execute-phase 10` — Codex Responses wire parity, starting with independent Wave 1 Plans 01 and 03
 2. Phase 10 must-haves: fix post-reply retry storm; strip/omit foreign `encrypted_content` on provider switch; broaden encrypted-error match (`encrypted content` phrase)
 3. Optional Phase 10/11: Codex thinking/summary UI; ultra effort
 4. Re-run live OPS-04..06 → sign-off → Plan 04 Task 3 + Plan 05 hybrid close
