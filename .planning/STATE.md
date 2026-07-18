@@ -6,12 +6,12 @@ current_phase: 9
 current_phase_name: Daily-driver end-to-end validation
 current_plan: 4
 status: paused
-stopped_at: "Plan 04 Task 2 human UAT checkpoint — dual OAuth not yet present under ~/.bum"
-last_updated: "2026-07-18T04:31:00Z"
+stopped_at: "Phase 9 Plan 04 UAT partial — OPS-03 PASS; Codex retry + encrypted-history blockers → Phase 10"
+last_updated: "2026-07-18T06:00:00Z"
 last_activity: 2026-07-18
-last_activity_desc: "Plan 04 Task 1 preflight complete (fa887a3); awaiting live dual-login UAT"
+last_activity_desc: "Session wrap: Codex system→instructions + effort catalog shipped; UAT findings recorded; hand off to Phase 10"
 progress:
-  total_phases: 9
+  total_phases: 12
   completed_phases: 8
   total_plans: 50
   completed_plans: 44
@@ -24,18 +24,18 @@ progress:
 See: .planning/PROJECT.md (updated 2026-07-17)
 
 **Core value:** One CLI (`bum`) can log into both xAI and Codex and freely switch between Grok and GPT-5.6 models in a real coding session — including cross-provider subagent orchestration.
-**Current focus:** Phase 9 — Daily-driver end-to-end validation (Plan 04 live UAT next)
+**Current focus:** Phase 9 UAT incomplete — start **Phase 10** (Codex wire/history/stream) then re-close OPS-04..06
 
 ## Current Position
 
-Phase: 9 of 9 (Daily-driver end-to-end validation)
+Phase: 9 of 12 (Daily-driver end-to-end validation) — plans 1–3 done; Plan 04 UAT partial
 Plan: 4 of 5
-Status: Paused — blocking human UAT
-Last activity: 2026-07-18 — Plan 04 Task 1 preflight GREEN (`fa887a3`); residual p9_/p6_dual_login/p7_isolation/home_isolation green
-Current Plan: 4 of 5
+Status: Paused — human UAT + Codex product blockers
+Last activity: 2026-07-18 — system→instructions (`765b9a0`), effort menus (`638e8e8`), live UAT notes
+Current Plan: 4 of 5 (live UAT) — hybrid Plan 05 blocked
 Total Plans in Phase: 5
 
-Progress: [█████████░] 90%
+Progress: [█████████░] 90% (phase 9) · milestone now planned through Phase 12
 
 ## Performance Metrics
 
@@ -88,6 +88,12 @@ Progress: [█████████░] 90%
 - [Phase 9]: Plan 03: Credential path guards use scoped basenames only — not bare *token* (C3-L1)
 - [Phase 9]: Plan 01: single p9_ composition residual (dual-slot + empty-Codex login-hint); not dual p7 clones (C1-M1)
 - [Phase 9]: Plan 01: skip optional p9_route_metadata; host/slot stays p7_resolve_route; bearer stays p7_isolation_* (C1-L1)
+- [Phase 9]: Live UAT OPS-03 PASS (Grok); dual login + effort menus work after catalog fix
+- [Phase 9]: Codex system-role in input → 400 fixed: lift System → `instructions` (match codex-rs)
+- [Phase 9]: Remaining P0 Codex: (1) TUI retries after successful Codex reply — empty/terminal classification; (2) Grok→Codex history replays foreign `encrypted_content` → 400 decrypt; fix in Phase 10
+- [Phase 9]: Thinking UI Codex-only missing — Phase 10/11 (summary often none; encrypted not rendered)
+- [Phase 9]: Hybrid GREEN blocked until OPS-04..06 live PASS after Phase 10; do not fixture-waive (D-16)
+- [Milestone]: Phases 10–12 added: wire parity, effort polish, attribution depth — research in `.planning/research/CODEX-RESPONSES-WIRE.md`
 
 ### Phase 8 (Quiet fork & rebrand polish)
 
@@ -108,12 +114,12 @@ Progress: [█████████░] 90%
 
 ## Session
 
-**Last session:** 2026-07-18
-**Stopped at:** Plan 04 — OPS-03 PASS; OPS-04 PRODUCT BLOCKER fixed in code (`765b9a0` system→instructions); **operator re-UAT of Codex required**
-**Resume file:** None
+**Last session:** 2026-07-18 (wrapped clean)
+**Stopped at:** Plan 04 partial UAT; Phase 10 next for Codex stream/history; see `09-SESSION-HANDOFF.md`
+**Resume file:** `.planning/phases/09-daily-driver-end-to-end-validation/09-SESSION-HANDOFF.md`
 **Next:**
 
-1. Rebuild done: use `./target/debug/bum` (includes Codex wire fix)
-2. Re-run OPS-04 (and OPS-05 Codex half, OPS-06) on live dual login; update `09-UAT.md`
-3. Effort UX gap deferred to **Phase 11**; wire depth **Phase 10**; attribution **Phase 12**
-4. On all OPS PASS + sign-off: resume with **`approved`** → Task 3 finalize + Plan 05
+1. **New session:** `/gsd-plan-phase 10` or `/gsd-discuss-phase 10` — Codex Responses wire parity
+2. Phase 10 must-haves: fix post-reply retry storm; strip/omit foreign `encrypted_content` on provider switch; broaden encrypted-error match (`encrypted content` phrase)
+3. Optional Phase 10/11: Codex thinking/summary UI; ultra effort
+4. Re-run live OPS-04..06 → sign-off → Plan 04 Task 3 + Plan 05 hybrid close

@@ -232,11 +232,14 @@ Structured evidence placeholders (Plan 04 fills; C1-M6 cross-ref):
 
 ### Operator session 2026-07-18 (partial matrix)
 
-- **xAI / Grok:** works fine (productive path OK).
-- **Codex switch:** model switch accepted; **effort levels not supported** (note as capability/UI gap).
-- **Codex talk:** every turn → 400 `System messages are not allowed` on `chatgpt.com/backend-api/codex/responses`.
-- **OPS-06:** not completed; Direction A (Grok→Codex child) and Direction B (Codex parent) expected blocked until system→`instructions` wire fix.
-- **Disposition options discussed:** (A) in-phase Plan 04 Task 3 product fix on Responses conversion, or (B) dedicated follow-on phase for Codex Responses wire compatibility — hybrid Phase 9 GREEN requires A (or equivalent) before OPS-04/05/06 can PASS.
+- **xAI / Grok:** works fine (productive path OK). OPS-03 PASS.
+- **Codex switch + effort:** model switch accepted; effort low/medium/high/xhigh selectable after catalog fix.
+- **Codex talk (re-test after system→instructions):** simple “hi” **gets a reply**, but **TUI keeps retrying** the turn after content appears — likely terminal/empty-response classification (e.g. reasoning-only / stream complete handling) not recognizing Codex completion. Blocks clean OPS-04 PASS for daily driver.
+- **OPS-05 Codex↔Codex:** mid-session switch among GPT models works.
+- **OPS-05 Grok→Codex after Grok turn:** fails with 400 encrypted content verify/decrypt (`rs_… could not be verified` / Encrypted content could not be decrypted). History is replaying foreign/prior `encrypted_content` reasoning items into Codex; model switch does not strip incompatible reasoning. Fits Phase 10 wire/history hygiene (provider-scoped reasoning round-trip).
+- **Thinking UI:** reasoning/thinking visible on Grok; **not** on Codex (expected until summary/stream mapping — GPT-5.6 catalog often `reasoning.summary=none`; encrypted reasoning not shown as thought). Phase 10/11.
+- **OPS-06:** not completed this session.
+- **System-messages 400:** fixed earlier (system→instructions); no longer the active Codex blocker.
 
 ---
 
