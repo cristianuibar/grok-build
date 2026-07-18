@@ -4,17 +4,17 @@ milestone: v1.0
 milestone_name: milestone
 current_phase: 10
 current_phase_name: Codex Responses wire parity
-current_plan: 1 of 7 (Plan 01 complete; Plan 06 compatibility next)
+current_plan: 2 of 7 (Plans 01 and 06 complete; Plan 07 fixture compatibility next)
 status: executing
-stopped_at: Phase 10 Plan 01 complete; advancing Plan 06 early to restore shell-build compatibility before shell-focused work
-last_updated: "2026-07-18T11:18:52+03:00"
+stopped_at: Phase 10 Plan 06 complete; advancing Plan 07 early so shell library tests compile before switch-safety work
+last_updated: "2026-07-18T11:20:00+03:00"
 last_activity: 2026-07-18
-last_activity_desc: Phase 10 Plan 01 completed with trusted Responses profile plumbing and verified sampler regressions
+last_activity_desc: Phase 10 Plan 06 completed; focused shell library compatibility check is green
 progress:
   total_phases: 12
   completed_phases: 8
   total_plans: 50
-  completed_plans: 45
+  completed_plans: 46
 ---
 
 # Project State
@@ -28,20 +28,20 @@ See: .planning/PROJECT.md (updated 2026-07-17)
 
 ## Current Position
 
-Phase: 10 of 12 (Codex Responses wire parity) — Plan 01 complete; compatibility work advanced before shell-focused plans
-Plan: 1 of 7
+Phase: 10 of 12 (Codex Responses wire parity) — Plans 01 and 06 complete; fixture compatibility advanced before shell tests
+Plan: 2 of 7
 Status: Executing — Phase 9 live UAT remains blocked only on honest post-fix evidence
-Last activity: 2026-07-18 — Plan 01 completed; independent review found only planned shell literal fallout
-Current Plan: 10-06 (compatibility-only shell constructors; pulled forward after 10-01)
+Last activity: 2026-07-18 — Plan 06 restored the shell library build with disabled-profile constructors
+Current Plan: 10-07 (fixture compatibility; pulled forward so Plan 10-03's shell tests compile)
 Total Plans in Phase: 7
 
-Progress: [█████████░] Phase 9 remains 3/5 summaries; Phase 10 is 1/7 complete through Wave 5
+Progress: [█████████░] Phase 9 remains 3/5 summaries; Phase 10 is 2/7 complete through Wave 5
 
 ## Performance Metrics
 
 **Velocity:**
 
-- Total plans completed: 45 SUMMARY files (phases 1–8 + 09-01 + 09-02 + 09-03 + 10-01)
+- Total plans completed: 46 SUMMARY files (phases 1–8 + 09-01 + 09-02 + 09-03 + 10-01 + 10-06)
 - Phase 5: 6 plans
 - Phase 6: 6 plans
 - Phase 7: 6 plans
@@ -61,7 +61,7 @@ Progress: [█████████░] Phase 9 remains 3/5 summaries; Phase 
 | 07 | 6/6 | complete — AGENT-01..06 |
 | 08 | 6/6 | complete — ID-02, OPS-01, OPS-02 |
 | 09 | 3/5 SUMMARY | 09-01 + 09-02 + 09-03; OPS-03..06 live still pending |
-| 10 | 1/7 | In progress — 10-01 typed profile complete; 10-06 compatibility next |
+| 10 | 2/7 | In progress — typed profile and shell constructor compatibility complete; 10-07 fixtures next |
 
 ---
 **Per-Plan Metrics:**
@@ -78,6 +78,7 @@ Progress: [█████████░] Phase 9 remains 3/5 summaries; Phase 
 | Phase 09 P03 | 12min | 2 tasks | 3 files |
 | Phase 09 P02 | 8min | 2 tasks | 2 files |
 | Phase 10 P01 | 11min | 3 tasks | 5 files |
+| Phase 10 P06 | 10min | 3 tasks | 7 files |
 
 ## Decisions
 
@@ -100,7 +101,7 @@ Progress: [█████████░] Phase 9 remains 3/5 summaries; Phase 
 ### Phase 10 planning and review protocol
 
 - [Phase 10]: Seven internally checked execution plans preserve a trust-gated Codex profile, terminal SSE reconstruction, narrow cross-provider encrypted-history sanitation, and honest live OPS-04/OPS-05 proof.
-- [Phase 10]: Adding the typed sampler profile makes existing full shell `SamplerConfig` literals field-incomplete; execute compatibility Plan 10-06 immediately after Plan 10-01 before shell-focused plans, while keeping the profile disabled everywhere.
+- [Phase 10]: Adding the typed sampler profile makes existing full shell `SamplerConfig` literals field-incomplete; Plans 10-06 and 10-07 must execute immediately after Plan 10-01 before shell-focused tests, while keeping the profile disabled everywhere.
 - [Process]: Grok research/review keeps web search enabled by default and uses a direct review prompt rather than `--permission-mode plan`; blank or cancelled output is an unavailable review lane, not approval. See `phases/10-codex-responses-wire-parity/10-PLANNING-LEARNINGS.md`.
 
 ### Phase 8 (Quiet fork & rebrand polish)
@@ -122,12 +123,12 @@ Progress: [█████████░] Phase 9 remains 3/5 summaries; Phase 
 
 ## Session
 
-**Last session:** 2026-07-18 (Phase 10 Plan 01 complete)
-**Stopped at:** Plan 10-01 is complete and independently reviewed; Plan 10-06 must restore shell constructor compatibility before Plan 10-03 can compile.
-**Resume file:** `.planning/phases/10-codex-responses-wire-parity/10-01-SUMMARY.md`
+**Last session:** 2026-07-18 (Phase 10 Plan 06 complete)
+**Stopped at:** Plan 10-06 restored production constructor compatibility; Plan 10-07 must update shell fixtures before Plan 10-03's library tests can compile.
+**Resume file:** `.planning/phases/10-codex-responses-wire-parity/10-06-SUMMARY.md`
 **Next:**
 
-1. **Continue:** `/gsd-execute-phase 10` — execute Plan 10-06 next as the field-completeness prerequisite, then resume Plans 02/03
+1. **Continue:** `/gsd-execute-phase 10` — execute Plan 10-07 next as the fixture field-completeness prerequisite, then resume Plans 02/03
 2. Phase 10 must-haves: fix post-reply retry storm; strip/omit foreign `encrypted_content` on provider switch; broaden encrypted-error match (`encrypted content` phrase)
 3. Optional Phase 10/11: Codex thinking/summary UI; ultra effort
 4. Re-run live OPS-04..06 → sign-off → Plan 04 Task 3 + Plan 05 hybrid close
