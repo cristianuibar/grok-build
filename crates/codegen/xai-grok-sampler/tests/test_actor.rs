@@ -21,8 +21,8 @@ use tokio::net::TcpListener;
 use tokio::sync::{mpsc, oneshot};
 
 use xai_grok_sampler::{
-    ApiBackend, RequestId, RetryPolicy, SamplerActor, SamplerConfig, SamplingChannel,
-    SamplingErrorKind, SamplingEvent,
+    ApiBackend, RequestId, ResponsesWireProfile, RetryPolicy, SamplerActor, SamplerConfig,
+    SamplingChannel, SamplingErrorKind, SamplingEvent,
 };
 use xai_grok_sampling_types::{
     ConversationItem, ConversationRequest, DoomLoopRecoveryPolicy, UserItem,
@@ -78,6 +78,7 @@ fn test_config(base_url: String, model: &str) -> SamplerConfig {
         top_p: None,
         api_backend: ApiBackend::ChatCompletions,
         auth_scheme: Default::default(),
+        responses_wire_profile: ResponsesWireProfile::Disabled,
         extra_headers: IndexMap::new(),
         context_window: 128_000,
         force_http1: false,
