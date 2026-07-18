@@ -1172,6 +1172,42 @@ impl SamplingClient {
             includes.push(rs::IncludeEnum::ReasoningEncryptedContent);
         }
 
+        if self.defaults.responses_wire_profile == ResponsesWireProfile::TrustedCodex {
+            Self::apply_trusted_codex_response_profile(&mut request.inner);
+        }
+
+        Ok(())
+    }
+
+    /// Apply the trusted first-party Codex policy after generic conversion.
+    ///
+    /// Route trust belongs to the shell; this method only shapes a request
+    /// after that caller-owned capability has reached the sampler.
+    fn apply_trusted_codex_response_profile(request: &mut rs::CreateResponse) {
+        request.store = Some(false);
+        request.previous_response_id = None;
+
+        if let Some(reasoning) = request.reasoning.as_mut() {
+            reasoning.summary = None;
+        }
+
+        if request
+            .tools
+            .as_ref()
+            .is_some_and(|tools| !tools.is_empty())
+        {
+            request.tool_choice = Some(rs::ToolChoiceParam::Mode(rs::ToolChoiceOptions::Auto));
+            request.parallel_tool_calls = Some(true);
+        } else {
+            request.tool_choice = None;
+            request.parallel_tool_calls = None;
+        }
+    }
+
+    /// Apply Responses defaults for an SSE request without starting I/O.
+    fn apply_response_stream_defaults(&self, request: &mut CreateResponseWrapper) -> Result<()> {
+        self.apply_response_defaults(request)?;
+        request.inner.stream = Some(true);
         Ok(())
     }
 
@@ -1314,10 +1350,7 @@ impl SamplingClient {
         Option<ResponseModelMetadata>,
         Option<crate::doom_loop::DoomLoopSignalCollector>,
     )> {
-        self.apply_response_defaults(&mut request)?;
-
-        // Enable streaming
-        request.inner.stream = Some(true);
+        self.apply_response_stream_defaults(&mut request)?;
 
         let x_grok_conv_id = request.x_grok_conv_id.as_deref().unwrap_or_default();
         let x_grok_req_id = request.x_grok_req_id.as_deref().unwrap_or_default();
@@ -2085,7 +2118,7 @@ impl SamplingClient {
 mod tests {
     use super::*;
     use indexmap::IndexMap;
-    use xai_grok_sampling_types::types::ChatRequestMessage;
+    use xai_grok_sampling_types::{ConversationItem, ToolSpec, types::ChatRequestMessage};
 
     fn minimal_config() -> SamplerConfig {
         SamplerConfig {
@@ -2286,6 +2319,102 @@ mod tests {
         assert_eq!(trusted.base_url, "https://example.test");
         assert_eq!(trusted.defaults.auth_scheme, AuthScheme::Bearer);
         assert!(trusted.default_headers.contains_key(AUTHORIZATION));
+    }
+
+    fn serialized_response_stream_request(
+        profile: ResponsesWireProfile,
+        request: ConversationRequest,
+        previous_response_id: Option<&str>,
+    ) -> serde_json::Value {
+        let client = SamplingClient::new(SamplerConfig {
+            api_backend: ApiBackend::Responses,
+            responses_wire_profile: profile,
+            ..minimal_config()
+        })
+        .expect("client should build");
+        let mut response: rs::CreateResponse = (&request).into();
+        response.previous_response_id = previous_response_id.map(str::to_owned);
+        let mut wrapper = CreateResponseWrapper::new(response);
+
+        client
+            .apply_response_stream_defaults(&mut wrapper)
+            .expect("stream defaults should apply");
+        serde_json::to_value(&wrapper.inner).expect("Responses request should serialize")
+    }
+
+    fn responses_history_with_tools() -> ConversationRequest {
+        ConversationRequest::from_items(vec![
+            ConversationItem::system("Base agent prompt."),
+            ConversationItem::user("first user turn"),
+            ConversationItem::assistant("first assistant turn"),
+            ConversationItem::user("latest user turn"),
+        ])
+        .with_model("gpt-5.6-sol")
+        .with_tools(vec![ToolSpec {
+            name: "read_file".to_string(),
+            description: Some("Read a file from the workspace.".to_string()),
+            parameters: serde_json::json!({"type": "object"}),
+        }])
+    }
+
+    #[test]
+    fn trusted_codex_responses_profile_on_off_serializes_exactly() {
+        let trusted = serialized_response_stream_request(
+            ResponsesWireProfile::TrustedCodex,
+            responses_history_with_tools(),
+            Some("resp_stale"),
+        );
+        let trusted_input = trusted["input"]
+            .as_array()
+            .expect("input should be an array");
+
+        assert_eq!(trusted["store"], false);
+        assert_eq!(trusted["stream"], true);
+        assert!(
+            trusted["include"]
+                .as_array()
+                .is_some_and(|includes| includes
+                    .iter()
+                    .any(|value| { value == "reasoning.encrypted_content" })),
+            "trusted request must include encrypted reasoning content: {trusted}"
+        );
+        assert!(trusted.get("previous_response_id").is_none());
+        assert_eq!(trusted["instructions"], "Base agent prompt.");
+        assert_eq!(
+            trusted_input.len(),
+            3,
+            "complete non-system history must remain"
+        );
+        assert!(trusted_input.iter().all(|item| {
+            item.get("role").and_then(serde_json::Value::as_str) != Some("system")
+        }));
+        assert!(trusted["reasoning"].get("summary").is_none());
+        assert_eq!(trusted["tool_choice"], "auto");
+        assert_eq!(trusted["parallel_tool_calls"], true);
+
+        let trusted_without_tools = serialized_response_stream_request(
+            ResponsesWireProfile::TrustedCodex,
+            ConversationRequest::from_items(vec![ConversationItem::user("tool-free turn")]),
+            None,
+        );
+        assert!(trusted_without_tools.get("tool_choice").is_none());
+        assert!(trusted_without_tools.get("parallel_tool_calls").is_none());
+
+        let generic = serialized_response_stream_request(
+            ResponsesWireProfile::Disabled,
+            responses_history_with_tools(),
+            None,
+        );
+        assert_eq!(generic["store"], false);
+        assert_eq!(generic["stream"], true);
+        assert!(generic["include"].as_array().is_some_and(|includes| {
+            includes
+                .iter()
+                .any(|value| value == "reasoning.encrypted_content")
+        }));
+        assert_eq!(generic["reasoning"]["summary"], "concise");
+        assert!(generic.get("tool_choice").is_none());
+        assert!(generic.get("parallel_tool_calls").is_none());
     }
 
     #[test]
