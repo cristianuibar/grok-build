@@ -777,6 +777,170 @@ fn responses_config(base_url: String, doom_loop: Option<DoomLoopRecoveryPolicy>)
     cfg
 }
 
+/// Builds a Responses stream whose completed terminal payload deliberately
+/// lacks an assistant output item. `visible_text` models the delta-only
+/// response shape that previously reached the actor as an empty completion.
+fn responses_terminal_without_output_events(visible_text: Option<&str>) -> Vec<SseEvent> {
+    let mut events = vec![SseEvent::data(
+        json!({
+            "type": "response.created",
+            "sequence_number": 0,
+            "response": {
+                "id": "resp_test",
+                "object": "response",
+                "created_at": 1234567890,
+                "model": "test-model",
+                "status": "in_progress",
+                "output": []
+            }
+        })
+        .to_string(),
+    )];
+
+    if let Some(text) = visible_text {
+        events.push(SseEvent::data(
+            json!({
+                "type": "response.output_text.delta",
+                "sequence_number": 1,
+                "item_id": "msg_test",
+                "output_index": 0,
+                "content_index": 0,
+                "delta": text
+            })
+            .to_string(),
+        ));
+    }
+
+    events.push(SseEvent::data(
+        json!({
+            "type": "response.completed",
+            "sequence_number": 2,
+            "response": {
+                "id": "resp_test",
+                "object": "response",
+                "created_at": 1234567890,
+                "model": "test-model",
+                "status": "completed",
+                "output": [],
+                "usage": {
+                    "input_tokens": 10,
+                    "output_tokens": 1,
+                    "total_tokens": 11,
+                    "input_tokens_details": { "cached_tokens": 0 },
+                    "output_tokens_details": { "reasoning_tokens": 0 }
+                }
+            }
+        })
+        .to_string(),
+    ));
+    events.push(SseEvent::data("[DONE]"));
+    events
+}
+
+/// A visible Responses delta followed by an output-less completed event is a
+/// successful turn, not an empty response retry. The request counter guards
+/// against reintroducing a post-success retry storm.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn delta_only_terminal_empty_completes_once_without_retry() {
+    let counter = Arc::new(AtomicU32::new(0));
+    let counter_handler = Arc::clone(&counter);
+    let app = Router::new().route(
+        "/v1/responses",
+        post(move || {
+            let counter = Arc::clone(&counter_handler);
+            async move {
+                counter.fetch_add(1, Ordering::SeqCst);
+                let events = sse_events_to_axum(responses_terminal_without_output_events(Some(
+                    "visible text",
+                )));
+                Sse::new(stream::iter(
+                    events.into_iter().map(Ok::<_, std::convert::Infallible>),
+                ))
+            }
+        }),
+    );
+    let server = MockServer::spawn(app).await;
+    let (event_tx, mut event_rx) = mpsc::unbounded_channel();
+    let handle = SamplerActor::spawn(
+        responses_config(server.base_url(), None),
+        RetryPolicy::default(),
+        event_tx,
+    );
+
+    handle.submit(RequestId::from("req-delta-only"), user_request("hi"));
+    let events = drain_until_terminal(&mut event_rx, Duration::from_secs(10)).await;
+    server.shutdown();
+
+    match events.last().unwrap() {
+        SamplingEvent::Completed { response, .. } => {
+            assert_eq!(response.assistant_text(), "visible text");
+        }
+        other => panic!("expected Completed, got {other:?}"),
+    }
+    assert_eq!(
+        counter.load(Ordering::SeqCst),
+        1,
+        "no retry after visible text"
+    );
+    assert!(
+        !events
+            .iter()
+            .any(|event| matches!(event, SamplingEvent::Retrying { .. })),
+        "a visible completion must not enter Empty retry handling"
+    );
+}
+
+/// A response with neither deltas nor terminal output still reaches the
+/// existing bounded Empty retry path; the stream fallback must not mask this
+/// malformed upstream response.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn genuinely_empty_completed_response_retries_boundedly() {
+    let counter = Arc::new(AtomicU32::new(0));
+    let counter_handler = Arc::clone(&counter);
+    let app = Router::new().route(
+        "/v1/responses",
+        post(move || {
+            let counter = Arc::clone(&counter_handler);
+            async move {
+                counter.fetch_add(1, Ordering::SeqCst);
+                let events = sse_events_to_axum(responses_terminal_without_output_events(None));
+                Sse::new(stream::iter(
+                    events.into_iter().map(Ok::<_, std::convert::Infallible>),
+                ))
+            }
+        }),
+    );
+    let server = MockServer::spawn(app).await;
+    let (event_tx, mut event_rx) = mpsc::unbounded_channel();
+    let handle = SamplerActor::spawn(
+        responses_config(server.base_url(), None),
+        RetryPolicy::default(),
+        event_tx,
+    );
+
+    handle.submit(RequestId::from("req-genuinely-empty"), user_request("hi"));
+    let events = drain_until_terminal(&mut event_rx, Duration::from_secs(10)).await;
+    server.shutdown();
+
+    assert_eq!(
+        counter.load(Ordering::SeqCst),
+        2,
+        "the configured bounded Empty retry budget should make two attempts"
+    );
+    assert!(
+        events
+            .iter()
+            .any(|event| matches!(event, SamplingEvent::Retrying { .. })),
+        "a genuinely empty terminal response must still retry"
+    );
+    match events.last().unwrap() {
+        SamplingEvent::Failed { error, .. } => {
+            assert_eq!(error.kind, SamplingErrorKind::EmptyResponse);
+        }
+        other => panic!("expected bounded Empty failure, got {other:?}"),
+    }
+}
+
 /// Server-reported doom-loop triggers flow through the actor rung onto the
 /// completed response, without retries. The trigger is non-confident
 /// (`@response` channel), so the recovery — which resamples only confident
