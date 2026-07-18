@@ -9,7 +9,7 @@ use std::num::NonZeroU64;
 use std::path::PathBuf;
 use std::sync::Arc;
 use xai_grok_agent::prompt::skills::SkillsConfig;
-use xai_grok_sampler::{AuthScheme, SamplerConfig};
+use xai_grok_sampler::{AuthScheme, ResponsesWireProfile, SamplerConfig};
 use xai_grok_sampling_types::{
     CompactionAtTokens, CompactionsRemaining, REASONING_EFFORT_META_KEY,
     REASONING_EFFORTS_META_KEY, ReasoningEffort, ReasoningEffortOption,
@@ -5249,6 +5249,7 @@ pub fn sampling_config_for_model(
         top_p,
         api_backend,
         auth_scheme: credentials.auth_scheme,
+        responses_wire_profile: ResponsesWireProfile::Disabled,
         extra_headers,
         context_window: info.context_window.get(),
         client_version,

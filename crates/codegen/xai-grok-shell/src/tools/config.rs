@@ -1,6 +1,6 @@
 use crate::models;
 use serde::{Deserialize, Serialize};
-use xai_grok_sampler::SamplerConfig;
+use xai_grok_sampler::{ResponsesWireProfile, SamplerConfig};
 use xai_grok_tools::implementations::grok_build;
 use xai_grok_tools::registry::types::ToolConfig;
 
@@ -209,6 +209,7 @@ impl ShellToolsetConfig {
             top_p: None,
             api_backend: Default::default(),
             auth_scheme: Default::default(),
+            responses_wire_profile: ResponsesWireProfile::Disabled,
             extra_headers: indexmap::IndexMap::new(),
             context_window: 256_000,
             client_version: None,
