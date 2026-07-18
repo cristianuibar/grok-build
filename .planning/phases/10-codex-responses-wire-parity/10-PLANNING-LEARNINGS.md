@@ -1,16 +1,16 @@
 ---
 phase: 10
 slug: codex-responses-wire-parity
-status: pre-execution
+status: executing-uat
 captured: 2026-07-18
-scope: phase planning, review orchestration, and Grok delegation defaults
-formal_extraction: deferred until execution produces SUMMARY artifacts
+updated: 2026-07-18
+scope: planning + execution UAT + post-human gap fix
+formal_extraction: partial — full archive after Plan 05 close
 ---
 
-# Phase 10 Planning Learnings: Codex Responses Wire Parity
+# Phase 10 Learnings: Codex Responses Wire Parity
 
-This is a pre-execution record. The formal `10-LEARNINGS.md` extraction remains deferred because
-Phase 10 has no execution summaries yet.
+Planning record extended with execution/UAT learnings (2026-07-18).
 
 ## Decisions
 
@@ -117,6 +117,39 @@ When a Rust configuration type gains a field, update its core default, then prod
 then fixture literals so compilation and testing follow the dependency graph.
 
 **When to use:** Cross-crate Rust configuration changes.
+
+## Execution / UAT learnings (2026-07-18)
+
+### `store: false` requires stripping input item ids (not just encrypted_content)
+
+Clearing foreign `encrypted_content` on provider switch is necessary but not sufficient. Residual
+`rs_*` reasoning **ids** under `store: false` become server store lookups → live 404
+`Item with id 'rs_…' not found`. Official Codex strips ids in `prepare_response_items_for_request`.
+bum mirrors this via `strip_input_item_ids_for_store_false` on every Responses serialize.
+
+**Source:** Live OPS-05 failure; `~/bum/codex/codex-rs/core/src/client.rs`.
+
+### RefCell agent must not be held across `.await`
+
+`SessionActor.agent: RefCell<Agent>` panics (`RefCell already borrowed`) if `borrow_mut` spans an
+await while a concurrent turn re-enters. Clone `PromptContext` + `Arc<ToolBridge>`, drop borrow,
+await render, then install under a short `borrow_mut`.
+
+**Source:** `held_grok_response_after_codex_switch_is_sanitized` after identity re-render.
+
+### Cargo efficiency in this monorepo
+
+- One `TESTNAME` filter per `cargo test`; chain with `&&`.
+- Prefer leaf crates then shell `--lib` before shell integration tests.
+- Never two parallel full `xai-grok-shell` builds (target lock + 5–10 min).
+- Announce expected wall-clock so humans don't assume a hang.
+
+**Skill:** `~/.grok/skills/bum-workspace/SKILL.md`.
+
+### Model identity is label + rewrite, not routing alone
+
+Picker can show GPT while system prompt still says Grok. Fix: catalog `system_prompt_label`,
+re-render on model switch, drop hardcoded “released by xAI” for multi-provider honesty.
 **Source:** `10-01-PLAN.md`; `10-06-PLAN.md`; `10-07-PLAN.md`.
 
 ### Repair reconstruction before weakening retry policy

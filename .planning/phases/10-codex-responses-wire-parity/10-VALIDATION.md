@@ -126,10 +126,9 @@ Representative `test result: ok` lines from the consolidated run:
 | GPT-5.6 daily-driver turn completes once after Codex login | OPS-04 | Requires real dual-login session and actual service response | Rebuild `bum`; select `gpt-5.6-sol`; send `hi`; then read/edit a file; retain only redacted evidence and confirm no retry. |
 | Grok → GPT-5.6 session switch remains productive | OPS-05 | Requires real provider credentials and switched live history | In one real session use Grok, switch to `gpt-5.6-sol`, send `hi`, and confirm no encrypted-content 400 while ordinary context remains usable. |
 
-## Live OPS evidence (Plan 10-05 Task 2) — pending human
+## Live OPS evidence (Plan 10-05 Task 2)
 
-> **Status: non-pass / pending.** Automated fixtures are not live PASS (T-10-11). Do not mark Phase 9 or Phase 10 green from this section until both rows have real redacted dual-login evidence.  
-> **Secrets policy (T-10-12):** No tokens, auth files, account IDs, or raw secret-bearing transcripts. Redact everything except model IDs and categorical outcomes.  
+> **Secrets policy (T-10-12):** No tokens, auth files, account IDs, or raw secret-bearing transcripts.  
 > **Outage policy (T-10-13):** Auth, account, provider outage, or product failure must be recorded as an explicit non-pass class — never inferred PASS.
 
 ### Preflight (executor)
@@ -138,21 +137,21 @@ Representative `test result: ok` lines from the consolidated run:
 |------|--------|-------|
 | Consolidated automated suite (behavior) | **PASS** (26/26) | See table above |
 | `cargo fmt --all -- --check` | **FAIL** | Deferred hygiene; not a live-auth blocker |
-| `cargo build -p xai-grok-pager-bin` | **PASS** (2026-07-18) | Binary: `target/debug/bum` rebuilt after Phase 10 shell/pager link |
-| Dual OAuth sessions usable | **human** | Operator must confirm both xAI and Codex slots before live turns |
+| Dual OAuth sessions usable | **PASS** (operator 2026-07-18) | Both xAI and Codex slots usable; prompts to both work |
+| Post-fix binary rebuild | **pending operator retest** | Rebuild after store=false id-strip + identity label fix |
 
 ### OPS-04 — GPT-5.6 daily-driver turn (live)
 
 | Field | Value |
 |-------|-------|
 | **Requirement** | OPS-04 |
-| **Status** | **non-pass / pending live** |
-| **Model** | _(fill: e.g. gpt-5.6-sol)_ |
-| **Turn completes once (no post-success retry)** | ⬜ pending |
-| **Read/edit/tool after reply** | ⬜ pending |
-| **Redacted outcome** | _(operator fills — no secrets)_ |
-| **Non-pass class (if not PASS)** | `pending_human` — live dual-login not yet run by operator |
-| **Date** | — |
+| **Status** | **PASS** (operator, pre-fix binary) |
+| **Model** | GPT-5.6 / Codex models |
+| **Turn completes once (no post-success retry)** | ✅ operator confirmed no post-success retry |
+| **Read/edit/tool after reply** | ⬜ not separately logged; dual login + successful turns confirmed |
+| **Redacted outcome** | No retry after successful turn; bug fixed for OPS-04 once-complete behavior |
+| **Non-pass class (if not PASS)** | — |
+| **Date** | 2026-07-18 |
 
 **PASS criteria:** One completed GPT-5.6 turn with no post-success retry, plus a normal read/edit/tool action, with redacted observations only.
 
@@ -161,22 +160,34 @@ Representative `test result: ok` lines from the consolidated run:
 | Field | Value |
 |-------|-------|
 | **Requirement** | OPS-05 |
-| **Status** | **non-pass / pending live** |
-| **Models** | _(fill: Grok model → gpt-5.6-sol)_ |
-| **No encrypted-content / decryption 400** | ⬜ pending |
-| **Ordinary prior context still useful** | ⬜ pending |
-| **Redacted outcome** | _(operator fills — no secrets)_ |
-| **Non-pass class (if not PASS)** | `pending_human` — live dual-login not yet run by operator |
-| **Date** | — |
+| **Status** | **non-pass / product_failure** on pre-fix binary; **retest required** after id-strip fix |
+| **Models** | Grok → any OpenAI/Codex model (e.g. gpt-5.6-sol) |
+| **No encrypted-content / decryption 400** | N/A — failed earlier with store-id 404 |
+| **Ordinary prior context still useful** | ⬜ blocked by turn failure |
+| **Redacted outcome** | After Grok turn, switch to OpenAI model → `404 Item with id 'rs_…' not found. Items are not persisted when store is set to false` on `chatgpt.com/backend-api/codex/responses` |
+| **Non-pass class (if not PASS)** | `product_failure` — residual reasoning item ids sent under `store: false` |
+| **Date** | 2026-07-18 (failure); fix landed same day; retest pending |
 
-**PASS criteria:** Same bum process: Grok turn, switch to GPT-5.6, follow-up that depends on ordinary prior context succeeds without encrypted-content 400.
+**Root cause (fix):** Cross-provider sanitation cleared `encrypted_content` but left `rs_*` ids. With `store: false`, Codex treats those ids as store refs → 404. Fix: `strip_input_item_ids_for_store_false` on every Responses serialize (Codex-aligned). See research §4.3.
 
-### How to run (operator checklist)
+**PASS criteria:** Same bum process: Grok turn, switch to GPT-5.6, follow-up that depends on ordinary prior context succeeds without encrypted-content 400 **and** without store-false item-id 404.
 
-1. Launch rebuilt binary from a disposable workspace: `./target/debug/bum` (confirm both OAuth sessions usable).
-2. **OPS-04:** `/model gpt-5.6-sol` → small prompt → confirm single completion → read/edit a file. Record redacted outcome only.
-3. **OPS-05:** In the same process, Grok turn → switch to `gpt-5.6-sol` → follow-up using ordinary prior context. Confirm no encrypted-content 400.
-4. Update the two tables above. Type `approved` only if both meet PASS criteria; otherwise record non-pass class + redacted symptom.
+### Related: model identity (not OPS-04/05 gate, product quality)
+
+| Field | Value |
+|-------|-------|
+| **Symptom** | Model self-reports as Grok 4.5 even when Codex/GPT selected |
+| **Class** | `product_failure` (identity) |
+| **Fix** | Per-model `system_prompt_label` in catalog; re-render prompt on model switch without RefCell-across-await; template no longer hardcodes “released by xAI” |
+| **Retest** | After switch to `gpt-5.6-sol`, ask “what model are you?” → expect GPT-5.6 Sol identity, not Grok |
+
+### How to retest (operator checklist)
+
+1. Launch **post-fix** binary from a disposable workspace: `./target/debug/bum` (confirm both OAuth sessions usable).
+2. **OPS-04:** `/model gpt-5.6-sol` → small prompt → confirm single completion → read/edit a file.
+3. **OPS-05:** Same process: Grok turn → switch to `gpt-5.6-sol` → follow-up using ordinary prior context. Confirm **no** `rs_*`/store 404 and **no** encrypted-content 400.
+4. **Identity:** On GPT selection, self-report should match GPT label, not Grok.
+5. Reply `approved` only if OPS-04 and OPS-05 both meet PASS; otherwise non-pass class + redacted symptom.
 
 ## Deferred items
 

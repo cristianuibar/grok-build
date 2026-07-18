@@ -107,6 +107,32 @@ Server error `"System messages are not allowed"` is ChatGPT Codex validation.
 - **`previous_response_id`**: used on **WebSocket** incremental turns when prefix matches; not the primary HTTP contract.
 - **`prompt_cache_key`**: session id for cache stickiness.
 
+### 4.3 Item `id` fields when `store: false` (live UAT 2026-07-18)
+
+Official Codex clears Responses item ids before HTTP send when store is false
+(`codex-rs/core/src/client.rs` → `prepare_response_items_for_request`):
+
+```text
+if !item_ids_enabled && !store {
+  for item in input { item.set_id(None) }
+}
+```
+
+**Why:** with `store: false`, the server treats a top-level input `id` (e.g. `rs_*`
+reasoning) as a **store reference**. Foreign or prior-turn ids are not persisted →:
+
+```text
+404 invalid_request_error: Item with id 'rs_…' not found.
+Items are not persisted when `store` is set to false.
+```
+
+This showed up after **Grok → GPT** mid-session switch when history kept reasoning
+items (ids intact) after clearing only `encrypted_content`.
+
+**bum fix:** `xai_grok_sampling_types::strip_input_item_ids_for_store_false` applied
+on every Responses body after serialize (`xai-grok-sampler` client). Preserves
+`call_id` (tool pairing). Do **not** “fix” by setting `store: true` on ChatGPT path.
+
 ---
 
 ## 5. Reasoning effort
