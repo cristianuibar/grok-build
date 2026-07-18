@@ -4,12 +4,12 @@ milestone: v1.0
 milestone_name: milestone
 current_phase: 9
 current_phase_name: Daily-driver end-to-end validation
-current_plan: 4
+current_plan: 4 of 5 (live UAT) — hybrid Plan 05 blocked
 status: paused
-stopped_at: "Phase 9 Plan 04 UAT partial — OPS-03 PASS; Codex retry + encrypted-history blockers → Phase 10"
-last_updated: "2026-07-18T06:00:00Z"
+stopped_at: Phase 9 Plan 04 UAT partial — OPS-03 PASS; Codex retry + encrypted-history blockers → Phase 10
+last_updated: "2026-07-18T07:08:35.263Z"
 last_activity: 2026-07-18
-last_activity_desc: "Session wrap: Codex system→instructions + effort catalog shipped; UAT findings recorded; hand off to Phase 10"
+last_activity_desc: system→instructions (`765b9a0`), effort menus (`638e8e8`), live UAT notes
 progress:
   total_phases: 12
   completed_phases: 8
@@ -33,7 +33,7 @@ Plan: 4 of 5
 Status: Paused — human UAT + Codex product blockers
 Last activity: 2026-07-18 — system→instructions (`765b9a0`), effort menus (`638e8e8`), live UAT notes
 Current Plan: 4 of 5 (live UAT) — hybrid Plan 05 blocked
-Total Plans in Phase: 5
+Total Plans in Phase: 7
 
 Progress: [█████████░] 90% (phase 9) · milestone now planned through Phase 12
 
