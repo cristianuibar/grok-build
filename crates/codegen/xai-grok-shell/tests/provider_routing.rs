@@ -76,6 +76,7 @@ fn sampler_config_for_mock(
         top_p: None,
         api_backend,
         auth_scheme: Default::default(),
+        responses_wire_profile: xai_grok_sampler::ResponsesWireProfile::Disabled,
         extra_headers,
         context_window: 8192,
         force_http1: false,

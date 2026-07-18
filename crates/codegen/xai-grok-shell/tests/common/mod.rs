@@ -38,6 +38,7 @@ pub fn test_sampler_config(
         top_p: None,
         api_backend,
         auth_scheme: Default::default(),
+        responses_wire_profile: xai_grok_sampler::ResponsesWireProfile::Disabled,
         extra_headers: extra_headers
             .iter()
             .map(|(k, v)| (k.to_string(), v.to_string()))
