@@ -22,6 +22,9 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [x] **Phase 7: Cross-provider multi-agent orchestration** - Same-provider regression + parent/child cross-provider spawn (completed 2026-07-17)
 - [x] **Phase 8: Quiet fork & rebrand polish** - No auto-update/telemetry; full bum chrome/strings (completed 2026-07-17)
 - [ ] **Phase 9: Daily-driver end-to-end validation** - Real sessions both providers, mid-session switch, cross-provider agents
+- [ ] **Phase 10: Codex Responses wire parity** - Align bum request shape with official Codex CLI (headers, reasoning defaults, continuity)
+- [ ] **Phase 11: Codex effort & catalog fidelity** - GPT-5.6 effort levels, soft-clamp UX, catalog capability flags from Codex models.json patterns
+- [ ] **Phase 12: Codex depth & attribution polish** - Optional tool/WS/originator depth; honest product attribution (bum ≠ Codex CLI)
 
 ## Phase Details
 
@@ -236,11 +239,58 @@ Plans:
 - [ ] 09-04-PLAN.md — Live dual-login UAT execute (human) + in-phase blocker fixes only
 - [ ] 09-05-PLAN.md — Hybrid gate close: re-run auto + 09-VERIFICATION + nyquist sign-off
 
+### Phase 10: Codex Responses wire parity
+
+**Goal**: bum’s ChatGPT Codex HTTP path matches official Codex CLI wire contracts beyond the system→instructions fix, so productive GPT turns stay green under real dual login  
+**Mode:** mvp  
+**Depends on**: Phase 9 (blocker fix + live UAT re-verify)  
+**Requirements**: OPS-04, OPS-05 (deepen); research: `.planning/research/CODEX-RESPONSES-WIRE.md`  
+**Success Criteria** (what must be TRUE):
+
+  1. Codex Responses requests set `store`/`stream`/`include`/`tool_choice` consistent with ChatGPT path (not Azure-store assumptions)
+  2. Optional Codex-compatible headers (`session-id` / `thread-id` / originator as **bum**, not `codex_cli_rs`) documented and applied where they improve reliability
+  3. Reasoning summary defaults omit or match GPT-5.6 catalog (not always force `concise` if server rejects)
+  4. Automated tests assert no `role: system` in Responses `input` and non-empty `instructions` when system history present
+  5. Live OPS-04 re-run stays PASS after wire tweaks
+
+**Plans**: TBD (plan after Phase 9 hybrid close or in parallel once 09-04 system fix re-UAT green)
+
+### Phase 11: Codex effort & catalog fidelity
+
+**Goal**: GPT-5.6 effort levels work like official Codex (soft-clamp, supported menus) — no false “effort not supported” on catalog models  
+**Mode:** mvp  
+**Depends on**: Phase 10 (or Phase 9 if effort is the only remaining UX gap)  
+**Requirements**: MOD-01/MOD-02 deepen; OPS-04  
+**Success Criteria** (what must be TRUE):
+
+  1. GPT-5.6 catalog entries advertise non-empty supported effort levels (or equivalent meta) aligned with Codex `models.json` patterns
+  2. Mid-session switch Grok→Codex soft-clamps effort to a supported level; does not hard-fail the turn
+  3. Wire sends `reasoning.effort` for supported levels; ultra maps to max if exposed
+  4. UAT notes no longer list effort as a product blocker when levels are supported
+
+**Plans**: TBD
+
+### Phase 12: Codex depth & attribution polish
+
+**Goal**: Optional deeper Codex parity (WS incremental, tool naming notes) and clear product attribution that bum is not stock Codex CLI  
+**Mode:** standard  
+**Depends on**: Phase 10–11  
+**Requirements**: product honesty / D-10 gaps; optional AGENT/OPS polish  
+**Success Criteria** (what must be TRUE):
+
+  1. Documented decision: which Codex-only features are in-scope vs deferred (WS, freeform apply_patch, originator)
+  2. Product chrome never claims “Codex CLI” identity; model brands remain GPT-5.6 / provider labels
+  3. THIRD_PARTY / notices updated if any Codex-derived constants or substantial ports land
+  4. Capability gaps vs stock Codex remain honest in docs (D-10)
+
+**Plans**: TBD
+
 ## Progress
 
 **Execution Order:**
-Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 → 9  
-(Phase 8 quiet/rebrand polish may start in parallel once Phase 1 identity is stable, but ships before Phase 9 validation.)
+Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 → 9 → 10 → 11 → 12  
+(Phase 8 quiet/rebrand polish may start in parallel once Phase 1 identity is stable, but ships before Phase 9 validation.  
+Phases 10–12 deepen Codex after Phase 9 daily-driver bar; Phase 9 in-phase fix for system→instructions is required for OPS-04 green.)
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
@@ -253,6 +303,9 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 →
 | 7. Cross-provider multi-agent orchestration | 6/6 | Complete    | 2026-07-17 |
 | 8. Quiet fork & rebrand polish | 6/6 | Complete    | 2026-07-17 |
 | 9. Daily-driver end-to-end validation | 3/5 | In Progress|  |
+| 10. Codex Responses wire parity | 0/TBD | Planned |  |
+| 11. Codex effort & catalog fidelity | 0/TBD | Planned |  |
+| 12. Codex depth & attribution polish | 0/TBD | Planned |  |
 
 ## Coverage map
 
@@ -281,12 +334,13 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 →
 | OPS-01 | Phase 8 |
 | OPS-02 | Phase 8 |
 | OPS-03 | Phase 9 |
-| OPS-04 | Phase 9 |
-| OPS-05 | Phase 9 |
+| OPS-04 | Phase 9 (+ Phase 10–11 deepen) |
+| OPS-05 | Phase 9 (+ Phase 10 deepen) |
 | OPS-06 | Phase 9 |
 
-**Coverage:** 26/26 v1 requirements mapped ✓
+**Coverage:** 26/26 v1 requirements mapped ✓ (Phases 10–12 deepen OPS/MOD without new requirement IDs)
 
 ---
-*Roadmap created: 2026-07-16*
+*Roadmap created: 2026-07-16*  
+*Updated: 2026-07-18 — Phase 10–12 Codex wire/effort/attribution after official codex-rs research*  
 *Granularity: fine · Mode: mvp · Phase IDs: sequential*

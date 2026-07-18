@@ -6,10 +6,10 @@ current_phase: 9
 current_phase_name: Daily-driver end-to-end validation
 current_plan: 4
 status: paused
-stopped_at: "Plan 04 human UAT checkpoint — dual OAuth not yet present under ~/.bum"
-last_updated: "2026-07-17T15:30:00Z"
-last_activity: 2026-07-17
-last_activity_desc: "Autonomous --only 9 paused after waves 1–2; awaiting live dual-login UAT"
+stopped_at: "Plan 04 Task 2 human UAT checkpoint — dual OAuth not yet present under ~/.bum"
+last_updated: "2026-07-18T04:31:00Z"
+last_activity: 2026-07-18
+last_activity_desc: "Plan 04 Task 1 preflight complete (fa887a3); awaiting live dual-login UAT"
 progress:
   total_phases: 9
   completed_phases: 8
@@ -30,8 +30,8 @@ See: .planning/PROJECT.md (updated 2026-07-17)
 
 Phase: 9 of 9 (Daily-driver end-to-end validation)
 Plan: 4 of 5
-Status: Executing
-Last activity: 2026-07-17 — Completed 09-02 (PHASE-GATE automated half GREEN)
+Status: Paused — blocking human UAT
+Last activity: 2026-07-18 — Plan 04 Task 1 preflight GREEN (`fa887a3`); residual p9_/p6_dual_login/p7_isolation/home_isolation green
 Current Plan: 4 of 5
 Total Plans in Phase: 5
 
@@ -108,11 +108,12 @@ Progress: [█████████░] 90%
 
 ## Session
 
-**Last session:** 2026-07-17
-**Stopped at:** Autonomous `--only 9 --converge --codex` paused at Plan 04 human UAT checkpoint (no dual OAuth under `~/.bum` yet)
+**Last session:** 2026-07-18
+**Stopped at:** `/gsd-execute-phase 9` — Plan 04 Task 1 preflight done (`fa887a3`); Task 2 blocking human UAT (no dual OAuth under `~/.bum` yet)
 **Resume file:** None
 **Next:**
-1. Dual login: `bum login` + `bum login --provider codex` (or temp `BUM_HOME`)
-2. Fill `.planning/phases/09-daily-driver-end-to-end-validation/09-UAT.md` (OPS-03..06 live matrix)
-3. Resume: `/gsd-execute-phase 9` or `/gsd-autonomous --only 9` (plans 04–05 remain)
-4. Plan 05 hybrid close only after signed UAT PASS
+
+1. Dual login: `./target/debug/bum login` + `./target/debug/bum login --provider codex` (or temp `BUM_HOME`)
+2. Fill `.planning/phases/09-daily-driver-end-to-end-validation/09-UAT.md` (OPS-03..06 live matrix + sign-off)
+3. Resume signal: type **`approved`** (all OPS PASS) or describe taxonomy failures / blockers
+4. Plan 04 Task 3 finalize + Plan 05 hybrid close only after signed UAT PASS

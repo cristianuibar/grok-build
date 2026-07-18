@@ -132,12 +132,12 @@ P=.planning/phases/09-daily-driver-end-to-end-validation
 
 | Step | Action | Expected | Pass? | Notes (model id, when, path) |
 |------|--------|----------|-------|------------------------------|
-| 1 | Start TUI on current xAI model (prefer `./target/debug/bum` from disposable cwd) | Session starts; product presents as bum | ⬜ | Model: |
-| 2 | Ask agent to **read** a real file in disposable workspace | Tool succeeds on **real** backend (not fixture mock) | ⬜ | File: |
-| 3 | **Edit** or **shell** one productive change in disposable workspace | Succeeds on real backend | ⬜ | |
+| 1 | Start TUI on current xAI model (prefer `./target/debug/bum` from disposable cwd) | Session starts; product presents as bum | ☑ PASS | Model: grok-build (xAI); operator 2026-07-18 |
+| 2 | Ask agent to **read** a real file in disposable workspace | Tool succeeds on **real** backend (not fixture mock) | ☑ PASS | Live backend OK |
+| 3 | **Edit** or **shell** one productive change in disposable workspace | Succeeds on real backend | ☑ PASS | Live productive turn OK |
 
-**OPS-03 overall (C1-L5):** ⬜ PASS · ⬜ PRODUCT BLOCKER · ⬜ AUTH/ACCOUNT BLOCKED · ⬜ PROVIDER OUTAGE/LIMIT  
-(Do not mark PASS without live backend evidence. Re-auth before PRODUCT BLOCKER on token expiry.)
+**OPS-03 overall (C1-L5):** ☑ PASS · ⬜ PRODUCT BLOCKER · ⬜ AUTH/ACCOUNT BLOCKED · ⬜ PROVIDER OUTAGE/LIMIT  
+Operator confirmed 2026-07-18: Grok/xAI works fine for productive session.
 
 ---
 
@@ -147,12 +147,22 @@ P=.planning/phases/09-daily-driver-end-to-end-validation
 
 | Step | Action | Expected | Pass? | Notes |
 |------|--------|----------|-------|-------|
-| 1 | Switch or start on GPT-5.6 catalog entry (default `gpt-5.6-sol`) | Model/provider routes Codex path | ⬜ | Model: |
-| 2 | **Read** a real file in disposable workspace | Tool succeeds on real backend | ⬜ | |
-| 3 | **Edit** or **shell** productive change as supported | Daily-driver tools work | ⬜ | |
-| 4 | Capability gaps (D-10) | Document honestly if Codex/OpenAI cannot support a Grok-only tool; remaining tools still clear daily-driver bar | ⬜ | Gaps: |
+| 1 | Switch or start on GPT-5.6 catalog entry (default `gpt-5.6-sol`) | Model/provider routes Codex path | ⬜ PASS (switch accepted) | Model: GPT-5.6 / Codex path; operator: switch works |
+| 2 | **Read** a real file in disposable workspace | Tool succeeds on real backend | ⬜ FAIL | See PRODUCT BLOCKER below — turn dies before tools |
+| 3 | **Edit** or **shell** productive change as supported | Daily-driver tools work | ⬜ blocked | Not reached (step 2 fails) |
+| 4 | Capability gaps (D-10) | Document honestly if Codex/OpenAI cannot support a Grok-only tool; remaining tools still clear daily-driver bar | ⬜ | Effort levels not supported on Codex (UI/catalog vs provider); separate from 400 below |
 
-**OPS-04 overall (C1-L5):** ⬜ PASS · ⬜ PRODUCT BLOCKER · ⬜ AUTH/ACCOUNT BLOCKED · ⬜ PROVIDER OUTAGE/LIMIT
+**OPS-04 overall (C1-L5):** ⬜ PASS · ☑ PRODUCT BLOCKER · ⬜ AUTH/ACCOUNT BLOCKED · ⬜ PROVIDER OUTAGE/LIMIT
+
+**PRODUCT BLOCKER (operator 2026-07-18, live dual-login UAT) — fix landed in-phase:**
+- After switch to Codex/GPT, first assistant turn fails hard (no productive tools).
+- Error (redacted): `API error (status 400 Bad Request): {"detail":"System messages are not allowed"}`
+- Request URL: `https://chatgpt.com/backend-api/codex/responses`
+- Turn failed ~0.8s; retry same failure.
+- **Root cause:** system items were serialized into Responses `input[]` as `role: system` with `instructions: null`. Official Codex CLI never does this — base prompt goes in top-level `instructions` (see `.planning/research/CODEX-RESPONSES-WIRE.md`, sourced from `/home/cristian/bum/codex` codex-rs).
+- **Fix (Plan 04 Task 3):** `xai-grok-sampling-types` lifts `ConversationItem::System` into `CreateResponse.instructions` and excludes system from `input[]`. Unit tests assert no system role in input.
+- **Operator re-verify required:** rebuild binary, re-run OPS-04 steps 2–3; clear blocker to PASS if live tools work.
+- **Secondary (D-10; Phase 11):** Effort levels messaging on Codex — GPT-5.6 *does* support effort in official catalog; bum may mis-advertise. Track in Phase 11, not the 400.
 
 ---
 
@@ -167,7 +177,8 @@ Must be **same process** — no restart of the CLI between steps.
 | 3 | Productive Codex turn | Completes on real backend | ⬜ | |
 | 4 | (Optional) reverse switch GPT → xAI | Works without restart | ⬜ | |
 
-**OPS-05 overall (C1-L5):** ⬜ PASS · ⬜ PRODUCT BLOCKER · ⬜ AUTH/ACCOUNT BLOCKED · ⬜ PROVIDER OUTAGE/LIMIT
+**OPS-05 overall (C1-L5):** ⬜ PASS · ☑ PRODUCT BLOCKER · ⬜ AUTH/ACCOUNT BLOCKED · ⬜ PROVIDER OUTAGE/LIMIT  
+(xAI side works; Codex productive turn after switch fails with same System-messages 400 as OPS-04 — same product defect.)
 
 ---
 
@@ -218,6 +229,14 @@ Structured evidence placeholders (Plan 04 fills; C1-M6 cross-ref):
 - A **single dual-login session** may cover multiple OPS rows when natural (CONTEXT discretion) — still fill **each** row above.
 - Prefer TUI for OPS-03..05; OPS-06 may use NL or explicit Task.
 - Record blockers with enough detail for in-phase fix (routing, credentials, switch gate, spawn, daily tools) — not feature expansion.
+
+### Operator session 2026-07-18 (partial matrix)
+
+- **xAI / Grok:** works fine (productive path OK).
+- **Codex switch:** model switch accepted; **effort levels not supported** (note as capability/UI gap).
+- **Codex talk:** every turn → 400 `System messages are not allowed` on `chatgpt.com/backend-api/codex/responses`.
+- **OPS-06:** not completed; Direction A (Grok→Codex child) and Direction B (Codex parent) expected blocked until system→`instructions` wire fix.
+- **Disposition options discussed:** (A) in-phase Plan 04 Task 3 product fix on Responses conversion, or (B) dedicated follow-on phase for Codex Responses wire compatibility — hybrid Phase 9 GREEN requires A (or equivalent) before OPS-04/05/06 can PASS.
 
 ---
 
