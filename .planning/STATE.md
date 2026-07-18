@@ -109,11 +109,11 @@ Progress: [█████████░] 90%
 ## Session
 
 **Last session:** 2026-07-18
-**Stopped at:** `/gsd-execute-phase 9` — Plan 04 Task 1 preflight done (`fa887a3`); Task 2 blocking human UAT (no dual OAuth under `~/.bum` yet)
+**Stopped at:** Plan 04 — OPS-03 PASS; OPS-04 PRODUCT BLOCKER fixed in code (`765b9a0` system→instructions); **operator re-UAT of Codex required**
 **Resume file:** None
 **Next:**
 
-1. Dual login: `./target/debug/bum login` + `./target/debug/bum login --provider codex` (or temp `BUM_HOME`)
-2. Fill `.planning/phases/09-daily-driver-end-to-end-validation/09-UAT.md` (OPS-03..06 live matrix + sign-off)
-3. Resume signal: type **`approved`** (all OPS PASS) or describe taxonomy failures / blockers
-4. Plan 04 Task 3 finalize + Plan 05 hybrid close only after signed UAT PASS
+1. Rebuild done: use `./target/debug/bum` (includes Codex wire fix)
+2. Re-run OPS-04 (and OPS-05 Codex half, OPS-06) on live dual login; update `09-UAT.md`
+3. Effort UX gap deferred to **Phase 11**; wire depth **Phase 10**; attribution **Phase 12**
+4. On all OPS PASS + sign-off: resume with **`approved`** → Task 3 finalize + Plan 05
