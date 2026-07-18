@@ -2103,6 +2103,15 @@ impl From<ConversationRequest> for ChatCompletionRequest {
 
 impl From<&ConversationRequest> for rs::CreateResponse {
     fn from(req: &ConversationRequest) -> Self {
+        // ChatGPT Codex (`…/codex/responses`) rejects `input[]` items with
+        // `role: "system"` (`{"detail":"System messages are not allowed"}`).
+        // Official Codex CLI puts the base system prompt in top-level
+        // `instructions` and never emits system-role input items (see
+        // codex-rs `core/src/client.rs` `build_responses_request` and
+        // `.planning/research/CODEX-RESPONSES-WIRE.md`). OpenAI Responses
+        // accepts the same shape; lifting system text out of `input` is
+        // therefore correct for every Responses backend we target.
+        let instructions = extract_responses_instructions(req);
         let input = build_responses_input(req);
         let tools = build_responses_tools(req);
 
@@ -2137,7 +2146,7 @@ impl From<&ConversationRequest> for rs::CreateResponse {
             conversation: None,
             include: None,
             input,
-            instructions: None,
+            instructions,
             max_output_tokens: req.max_output_tokens,
             max_tool_calls: None,
             metadata: None,
@@ -2167,17 +2176,43 @@ impl From<&ConversationRequest> for rs::CreateResponse {
     }
 }
 
+/// Concatenate all [`ConversationItem::System`] texts for the Responses
+/// `instructions` field (Codex / OpenAI base-system channel).
+///
+/// Multiple system items are joined with blank lines in conversation order.
+/// Returns `None` when there is no system text (omit field on the wire when
+/// the serializer skips empty/`None` — callers keep `Option`).
+fn extract_responses_instructions(req: &ConversationRequest) -> Option<String> {
+    let mut parts: Vec<&str> = Vec::new();
+    for item in &req.items {
+        if let ConversationItem::System(s) = item {
+            let text = s.content.as_ref().trim();
+            if !text.is_empty() {
+                parts.push(s.content.as_ref());
+            }
+        }
+    }
+    if parts.is_empty() {
+        None
+    } else {
+        Some(parts.join("\n\n"))
+    }
+}
+
 /// Build the [`rs::InputParam`] for a Responses API request.
 ///
-/// Conversion is a straight 1:1 map: each [`ConversationItem`] becomes its
-/// natural Responses-API input shape via [`conversation_item_to_input_items`].
-/// Reasoning items are top-level siblings (not bundled into the assistant),
-/// so they appear inline in the same order the model originally emitted —
-/// which is what lets the server-side prefix KV-cache hit on repeat turns.
+/// Each non-system [`ConversationItem`] becomes its natural Responses-API
+/// input shape via [`conversation_item_to_input_items`]. System items are
+/// **excluded** here — they are lifted into top-level `instructions` by
+/// [`extract_responses_instructions`] (required by ChatGPT Codex; matches
+/// official Codex CLI). Reasoning items remain top-level siblings (not
+/// bundled into the assistant) so server-side prefix KV-cache can hit on
+/// repeat turns.
 fn build_responses_input(req: &ConversationRequest) -> rs::InputParam {
     let items: Vec<rs::InputItem> = req
         .items
         .iter()
+        .filter(|item| !matches!(item, ConversationItem::System(_)))
         .flat_map(conversation_item_to_input_items)
         .collect();
     rs::InputParam::Items(items)
@@ -2220,13 +2255,11 @@ pub fn patch_reasoning_text_types(body: &mut serde_json::Value) {
 /// Convert a ConversationItem to Responses API InputItem(s)
 fn conversation_item_to_input_items(item: &ConversationItem) -> Vec<rs::InputItem> {
     match item {
-        ConversationItem::System(s) => {
-            // System messages become an EasyMessage with system role
-            vec![rs::InputItem::EasyMessage(rs::EasyInputMessage {
-                r#type: rs::MessageType::Message,
-                role: rs::Role::System,
-                content: rs::EasyInputContent::Text(s.content.as_ref().to_owned()),
-            })]
+        ConversationItem::System(_) => {
+            // System text is lifted into CreateResponse.instructions by
+            // extract_responses_instructions / build_responses_input filter.
+            // Never emit role:system in input[] — ChatGPT Codex rejects it.
+            Vec::new()
         }
         ConversationItem::User(u) => {
             let content = content_parts_to_easy_input_content(&u.content);
@@ -3567,10 +3600,60 @@ mod tests {
         assert_eq!(responses_req.model, Some("grok-3".to_string()));
         assert_eq!(responses_req.temperature, Some(0.7));
 
+        // System → top-level instructions (Codex/OpenAI Responses contract).
+        assert_eq!(
+            responses_req.instructions.as_deref(),
+            Some("System prompt"),
+            "system items must lift into instructions, not input"
+        );
+
         let rs::InputParam::Items(items) = responses_req.input else {
             panic!("Expected Items input");
         };
-        assert_eq!(items.len(), 2);
+        // Only the user message remains in input[]; no role:system.
+        assert_eq!(items.len(), 1);
+        match &items[0] {
+            rs::InputItem::EasyMessage(m) => {
+                assert_eq!(m.role, rs::Role::User);
+            }
+            other => panic!("expected user EasyMessage, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn responses_api_never_emits_system_role_in_input() {
+        // Regression: ChatGPT Codex returns 400
+        // {"detail":"System messages are not allowed"} when input contains
+        // role:system. Multiple system items concatenate into instructions.
+        let req = ConversationRequest::from_items(vec![
+            ConversationItem::system("Base agent prompt."),
+            ConversationItem::system("Extra policy."),
+            ConversationItem::user("hi"),
+            ConversationItem::assistant("hello"),
+            ConversationItem::user("again"),
+        ]);
+        let cr: rs::CreateResponse = (&req).into();
+        assert_eq!(
+            cr.instructions.as_deref(),
+            Some("Base agent prompt.\n\nExtra policy.")
+        );
+        let mut body = serde_json::to_value(&cr).expect("serialize CreateResponse");
+        patch_reasoning_text_types(&mut body);
+        let input = body["input"].as_array().expect("input array");
+        for item in input {
+            let role = item.get("role").and_then(|r| r.as_str());
+            assert_ne!(
+                role,
+                Some("system"),
+                "system role must not appear in Responses input: {item}"
+            );
+        }
+        assert!(
+            input
+                .iter()
+                .any(|i| i.get("role").and_then(|r| r.as_str()) == Some("user")),
+            "user messages must remain in input"
+        );
     }
 
     #[test]
@@ -8385,8 +8468,9 @@ mod tests {
         };
 
         // Walk the wire items and verify the expected pattern.
-        // Roles per wire item: System, User, Reasoning(role=Assistant),
-        // Assistant, User, Reasoning, Assistant, ...
+        // System items are lifted to CreateResponse.instructions (Codex
+        // contract) — they must NOT appear in input[]. Remaining order:
+        // User, Reasoning, Assistant, User, Reasoning, Assistant, ...
         let kinds: Vec<&'static str> = wire_items
             .iter()
             .map(|w| match w {
@@ -8402,10 +8486,15 @@ mod tests {
             .collect();
         assert_eq!(
             kinds,
-            vec![
-                "Sys", "U", "R", "A", "U", "R", "A", "U", "R", "A", "U", "R", "A", "U",
-            ],
-            "multi-turn ordering must preserve interleaved Reasoning ↔ Assistant per turn"
+            vec!["U", "R", "A", "U", "R", "A", "U", "R", "A", "U", "R", "A", "U",],
+            "multi-turn ordering must preserve interleaved Reasoning ↔ Assistant per turn \
+             (system lifted to instructions)"
+        );
+        let cr: rs::CreateResponse = (&req).into();
+        assert_eq!(
+            cr.instructions.as_deref(),
+            Some("you are helpful"),
+            "system prompt must land in instructions"
         );
     }
 
@@ -9071,12 +9160,13 @@ mod tests {
         let input = input_items_json(&req);
         let summary = summarise_input(&input);
 
-        // Expected: [system, user, reasoning, assistant]
-        assert_eq!(summary.len(), 4, "got: {summary:?}");
-        assert_eq!(summary[0], "system:sys");
-        assert_eq!(summary[1], "user:u1");
-        assert_eq!(summary[2], "reasoning:r_abc");
-        assert_eq!(summary[3], "assistant:hi");
+        // System → instructions; input is [user, reasoning, assistant]
+        assert_eq!(summary.len(), 3, "got: {summary:?}");
+        assert_eq!(summary[0], "user:u1");
+        assert_eq!(summary[1], "reasoning:r_abc");
+        assert_eq!(summary[2], "assistant:hi");
+        let cr: rs::CreateResponse = (&req).into();
+        assert_eq!(cr.instructions.as_deref(), Some("sys"));
 
         // No placeholder strings must appear (post-refactor invariant).
         let body_str = serde_json::to_string(&input).unwrap();
@@ -9087,7 +9177,7 @@ mod tests {
 
         // The reasoning item must carry encrypted_content verbatim.
         assert_eq!(
-            input[2].get("encrypted_content").and_then(|v| v.as_str()),
+            input[1].get("encrypted_content").and_then(|v| v.as_str()),
             Some("enc1"),
         );
     }
@@ -9359,13 +9449,14 @@ mod tests {
         let input = input_items_json(&req);
         let summary = summarise_input(&input);
 
-        assert_eq!(summary.len(), 4);
-        assert_eq!(summary[2], "reasoning:r1");
+        // System lifted to instructions → 3 wire input items
+        assert_eq!(summary.len(), 3, "got: {summary:?}");
+        assert_eq!(summary[1], "reasoning:r1");
 
         // Encrypted content absent on the wire.
         assert!(
-            input[2].get("encrypted_content").is_none()
-                || input[2]
+            input[1].get("encrypted_content").is_none()
+                || input[1]
                     .get("encrypted_content")
                     .and_then(|v| v.as_str())
                     .is_none(),
