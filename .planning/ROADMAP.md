@@ -253,7 +253,7 @@ Plans:
   4. Automated tests assert no `role: system` in Responses `input` and non-empty `instructions` when system history present
   5. Live OPS-04 re-run stays PASS after wire tweaks
 
-**Plans**: 4/7 complete — `10-01` establishes the disabled typed Responses profile; `10-06` and `10-07` restore compatibility; `10-02` repairs terminal SSE text fallback; remaining execution plans are in `.planning/phases/10-codex-responses-wire-parity/`.
+**Plans**: 5/7 complete — `10-01` establishes the disabled typed Responses profile; `10-06` and `10-07` restore compatibility; `10-02` repairs terminal SSE text fallback; `10-03` closes encrypted-history transition races; remaining execution plans are in `.planning/phases/10-codex-responses-wire-parity/`.
 
 ### Phase 11: Codex effort & catalog fidelity
 
@@ -305,7 +305,7 @@ Phases 10–12 deepen Codex after Phase 9 daily-driver bar; Phase 9 in-phase fix
 | 7. Cross-provider multi-agent orchestration | 6/6 | Complete    | 2026-07-17 |
 | 8. Quiet fork & rebrand polish | 6/6 | Complete    | 2026-07-17 |
 | 9. Daily-driver end-to-end validation | 3/5 | In Progress|  |
-| 10. Codex Responses wire parity | 4/7 | In Progress |  |
+| 10. Codex Responses wire parity | 5/7 | In Progress |  |
 | 11. Codex effort & catalog fidelity | 0/TBD | Planned |  |
 | 12. Codex depth & attribution polish | 0/TBD | Planned |  |
 
