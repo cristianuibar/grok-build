@@ -2,19 +2,19 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-current_phase: 10
-current_phase_name: Codex Responses wire parity
-current_plan: 7 of 7 (Plan 05 Task 1 automated evidence complete; Task 2 live dual-login checkpoint blocking)
-status: checkpoint
-stopped_at: Phase 10 Plan 05 — OPS-04 live PASS; OPS-05 fix built, retest pending
-last_updated: "2026-07-18T12:55:00.000Z"
+current_phase: 11
+current_phase_name: Codex effort & catalog fidelity
+current_plan: Not started
+status: planning
+stopped_at: Goal-backward verification for Phase 10 after live OPS-04/OPS-05 PASS
+last_updated: "2026-07-18T14:59:57.431Z"
 last_activity: 2026-07-18
-last_activity_desc: OPS-05 product fix ready for operator retest (store=false id strip)
+last_activity_desc: Phase 10 complete, transitioned to Phase 11
 progress:
-  total_phases: 12
-  completed_phases: 8
-  total_plans: 50
-  completed_plans: 50
+  total_phases: 10
+  completed_phases: 6
+  total_plans: 57
+  completed_plans: 51
 ---
 
 # Project State
@@ -24,24 +24,24 @@ progress:
 See: .planning/PROJECT.md (updated 2026-07-17)
 
 **Core value:** One CLI (`bum`) can log into both xAI and Codex and freely switch between Grok and GPT-5.6 models in a real coding session — including cross-provider subagent orchestration.
-**Current focus:** Phase 10 Plan 05 — automated evidence green; blocked on human dual-login for OPS-04/OPS-05.
+**Current focus:** Phase 10 complete (verified 2026-07-18). Next logical work: Phase 9 remaining hybrid close (Route 0), then Phase 11.
 
 ## Current Position
 
-Phase: 10 of 12 (Codex Responses wire parity) — Plans 01–04, 06, 07 complete; Plan 05 automated half recorded
-Plan: 7 of 7 (Task 1 done; Task 2 checkpoint)
-Status: Checkpoint — human redacted live OPS-04/OPS-05 required; Phase 9/10 remain non-green
-Last activity: 2026-07-18 — Plan 05 Task 1: 26/26 focused behavior commands PASS; live rows pending_human
-Current Plan: 10-05 (awaiting dual-login resume-signal `approved` or explicit non-pass class)
+Phase: 11 of 12 (Codex effort & catalog fidelity)
+Plan: 7 of 7 complete
+Status: Ready to plan
+Last activity: 2026-07-18 — Phase 10 complete, transitioned to Phase 11
+Current Plan: Not started
 Total Plans in Phase: 7
 
-Progress: [█████████░] Phase 9 remains 3/5 summaries; Phase 10 automated complete, live proof blocking
+Progress: [█████████░] Phase 9 remains 3/5 summaries; Phase 10 complete (7/7 + VERIFICATION passed)
 
 ## Performance Metrics
 
 **Velocity:**
 
-- Total plans completed: 50 SUMMARY files (phases 1–8 + 09-01 + 09-02 + 09-03 + 10-01 + 10-02 + 10-03 + 10-04 + 10-06 + 10-07)
+- Total plans completed: 51 SUMMARY files (phases 1–8 + 09-01 + 09-02 + 09-03 + 10-01..10-07 complete)
 - Phase 5: 6 plans
 - Phase 6: 6 plans
 - Phase 7: 6 plans
@@ -61,7 +61,7 @@ Progress: [█████████░] Phase 9 remains 3/5 summaries; Phase 
 | 07 | 6/6 | complete — AGENT-01..06 |
 | 08 | 6/6 | complete — ID-02, OPS-01, OPS-02 |
 | 09 | 3/5 SUMMARY | 09-01 + 09-02 + 09-03; OPS-03..06 live still pending |
-| 10 | 6/7 + 10-05 auto | Implementation plans complete; 10-05 automated evidence recorded; live OPS-04/OPS-05 checkpoint open |
+| 10 | 7/7 | complete — wire parity + live OPS-04/OPS-05 PASS; 10-VERIFICATION.md passed 2026-07-18 |
 
 ---
 **Per-Plan Metrics:**
@@ -83,7 +83,7 @@ Progress: [█████████░] Phase 9 remains 3/5 summaries; Phase 
 | Phase 10 P02 | ~25min | 2 tasks | 2 files |
 | Phase 10 P03 | ~2h | 2 tasks + atomic review follow-up | 16 initially + 5 authorized chat-state files |
 | Phase 10 P04 | ~3h | 2 tasks + trusted-boundary hardening follow-up | 10 files |
-| Phase 10 P05 | ~25min (auto half) | Task 1 complete; Task 2 human checkpoint | 2 files + SUMMARY |
+| Phase 10 P05 | ~40min | 2 tasks (auto + live dual-login PASS) | 2 files + SUMMARY |
 
 ## Decisions
 
@@ -113,7 +113,8 @@ Progress: [█████████░] Phase 9 remains 3/5 summaries; Phase 
 - [Phase 10]: Trusted Codex authority is scheme + host + effective port + exact-or-slash-descendant path; alternate ports and raw-prefix lookalikes such as `codexevil` fail closed, while an explicitly configured root remains authority-wide.
 - [Phase 10]: Trusted Codex session/thread/request metadata uses one actor-lifetime UUID: retain a valid supplied session UUID, otherwise generate one fallback for legacy ACP and model-issued subagent IDs, and preserve it across provider switches.
 - [Process]: The final Plan 04 Grok source-aware and inline-corpus review attempts used the web-enabled direct-review recipe but returned empty results; both were recorded unavailable, and a fresh independent source review supplied the acceptance check.
-- [Phase 10]: Plan 05: consolidated focused suite 26/26 behavior PASS (2026-07-18); live OPS-04/OPS-05 remain non-pass/pending_human — no fixture waiver (T-10-11).
+- [Phase 10]: Plan 05: consolidated focused suite 26/26 behavior PASS (2026-07-18); live OPS-04/OPS-05 PASS after dual-login + store=false id-strip retest (T-10-11).
+- [Phase 10]: Formal close complete: 10-VERIFICATION.md status=passed (9/9); phase.complete 2026-07-18.
 - [Phase 10]: Plan 05: workspace `cargo fmt --all -- --check` FAIL deferred as hygiene in `deferred-items.md`; does not block or waive live dual-login.
 
 ### Phase 8 (Quiet fork & rebrand polish)
@@ -135,14 +136,12 @@ Progress: [█████████░] Phase 9 remains 3/5 summaries; Phase 
 
 ## Session
 
-**Last session:** 2026-07-18 (Phase 10 Plan 05 Task 1 complete; Task 2 checkpoint)
-**Stopped at:** Plan 10-05 Task 2 — human redacted rebuilt-bum OPS-04 and OPS-05 dual-login verification
-**Resume file:** `.planning/phases/10-codex-responses-wire-parity/10-05-SUMMARY.md`
-**Binary preflight:** `target/debug/bum` rebuilt 2026-07-18 via `cargo build -p xai-grok-pager-bin`
+**Last session:** 2026-07-18 (Phase 10 formal close complete)
+**Stopped at:** Phase 10 verified and marked complete; STATE advanced toward Phase 11 (Phase 9 still has incomplete plans)
+**Resume file:** `.planning/phases/10-codex-responses-wire-parity/10-VERIFICATION.md`
+**Binary preflight:** `target/debug/bum` rebuilt 2026-07-18; operator retested post store=false fix
 **Next:**
 
-1. **Human:** run dual-login UAT per `10-VALIDATION.md` §Live OPS evidence (and `10-05-PLAN.md` Task 2 how-to-verify)
-2. Record only redacted outcomes; type `approved` only if both OPS-04 and OPS-05 meet PASS criteria; otherwise report non-pass class + redacted symptom
-3. Do not mark OPS-04/OPS-05, Phase 9, or Phase 10 green from fixtures
-4. After resume: finalize VALIDATION sign-off, then Phase 9 hybrid close as applicable
-5. Optional Phase 10/11: Codex thinking/summary UI; ultra effort
+1. **Route 0 preferred:** resume Phase 9 remaining plans (09-04 live UAT / 09-05 hybrid close) — do not skip incomplete Phase 9 for Phase 11
+2. Optional: `/gsd-plan-phase 11` only after Phase 9 hybrid green (or explicit skip)
+3. Workspace `cargo fmt` hygiene chore remains deferred (does not block Phase 10 goal)

@@ -22,7 +22,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [x] **Phase 7: Cross-provider multi-agent orchestration** - Same-provider regression + parent/child cross-provider spawn (completed 2026-07-17)
 - [x] **Phase 8: Quiet fork & rebrand polish** - No auto-update/telemetry; full bum chrome/strings (completed 2026-07-17)
 - [ ] **Phase 9: Daily-driver end-to-end validation** - Real sessions both providers, mid-session switch, cross-provider agents
-- [ ] **Phase 10: Codex Responses wire parity** - Align bum request shape with official Codex CLI (headers, reasoning defaults, continuity)
+- [x] **Phase 10: Codex Responses wire parity** - Align bum request shape with official Codex CLI (headers, reasoning defaults, continuity) (completed 2026-07-18)
 - [ ] **Phase 11: Codex effort & catalog fidelity** - GPT-5.6 effort levels, soft-clamp UX, catalog capability flags from Codex models.json patterns
 - [ ] **Phase 12: Codex depth & attribution polish** - Optional tool/WS/originator depth; honest product attribution (bum ≠ Codex CLI)
 
@@ -253,7 +253,7 @@ Plans:
   4. Automated tests assert no `role: system` in Responses `input` and non-empty `instructions` when system history present
   5. Live OPS-04 re-run stays PASS after wire tweaks
 
-**Plans**: 6/7 implementation complete; `10-05` automated half recorded (26/26 focused behavior PASS in `10-VALIDATION.md`, 2026-07-18) — **human live OPS-04/OPS-05 checkpoint still open** (not plan-complete; Phase 9/10 not green).
+**Plans**: 7/7 complete; `10-VERIFICATION.md` **passed** (9/9) 2026-07-18 — automated 26/26 + live OPS-04/OPS-05 PASS; workspace fmt hygiene deferred (`nyquist_compliant: false`).
 
 ### Phase 11: Codex effort & catalog fidelity
 
@@ -305,7 +305,7 @@ Phases 10–12 deepen Codex after Phase 9 daily-driver bar; Phase 9 in-phase fix
 | 7. Cross-provider multi-agent orchestration | 6/6 | Complete    | 2026-07-17 |
 | 8. Quiet fork & rebrand polish | 6/6 | Complete    | 2026-07-17 |
 | 9. Daily-driver end-to-end validation | 3/5 | In Progress|  |
-| 10. Codex Responses wire parity | 6/7 | In Progress |  |
+| 10. Codex Responses wire parity | 7/7 | Complete    | 2026-07-18 |
 | 11. Codex effort & catalog fidelity | 0/TBD | Planned |  |
 | 12. Codex depth & attribution polish | 0/TBD | Planned |  |
 
