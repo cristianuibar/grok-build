@@ -198,6 +198,7 @@ pub(crate) async fn create_test_actor_ex(
         },
         auth_method_id: test_auth_method_id("test-auth"),
         model_auth_facts: std::cell::RefCell::new(None),
+        provider_transition: std::cell::Cell::new(Default::default()),
         attribution_callback: None,
         auth_manager: None,
         state,

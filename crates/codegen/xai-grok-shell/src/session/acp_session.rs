@@ -286,6 +286,19 @@ pub(crate) struct State {
     /// expectations.
     pub(crate) nudges_used_this_session: u32,
 }
+
+/// Provider identity and generation captured at a sampler-turn boundary.
+///
+/// The session actor advances this before changing the model route. A completed
+/// turn can then compare its snapshot with the live value before it persists
+/// response items, preventing provider-scoped encrypted reasoning from being
+/// replayed across a provider change.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub(crate) struct ProviderTransition {
+    pub(crate) active_provider: Option<crate::agent::config::ModelProvider>,
+    pub(crate) epoch: u64,
+}
+
 impl State {
     pub(crate) fn clear_pending_notifications(&mut self) {
         self.pending_notifications.clear();
@@ -573,6 +586,12 @@ pub(crate) struct SessionActor {
     /// [`SessionActor::model_auth_facts`].
     pub(crate) model_auth_facts:
         std::cell::RefCell<Option<(String, crate::agent::config::ModelAuthFacts)>>,
+    /// Actor-owned provider route and monotonically increasing switch epoch.
+    ///
+    /// This stays local to the session actor rather than reusing model-cache
+    /// generations: its only contract is keeping late sampler responses from
+    /// restoring provider-scoped encrypted reasoning after a route change.
+    pub(crate) provider_transition: std::cell::Cell<ProviderTransition>,
     /// 401-attribution callback. Joined with the bearer the
     /// sampler sends on the wire to emit an `auth 401 attribution`
     /// event at each of the six `OaiCompatClient` 401 arms in

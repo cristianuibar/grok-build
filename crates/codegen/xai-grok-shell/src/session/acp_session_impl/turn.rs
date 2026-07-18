@@ -1893,6 +1893,10 @@ impl SessionActor {
             if use_backend_search {
                 request.hosted_tools = self.agent.borrow().hosted_tools().to_vec();
             }
+            // Capture the provider route immediately before this sampler turn.
+            // A model switch may finish while the request is in flight, so each
+            // returned item is compared with the live route before insertion.
+            let provider_transition = self.provider_transition_snapshot();
             self.emit_event(crate::session::events::Event::PhaseChanged {
                 phase: crate::session::events::Phase::WaitingForModel,
             });
@@ -2066,7 +2070,8 @@ impl SessionActor {
                 stop_reason == Some(xai_grok_sampling_types::StopReason::ContentFilter);
             let refusal_explanation = response.stop_message.clone();
             let final_answer_text = json_schema.is_some().then(|| response.assistant_text());
-            for item in response.items {
+            for mut item in response.items {
+                self.sanitize_late_response_item(&mut item, provider_transition);
                 match item {
                     xai_grok_sampling_types::ConversationItem::Assistant(_) => {
                         self.record_assistant_response(item).await;

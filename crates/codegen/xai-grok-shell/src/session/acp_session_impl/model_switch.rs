@@ -1,7 +1,84 @@
 use super::*;
 use crate::remote::DEFAULT_CONTEXT_WINDOW;
 use xai_chat_state::conversation_util::replace_or_insert_system_head;
+
+/// Clear only provider-scoped encrypted reasoning payloads.
+///
+/// The surrounding conversation structure, including each reasoning item's id,
+/// summary, and non-encrypted content, is intentionally retained so a provider
+/// transition does not discard useful session context.
+fn clear_encrypted_reasoning(conversation: &mut [ConversationItem]) -> bool {
+    let mut changed = false;
+    for item in conversation {
+        if let ConversationItem::Reasoning(reasoning) = item
+            && reasoning.encrypted_content.take().is_some()
+        {
+            changed = true;
+        }
+    }
+    changed
+}
+
+fn requires_provider_transition_sanitization(
+    previous: Option<crate::agent::config::ModelProvider>,
+    target: crate::agent::config::ModelProvider,
+) -> bool {
+    previous != Some(target)
+}
+
 impl SessionActor {
+    /// Record a model-route change before any asynchronous mutation can let a
+    /// completed sampler turn observe stale provider state.
+    pub(super) fn advance_provider_transition(
+        &self,
+        target: crate::agent::config::ModelProvider,
+    ) -> ProviderTransition {
+        let previous = self.provider_transition.get();
+        let next = ProviderTransition {
+            active_provider: Some(target),
+            epoch: previous
+                .epoch
+                .checked_add(1)
+                .expect("provider transition epoch overflow"),
+        };
+        self.provider_transition.set(next);
+        previous
+    }
+
+    /// Snapshot the active provider immediately before sending a sampler turn.
+    pub(super) fn provider_transition_snapshot(&self) -> ProviderTransition {
+        self.provider_transition.get()
+    }
+
+    /// Remove encrypted payloads from a late response only when its origin is
+    /// unknown or its known provider differs from the active target provider.
+    /// A same-provider Codex switch deliberately retains its encrypted
+    /// continuity, even though the model-switch epoch advanced.
+    pub(super) fn sanitize_late_response_item(
+        &self,
+        item: &mut ConversationItem,
+        turn_snapshot: ProviderTransition,
+    ) {
+        let current = self.provider_transition.get();
+        let known_same_provider = matches!(
+            (turn_snapshot.active_provider, current.active_provider),
+            (Some(origin), Some(active)) if origin == active
+        );
+        if !known_same_provider {
+            let changed = clear_encrypted_reasoning(std::slice::from_mut(item));
+            if changed {
+                tracing::debug!(
+                    session_id = %self.session_info.id.0,
+                    turn_epoch = turn_snapshot.epoch,
+                    active_epoch = current.epoch,
+                    turn_provider = ?turn_snapshot.active_provider,
+                    active_provider = ?current.active_provider,
+                    "cleared encrypted reasoning from a late or unknown-provider response"
+                );
+            }
+        }
+    }
+
     pub(super) async fn handle_set_session_model(
         &self,
         sampling_config: xai_grok_sampler::SamplerConfig,
@@ -13,6 +90,27 @@ impl SessionActor {
         auto_compact_threshold_percent: u8,
     ) -> Result<acp::ModelId, acp::Error> {
         let model_id = acp::ModelId::new(sampling_config.model.clone());
+        // Resolve the previous provider and publish the target route before
+        // invalidating model facts or awaiting chat-state work. This is the
+        // ordering barrier used by late sampler responses below.
+        let previous_transition = self.advance_provider_transition(provider);
+        let should_sanitize_history = requires_provider_transition_sanitization(
+            previous_transition.active_provider,
+            provider,
+        );
+        if should_sanitize_history {
+            let mut conversation = self.chat_state_handle.get_conversation().await;
+            if clear_encrypted_reasoning(&mut conversation) {
+                tracing::info!(
+                    session_id = %self.session_info.id.0,
+                    previous_provider = ?previous_transition.active_provider,
+                    target_provider = ?provider,
+                    transition_epoch = self.provider_transition.get().epoch,
+                    "cleared encrypted reasoning before provider transition"
+                );
+                self.chat_state_handle.replace_conversation(conversation);
+            }
+        }
         let new_context_window = self.compaction.context_window_override.unwrap_or_else(|| {
             std::num::NonZeroU64::new(sampling_config.context_window).unwrap_or_else(|| {
                 std::num::NonZeroU64::new(DEFAULT_CONTEXT_WINDOW)
@@ -304,5 +402,121 @@ impl SessionActor {
                 "handle_replace_system_prompt: head already matches, no-op"
             );
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use xai_grok_sampling_types::rs;
+
+    fn encrypted_reasoning() -> ConversationItem {
+        ConversationItem::Reasoning(rs::ReasoningItem {
+            id: "reasoning_1".to_string(),
+            summary: vec![rs::SummaryPart::SummaryText(rs::SummaryTextContent {
+                text: "visible summary".to_string(),
+            })],
+            content: Some(vec![rs::ReasoningTextContent {
+                text: "non-encrypted reasoning".to_string(),
+            }]),
+            encrypted_content: Some("provider-scoped-encrypted-payload".to_string()),
+            status: None,
+        })
+    }
+
+    fn reasoning_after_sanitization(conversation: &[ConversationItem]) -> &rs::ReasoningItem {
+        let Some(ConversationItem::Reasoning(reasoning)) = conversation.get(3) else {
+            panic!("expected reasoning item at the preserved history position");
+        };
+        reasoning
+    }
+
+    fn representative_history() -> Vec<ConversationItem> {
+        vec![
+            ConversationItem::user("ordinary user context"),
+            ConversationItem::assistant("ordinary assistant context"),
+            ConversationItem::tool_result("call_1", "ordinary tool context"),
+            encrypted_reasoning(),
+        ]
+    }
+
+    #[test]
+    fn cross_provider_transition_sanitizes_existing_and_late_reasoning() {
+        assert!(requires_provider_transition_sanitization(
+            Some(crate::agent::config::ModelProvider::Xai),
+            crate::agent::config::ModelProvider::Codex,
+        ));
+
+        let mut existing_history = representative_history();
+        assert!(clear_encrypted_reasoning(&mut existing_history));
+        assert!(matches!(existing_history[0], ConversationItem::User(_)));
+        assert!(matches!(
+            existing_history[1],
+            ConversationItem::Assistant(_)
+        ));
+        assert!(matches!(
+            existing_history[2],
+            ConversationItem::ToolResult(_)
+        ));
+        let existing_reasoning = reasoning_after_sanitization(&existing_history);
+        assert_eq!(existing_reasoning.id, "reasoning_1");
+        assert_eq!(existing_reasoning.summary.len(), 1);
+        assert_eq!(
+            existing_reasoning
+                .content
+                .as_ref()
+                .and_then(|content| content.first())
+                .map(|content| content.text.as_str()),
+            Some("non-encrypted reasoning")
+        );
+        assert!(existing_reasoning.encrypted_content.is_none());
+
+        let mut late_response = vec![encrypted_reasoning()];
+        assert!(clear_encrypted_reasoning(&mut late_response));
+        let Some(ConversationItem::Reasoning(late_reasoning)) = late_response.first() else {
+            panic!("expected a late reasoning response item");
+        };
+        assert_eq!(late_reasoning.id, "reasoning_1");
+        assert_eq!(late_reasoning.summary.len(), 1);
+        assert!(late_reasoning.content.is_some());
+        assert!(late_reasoning.encrypted_content.is_none());
+    }
+
+    #[test]
+    fn same_provider_codex_transition_preserves_encrypted_reasoning() {
+        assert!(!requires_provider_transition_sanitization(
+            Some(crate::agent::config::ModelProvider::Codex),
+            crate::agent::config::ModelProvider::Codex,
+        ));
+
+        let mut history = representative_history();
+        if requires_provider_transition_sanitization(
+            Some(crate::agent::config::ModelProvider::Codex),
+            crate::agent::config::ModelProvider::Codex,
+        ) {
+            clear_encrypted_reasoning(&mut history);
+        }
+        assert_eq!(
+            reasoning_after_sanitization(&history)
+                .encrypted_content
+                .as_deref(),
+            Some("provider-scoped-encrypted-payload")
+        );
+    }
+
+    #[test]
+    fn unknown_prior_provider_sanitizes_encrypted_reasoning() {
+        assert!(requires_provider_transition_sanitization(
+            None,
+            crate::agent::config::ModelProvider::Codex,
+        ));
+
+        let mut history = representative_history();
+        assert!(clear_encrypted_reasoning(&mut history));
+        assert!(
+            reasoning_after_sanitization(&history)
+                .encrypted_content
+                .is_none()
+        );
     }
 }
