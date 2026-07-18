@@ -9,7 +9,7 @@ status: paused
 stopped_at: Phase 9 Plan 04 UAT partial — OPS-03 PASS; Codex retry + encrypted-history blockers → Phase 10
 last_updated: "2026-07-18T07:08:35.263Z"
 last_activity: 2026-07-18
-last_activity_desc: system→instructions (`765b9a0`), effort menus (`638e8e8`), live UAT notes
+last_activity_desc: Phase 10 wire-parity plan graph, pre-execution learnings, and cross-AI review setup
 progress:
   total_phases: 12
   completed_phases: 8
@@ -31,7 +31,7 @@ See: .planning/PROJECT.md (updated 2026-07-17)
 Phase: 9 of 12 (Daily-driver end-to-end validation) — plans 1–3 done; Plan 04 UAT partial
 Plan: 4 of 5
 Status: Paused — human UAT + Codex product blockers
-Last activity: 2026-07-18 — system→instructions (`765b9a0`), effort menus (`638e8e8`), live UAT notes
+Last activity: 2026-07-18 — Phase 10 wire-parity plan graph, pre-execution learnings, and cross-AI review setup
 Current Plan: 4 of 5 (live UAT) — hybrid Plan 05 blocked
 Total Plans in Phase: 7
 
@@ -95,6 +95,11 @@ Progress: [█████████░] 90% (phase 9) · milestone now planne
 - [Phase 9]: Hybrid GREEN blocked until OPS-04..06 live PASS after Phase 10; do not fixture-waive (D-16)
 - [Milestone]: Phases 10–12 added: wire parity, effort polish, attribution depth — research in `.planning/research/CODEX-RESPONSES-WIRE.md`
 
+### Phase 10 planning and review protocol
+
+- [Phase 10]: Seven internally checked execution plans preserve a trust-gated Codex profile, terminal SSE reconstruction, narrow cross-provider encrypted-history sanitation, and honest live OPS-04/OPS-05 proof.
+- [Process]: Grok research/review keeps web search enabled by default and uses a direct review prompt rather than `--permission-mode plan`; blank or cancelled output is an unavailable review lane, not approval. See `phases/10-codex-responses-wire-parity/10-PLANNING-LEARNINGS.md`.
+
 ### Phase 8 (Quiet fork & rebrand polish)
 
 - Product chrome → **bum**; keep model brands (`Grok Build (xAI)` / `grok-build`) and SuperGrok commercial names
@@ -114,12 +119,12 @@ Progress: [█████████░] 90% (phase 9) · milestone now planne
 
 ## Session
 
-**Last session:** 2026-07-18 (wrapped clean)
-**Stopped at:** Plan 04 partial UAT; Phase 10 next for Codex stream/history; see `09-SESSION-HANDOFF.md`
+**Last session:** 2026-07-18 (Phase 10 planning and review setup in progress)
+**Stopped at:** Plan 04 partial UAT; Phase 10 has seven internally checked plans and awaits completed cross-AI review before execution; see `09-SESSION-HANDOFF.md` and `10-PLANNING-LEARNINGS.md`
 **Resume file:** `.planning/phases/09-daily-driver-end-to-end-validation/09-SESSION-HANDOFF.md`
 **Next:**
 
-1. **New session:** `/gsd-plan-phase 10` or `/gsd-discuss-phase 10` — Codex Responses wire parity
+1. **New session:** complete the recorded cross-AI review, then `/gsd-execute-phase 10` — Codex Responses wire parity
 2. Phase 10 must-haves: fix post-reply retry storm; strip/omit foreign `encrypted_content` on provider switch; broaden encrypted-error match (`encrypted content` phrase)
 3. Optional Phase 10/11: Codex thinking/summary UI; ultra effort
 4. Re-run live OPS-04..06 → sign-off → Plan 04 Task 3 + Plan 05 hybrid close
