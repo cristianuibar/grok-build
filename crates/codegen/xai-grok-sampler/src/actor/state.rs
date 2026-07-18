@@ -75,7 +75,7 @@ impl ActorState {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::client::ApiBackend;
+    use crate::{client::ApiBackend, config::ResponsesWireProfile};
     use indexmap::IndexMap;
 
     /// Minimal config builder for tests in this module.
@@ -89,6 +89,7 @@ mod tests {
             top_p: None,
             api_backend: ApiBackend::ChatCompletions,
             auth_scheme: Default::default(),
+            responses_wire_profile: ResponsesWireProfile::Disabled,
             extra_headers: IndexMap::new(),
             context_window: 8192,
             force_http1: false,

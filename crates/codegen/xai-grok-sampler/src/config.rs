@@ -23,6 +23,22 @@ pub enum AuthScheme {
     XApiKey,
 }
 
+/// Caller-selected Responses API policy.
+///
+/// The sampler treats this as a semantic capability only. The shell decides
+/// whether a route is a trusted first-party Codex OAuth route and opts into
+/// [`Self::TrustedCodex`] without exposing endpoint or credential heuristics
+/// to this crate.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum ResponsesWireProfile {
+    /// Keep the existing provider-agnostic Responses request behavior.
+    #[default]
+    Disabled,
+    /// Apply the trusted first-party Codex Responses request policy.
+    TrustedCodex,
+}
+
 /// All knobs that control a single sampling request.
 ///
 /// The session typically owns one `SamplerConfig` per active model
@@ -56,6 +72,11 @@ pub struct SamplerConfig {
     pub api_backend: ApiBackend,
     #[serde(default)]
     pub auth_scheme: AuthScheme,
+    /// Explicit caller-owned Responses request policy. This defaults to
+    /// disabled so xAI, BYOK, and custom callers retain their existing
+    /// conversion behavior until the shell opts in.
+    #[serde(default)]
+    pub responses_wire_profile: ResponsesWireProfile,
     /// Extra request headers applied verbatim. The sampler never inspects
     /// the URL to derive headers; callers (the session) inject proxy auth
     /// and other access headers here before constructing the config.
@@ -139,6 +160,7 @@ impl Default for SamplerConfig {
             top_p: None,
             api_backend: ApiBackend::default(),
             auth_scheme: AuthScheme::default(),
+            responses_wire_profile: ResponsesWireProfile::default(),
             extra_headers: IndexMap::new(),
             context_window: 0,
             force_http1: false,
@@ -241,6 +263,23 @@ mod tests {
         assert_eq!(
             round_tripped.doom_loop_recovery,
             with_policy.doom_loop_recovery
+        );
+    }
+
+    /// Configs serialized before the profile existed remain safe generic
+    /// callers rather than accidentally opting into a trusted route policy.
+    #[test]
+    fn config_without_responses_wire_profile_deserializes_to_disabled() {
+        let mut stripped = serde_json::to_value(SamplerConfig::default()).unwrap();
+        stripped
+            .as_object_mut()
+            .unwrap()
+            .remove("responses_wire_profile");
+
+        let config: SamplerConfig = serde_json::from_value(stripped).unwrap();
+        assert_eq!(
+            config.responses_wire_profile,
+            ResponsesWireProfile::Disabled
         );
     }
 }

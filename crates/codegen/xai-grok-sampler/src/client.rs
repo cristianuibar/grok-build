@@ -28,7 +28,7 @@ use xai_grok_sampling_types::{
     rs,
 };
 
-use crate::config::{AuthScheme, OriginClientInfo, SamplerConfig};
+use crate::config::{AuthScheme, OriginClientInfo, ResponsesWireProfile, SamplerConfig};
 
 // Re-export ApiBackend from the shared types crate for downstream callers.
 pub use xai_grok_sampling_types::ApiBackend;
@@ -314,6 +314,7 @@ struct ClientDefaults {
     top_p: Option<f32>,
     api_backend: ApiBackend,
     auth_scheme: AuthScheme,
+    responses_wire_profile: ResponsesWireProfile,
     stream_tool_calls: bool,
     doom_loop_recovery: Option<xai_grok_sampling_types::DoomLoopRecoveryPolicy>,
 }
@@ -531,6 +532,7 @@ impl SamplingClient {
             top_p: config.top_p,
             api_backend: config.api_backend,
             auth_scheme: config.auth_scheme,
+            responses_wire_profile: config.responses_wire_profile,
             stream_tool_calls: config.stream_tool_calls,
             doom_loop_recovery: config.doom_loop_recovery,
         };
@@ -2095,6 +2097,7 @@ mod tests {
             top_p: None,
             api_backend: ApiBackend::ChatCompletions,
             auth_scheme: AuthScheme::Bearer,
+            responses_wire_profile: ResponsesWireProfile::Disabled,
             extra_headers: IndexMap::new(),
             context_window: 8192,
             force_http1: false,
@@ -2256,6 +2259,33 @@ mod tests {
     fn new_with_minimal_config_succeeds() {
         let client = SamplingClient::new(minimal_config()).expect("client should construct");
         assert_eq!(client.api_backend(), ApiBackend::ChatCompletions);
+    }
+
+    #[test]
+    fn responses_wire_profile_defaults_and_propagates_to_client_defaults() {
+        assert_eq!(
+            SamplerConfig::default().responses_wire_profile,
+            ResponsesWireProfile::Disabled
+        );
+
+        let disabled = SamplingClient::new(minimal_config()).expect("disabled client should build");
+        assert_eq!(
+            disabled.defaults.responses_wire_profile,
+            ResponsesWireProfile::Disabled
+        );
+
+        let trusted = SamplingClient::new(SamplerConfig {
+            responses_wire_profile: ResponsesWireProfile::TrustedCodex,
+            ..minimal_config()
+        })
+        .expect("trusted client should build");
+        assert_eq!(
+            trusted.defaults.responses_wire_profile,
+            ResponsesWireProfile::TrustedCodex
+        );
+        assert_eq!(trusted.base_url, "https://example.test");
+        assert_eq!(trusted.defaults.auth_scheme, AuthScheme::Bearer);
+        assert!(trusted.default_headers.contains_key(AUTHORIZATION));
     }
 
     #[test]
