@@ -45,6 +45,7 @@ pub(crate) fn ctx_with_toggle(toggle: HashMap<String, bool>) -> SubagentSpawnCon
             top_p: None,
             api_backend: Default::default(),
             auth_scheme: Default::default(),
+            responses_wire_profile: xai_grok_sampler::ResponsesWireProfile::Disabled,
             extra_headers: Default::default(),
             context_window: 256_000,
             client_version: None,

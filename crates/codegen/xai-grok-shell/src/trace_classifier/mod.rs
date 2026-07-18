@@ -1126,6 +1126,7 @@ async fn build_sampler_client(
         base_url,
         model,
         max_completion_tokens: Some(LAZINESS_MAX_OUTPUT_TOKENS),
+        responses_wire_profile: xai_grok_sampler::ResponsesWireProfile::Disabled,
         ..xai_grok_sampler::SamplerConfig::default()
     };
     xai_grok_sampler::SamplingClient::new(config).map_err(|e| anyhow!("build SamplingClient: {e}"))

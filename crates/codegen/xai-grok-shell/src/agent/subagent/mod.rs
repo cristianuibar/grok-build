@@ -924,6 +924,7 @@ async fn read_parent_sampling_config(
                 top_p: cfg.top_p,
                 api_backend: cfg.api_backend,
                 auth_scheme,
+                responses_wire_profile: xai_grok_sampler::ResponsesWireProfile::Disabled,
                 extra_headers,
                 context_window: cfg.context_window.get(),
                 client_version: creds.client_version,
