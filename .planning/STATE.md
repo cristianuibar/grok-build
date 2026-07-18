@@ -6,10 +6,10 @@ current_phase: 10
 current_phase_name: Codex Responses wire parity
 current_plan: 7 of 7 (Plan 05 Task 1 automated evidence complete; Task 2 live dual-login checkpoint blocking)
 status: checkpoint
-stopped_at: Phase 10 Plan 05 Task 2 — human redacted OPS-04/OPS-05 dual-login verification
+stopped_at: Phase 10 Plan 05 — OPS-04 live PASS; OPS-05 fix built, retest pending
 last_updated: "2026-07-18T12:55:00.000Z"
 last_activity: 2026-07-18
-last_activity_desc: Plan 10-05 recorded 26/26 focused automated PASSes; live OPS-04/OPS-05 pending human
+last_activity_desc: OPS-05 product fix ready for operator retest (store=false id strip)
 progress:
   total_phases: 12
   completed_phases: 8
