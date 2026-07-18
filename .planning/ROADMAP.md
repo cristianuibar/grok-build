@@ -261,14 +261,16 @@ Plans:
 **Mode:** mvp  
 **Depends on**: Phase 10 (or Phase 9 if effort is the only remaining UX gap)  
 **Requirements**: MOD-01/MOD-02 deepen; OPS-04  
+**Partial delivery (2026-07-18, Phase 9 blocker path):** embedded catalog now advertises low/medium/high/xhigh for Sol/Terra/Luna with Codex-aligned defaults — enough for daily effort switching. Remaining polish below.  
 **Success Criteria** (what must be TRUE):
 
-  1. GPT-5.6 catalog entries advertise non-empty supported effort levels (or equivalent meta) aligned with Codex `models.json` patterns
+  1. ~~GPT-5.6 catalog entries advertise non-empty supported effort levels~~ **DONE** in `default_models.json` (2026-07-18)
   2. Mid-session switch Grok→Codex soft-clamps effort to a supported level; does not hard-fail the turn
-  3. Wire sends `reasoning.effort` for supported levels; ultra maps to max if exposed
+  3. Wire sends `reasoning.effort` for supported levels; optional ultra→max UI if product wants full Codex ladder
   4. UAT notes no longer list effort as a product blocker when levels are supported
+  5. (Optional) Align `reasoning.summary` omit/default with GPT-5.6 catalog (`none`)
 
-**Plans**: TBD
+**Plans**: TBD (remaining soft-clamp / ultra / summary; re-verify in Phase 9 UAT)
 
 ### Phase 12: Codex depth & attribution polish
 

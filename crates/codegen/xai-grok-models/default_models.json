@@ -22,7 +22,32 @@
       "provider": "codex",
       "context_window": 272000,
       "api_backend": "responses",
-      "supported_in_api": true
+      "supported_in_api": true,
+      "supports_reasoning_effort": true,
+      "reasoning_effort": "low",
+      "reasoning_efforts": [
+        {
+          "value": "low",
+          "label": "Low",
+          "description": "Fast responses with lighter reasoning",
+          "default": true
+        },
+        {
+          "value": "medium",
+          "label": "Medium",
+          "description": "Balances speed and reasoning depth for everyday tasks"
+        },
+        {
+          "value": "high",
+          "label": "High",
+          "description": "Greater reasoning depth for complex problems"
+        },
+        {
+          "value": "xhigh",
+          "label": "XHigh",
+          "description": "Extra high reasoning depth for complex problems"
+        }
+      ]
     },
     {
       "model": "gpt-5.6-terra",
@@ -31,7 +56,32 @@
       "provider": "codex",
       "context_window": 272000,
       "api_backend": "responses",
-      "supported_in_api": true
+      "supported_in_api": true,
+      "supports_reasoning_effort": true,
+      "reasoning_effort": "medium",
+      "reasoning_efforts": [
+        {
+          "value": "low",
+          "label": "Low",
+          "description": "Fast responses with lighter reasoning"
+        },
+        {
+          "value": "medium",
+          "label": "Medium",
+          "description": "Balances speed and reasoning depth for everyday tasks",
+          "default": true
+        },
+        {
+          "value": "high",
+          "label": "High",
+          "description": "Greater reasoning depth for complex problems"
+        },
+        {
+          "value": "xhigh",
+          "label": "XHigh",
+          "description": "Extra high reasoning depth for complex problems"
+        }
+      ]
     },
     {
       "model": "gpt-5.6-luna",
@@ -40,7 +90,32 @@
       "provider": "codex",
       "context_window": 272000,
       "api_backend": "responses",
-      "supported_in_api": true
+      "supported_in_api": true,
+      "supports_reasoning_effort": true,
+      "reasoning_effort": "medium",
+      "reasoning_efforts": [
+        {
+          "value": "low",
+          "label": "Low",
+          "description": "Fast responses with lighter reasoning"
+        },
+        {
+          "value": "medium",
+          "label": "Medium",
+          "description": "Balances speed and reasoning depth for everyday tasks",
+          "default": true
+        },
+        {
+          "value": "high",
+          "label": "High",
+          "description": "Greater reasoning depth for complex problems"
+        },
+        {
+          "value": "xhigh",
+          "label": "XHigh",
+          "description": "Extra high reasoning depth for complex problems"
+        }
+      ]
     }
   ]
 }

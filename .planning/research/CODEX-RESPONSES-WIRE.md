@@ -153,9 +153,19 @@ bum uses its own tool surface (Grok-build / ports). Do **not** rename bum tools 
 
 Chat Completions conversion is unchanged (system role still valid there).
 
+### Effort catalog (quick fix landed 2026-07-18)
+
+Embedded `default_models.json` now sets for `gpt-5.6-{sol,terra,luna}`:
+
+- `supports_reasoning_effort: true`
+- Per-model `reasoning_efforts` menu: **low / medium / high / xhigh** (Codex official ladder; bum maps `max`→`xhigh` on parse)
+- Defaults: **sol=low**, **terra/luna=medium** (matches codex-rs `models.json`)
+
+This enables the TUI/session effort picker after switch to Codex. Deeper work (ultra UI, summary defaults, mid-switch soft-clamp polish) remains Phase 11.
+
 ### Still open (recommended follow-on phases)
 
-See ROADMAP Phases **10–12** (Codex wire depth, effort/catalog, tool/attribution parity).
+See ROADMAP Phases **10–12** (Codex wire depth, remaining effort/catalog polish, tool/attribution parity).
 
 ---
 

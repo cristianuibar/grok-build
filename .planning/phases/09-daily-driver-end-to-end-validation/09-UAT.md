@@ -162,7 +162,7 @@ Operator confirmed 2026-07-18: Grok/xAI works fine for productive session.
 - **Root cause:** system items were serialized into Responses `input[]` as `role: system` with `instructions: null`. Official Codex CLI never does this — base prompt goes in top-level `instructions` (see `.planning/research/CODEX-RESPONSES-WIRE.md`, sourced from `/home/cristian/bum/codex` codex-rs).
 - **Fix (Plan 04 Task 3):** `xai-grok-sampling-types` lifts `ConversationItem::System` into `CreateResponse.instructions` and excludes system from `input[]`. Unit tests assert no system role in input.
 - **Operator re-verify required:** rebuild binary, re-run OPS-04 steps 2–3; clear blocker to PASS if live tools work.
-- **Secondary (D-10; Phase 11):** Effort levels messaging on Codex — GPT-5.6 *does* support effort in official catalog; bum may mis-advertise. Track in Phase 11, not the 400.
+- **Secondary (effort):** Was “effort not supported” because catalog lacked `supports_reasoning_effort` / menus. **Quick fix 2026-07-18:** GPT-5.6 entries in `default_models.json` now advertise low/medium/high/xhigh (sol default low; terra/luna medium). Re-check after rebuild. Remaining polish (ultra, soft-clamp edge cases) → Phase 11.
 
 ---
 

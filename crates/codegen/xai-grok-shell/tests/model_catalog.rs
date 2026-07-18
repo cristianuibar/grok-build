@@ -58,6 +58,83 @@ fn catalog_includes_gpt56() {
     }
 }
 
+/// Codex GPT-5.6 models advertise reasoning effort (official codex-rs catalog).
+/// Without this, TUI shows "effort levels are not supported" after switch.
+#[test]
+fn gpt56_supports_reasoning_effort_menus() {
+    use xai_grok_sampling_types::ReasoningEffort;
+
+    let list = resolve_model_list(&Config::default(), None);
+    let expected = [
+        ("gpt-5.6-sol", ReasoningEffort::Low),
+        ("gpt-5.6-terra", ReasoningEffort::Medium),
+        ("gpt-5.6-luna", ReasoningEffort::Medium),
+    ];
+    for (id, default_effort) in expected {
+        let entry = list
+            .get(id)
+            .unwrap_or_else(|| panic!("catalog missing {id}"));
+        assert!(
+            entry.info.supports_reasoning_effort,
+            "{id} must set supports_reasoning_effort for Codex effort UX"
+        );
+        assert_eq!(
+            entry.info.reasoning_effort,
+            Some(default_effort),
+            "{id} default effort must match Codex models.json"
+        );
+        let values: Vec<_> = entry
+            .info
+            .reasoning_efforts
+            .iter()
+            .map(|o| o.value)
+            .collect();
+        assert!(
+            values.contains(&ReasoningEffort::Low)
+                && values.contains(&ReasoningEffort::Medium)
+                && values.contains(&ReasoningEffort::High)
+                && values.contains(&ReasoningEffort::Xhigh),
+            "{id} menu must include low/medium/high/xhigh; got {values:?}"
+        );
+        assert!(
+            values.len() >= 4,
+            "{id} effort menu too short: {values:?}"
+        );
+    }
+
+    // ACP meta must expose the gate so the TUI effort picker enables.
+    let acp = to_acp_model_info(&list);
+    for id in GPT_IDS {
+        let info = acp
+            .iter()
+            .find(|(k, _)| k.0.as_ref() == id)
+            .map(|(_, v)| v)
+            .unwrap_or_else(|| {
+                panic!(
+                    "ACP catalog missing {id}; keys={:?}",
+                    acp.keys().map(|k| k.to_string()).collect::<Vec<_>>()
+                )
+            });
+        let meta = info
+            .meta
+            .as_ref()
+            .unwrap_or_else(|| panic!("{id} must have ACP meta"));
+        assert_eq!(
+            meta.get("supportsReasoningEffort").and_then(|v| v.as_bool()),
+            Some(true),
+            "{id} ACP meta.supportsReasoningEffort; meta={meta:?}"
+        );
+        let efforts = meta
+            .get("reasoningEfforts")
+            .and_then(|v| v.as_array())
+            .unwrap_or_else(|| panic!("{id} ACP meta.reasoningEfforts array; meta={meta:?}"));
+        assert!(
+            !efforts.is_empty(),
+            "{id} ACP meta.reasoningEfforts must be non-empty"
+        );
+    }
+}
+
 /// D-11: no-prefetch order is Grok first, then Sol → Terra → Luna.
 #[test]
 fn mixed_catalog_order() {
