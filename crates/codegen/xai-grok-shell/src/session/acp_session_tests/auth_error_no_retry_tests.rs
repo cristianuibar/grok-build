@@ -63,6 +63,22 @@ fn auth_error() -> xai_grok_sampler::SamplingErrorInfo {
     }
 }
 
+/// Build the API/400 shape used by backends when conversation history contains
+/// encrypted reasoning from a different model family.
+fn encrypted_content_400_error() -> xai_grok_sampler::SamplingErrorInfo {
+    xai_grok_sampler::SamplingErrorInfo {
+        kind: xai_grok_sampler::SamplingErrorKind::Api,
+        message: "Could not decrypt the provided EnCrYpTeD CoNtEnT.".to_string(),
+        status_code: Some(400),
+        is_retryable: false,
+        retry_after_secs: None,
+        model_metadata: None,
+        empty_response_context: None,
+        doom_loop_triggers: None,
+        doom_loop_aborted_at_chunk: None,
+    }
+}
+
 /// Construct a test actor with the supplied `auth_manager` and
 /// session-token credentials wired in. Wraps the actor in `Arc`
 /// ready for `handle_sampling_failure`.
@@ -146,6 +162,34 @@ async fn no_emit_when_auth_manager_is_none() {
                 crate::auth::attribution::test_emit_count(),
                 0,
                 "auth arm must not emit attribution when no auth_manager is wired"
+            );
+        })
+        .await;
+}
+
+/// A recognized encrypted-content HTTP 400 is terminal. The end-to-end
+/// model-switch gate test separately proves it is checked before compaction
+/// and turn-loop resubmission.
+#[tokio::test(flavor = "current_thread")]
+async fn encrypted_content_400_is_classified_terminal() {
+    let local = tokio::task::LocalSet::new();
+    local
+        .run_until(async {
+            let (actor, _rx) = make_actor_with_auth_manager(None).await;
+            let Err(err) = actor
+                .handle_sampling_failure(encrypted_content_400_error())
+                .await
+            else {
+                panic!("recognized encrypted-content 400 must be terminal");
+            };
+            let message = err
+                .data
+                .as_ref()
+                .and_then(|data| data.as_str())
+                .unwrap_or_default();
+            assert!(
+                message.contains("conversation history is incompatible"),
+                "terminal recovery must give the bounded friendly guidance: {message}"
             );
         })
         .await;

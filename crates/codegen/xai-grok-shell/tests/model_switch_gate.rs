@@ -1148,6 +1148,86 @@ async fn trusted_to_untrusted_switch_strips_codex_identity_headers() {
         .await;
 }
 
+#[tokio::test(flavor = "current_thread")]
+#[serial]
+async fn encrypted_content_400_is_terminal_before_compaction_or_resubmit() {
+    let local = tokio::task::LocalSet::new();
+    local
+        .run_until(async {
+            let xai = sample_oidc(XAI_FAKE, Some("xai-rt"), false);
+            let h = GateHarness::start(Some(xai), None).await;
+            let sid = h.new_session_on_xai().await;
+
+            // Let the one-off title generator finish first. The error turn
+            // below can then enforce a strict one-inference-request contract.
+            let seed_before = h.server.request_count();
+            h.server.set_response("p10 encrypted-content title seed reply");
+            h.prompt(&sid, "p10 seed the generated session title")
+                .await
+                .expect("title seed prompt must succeed");
+            tokio::time::timeout(Duration::from_secs(10), async {
+                loop {
+                    if h.inference_requests_after(seed_before).len() >= 2 {
+                        break;
+                    }
+                    tokio::time::sleep(Duration::from_millis(10)).await;
+                }
+            })
+            .await
+            .expect("title seed must drain its auxiliary inference request");
+
+            let mut encrypted_content_400 = ScriptedResponse::json(
+                400,
+                json!({
+                    "error": {
+                        "message": "Could not decrypt the provided EnCrYpTeD CoNtEnT."
+                    }
+                }),
+            )
+            .for_agent_turn();
+            // This arrives with the failed response, after pre-flight
+            // compaction has already passed using the normal model window.
+            // Before this fix, `should_compact_on_error` would compact and
+            // resubmit because the turn's tracked estimate exceeds one token.
+            encrypted_content_400.headers.push((
+                "x-grok-context-window".to_string(),
+                "1".to_string(),
+            ));
+            h.server
+                .enqueue_response("/v1/responses", encrypted_content_400);
+
+            let before = h.server.request_count();
+            let oversized_prompt = "p10 encrypted-content recovery payload ".repeat(1_024);
+            let err = h
+                .prompt(&sid, &oversized_prompt)
+                .await
+                .expect_err("recognized encrypted-content 400 must be terminal");
+            let message = err
+                .data
+                .as_ref()
+                .and_then(|data| data.as_str())
+                .unwrap_or_default();
+            assert!(
+                message.contains("conversation history is incompatible"),
+                "terminal error must give bounded recovery guidance: {message}"
+            );
+
+            let requests = h.inference_requests_after(before);
+            assert_eq!(
+                requests.len(),
+                1,
+                "terminal encrypted-content handling must neither compact nor resubmit; requests: {requests:#?}"
+            );
+            assert!(
+                is_primary_agent_turn(&requests[0]),
+                "the sole request must be the failed primary agent turn: {:#?}",
+                requests[0]
+            );
+            assert_eq!(requests[0].path, "/v1/responses");
+        })
+        .await;
+}
+
 // ───────────────────────── BYOK / history / mid-turn (D-06) ─────────────────────────
 
 #[tokio::test(flavor = "current_thread")]

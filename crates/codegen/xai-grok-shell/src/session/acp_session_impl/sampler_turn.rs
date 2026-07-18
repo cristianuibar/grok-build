@@ -658,6 +658,28 @@ impl SessionActor {
         error: xai_grok_sampler::SamplingErrorInfo,
     ) -> Result<SamplerFailureRecovery, acp::Error> {
         use xai_grok_sampler::SamplingErrorKind;
+        let detailed_message = error.message.clone();
+        if matches!(error.kind, SamplingErrorKind::Api)
+            && xai_grok_sampling_types::error::is_encrypted_content_error(
+                error.status_code,
+                &error.message,
+            )
+        {
+            self.signals_handle()
+                .record_error_typed("encrypted_content_mismatch");
+            let friendly = "This session's conversation history is incompatible \
+                            with the current model. Please start a new session."
+                .to_string();
+            self.log_terminal_failure("encrypted_content_mismatch", error.status_code, &friendly);
+            self.send_xai_notification(XaiSessionUpdate::RetryState(
+                crate::extensions::notification::RetryState::Failed {
+                    error_type: "encrypted_content_mismatch".to_string(),
+                    message: friendly.clone(),
+                },
+            ))
+            .await;
+            return Err(acp::Error::invalid_params().data(friendly));
+        }
         if self.should_compact_on_error(&error).await {
             let cw = error
                 .model_metadata
@@ -682,26 +704,6 @@ impl SessionActor {
                 self.run_compact_only(trigger_info).await?;
                 return Ok(SamplerFailureRecovery::CompactAndResubmit);
             }
-        }
-        let detailed_message = error.message.clone();
-        if matches!(error.kind, SamplingErrorKind::Api)
-            && error.status_code == Some(400)
-            && error.message.contains("encrypted_content")
-        {
-            self.signals_handle()
-                .record_error_typed("encrypted_content_mismatch");
-            let friendly = "This session's conversation history is incompatible \
-                            with the current model. Please start a new session."
-                .to_string();
-            self.log_terminal_failure("encrypted_content_mismatch", error.status_code, &friendly);
-            self.send_xai_notification(XaiSessionUpdate::RetryState(
-                crate::extensions::notification::RetryState::Failed {
-                    error_type: "encrypted_content_mismatch".to_string(),
-                    message: friendly.clone(),
-                },
-            ))
-            .await;
-            return Err(acp::Error::invalid_params().data(friendly));
         }
         if matches!(error.kind, SamplingErrorKind::RateLimited) {
             self.log_terminal_failure("rate_limited", error.status_code, &detailed_message);

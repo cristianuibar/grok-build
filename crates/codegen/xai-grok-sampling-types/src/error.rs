@@ -209,23 +209,22 @@ impl SamplingError {
     }
 
     /// The server rejected the request because the conversation history
-    /// contains `encrypted_content` from a different model family that the
+    /// contains encrypted content from a different model family that the
     /// current model cannot decrypt. Never retryable — the user must start
     /// a new session.
     pub fn is_encrypted_content_error(&self) -> bool {
-        matches!(
-            self,
+        match self {
             SamplingError::Api {
-                status: StatusCode::BAD_REQUEST,
-                message,
-                ..
-            } if message.contains("encrypted_content")
-        )
+                status, message, ..
+            } => is_encrypted_content_error(Some(status.as_u16()), message),
+            _ => false,
+        }
     }
 
     /// The API rejected the request because an inline image could not be
     /// processed. Matches both direct 400 and proxy-wrapped 500 responses.
-    /// Exact-case match — consistent with `is_encrypted_content_error`.
+    /// Exact-case match — unlike the case-insensitive encrypted-content
+    /// classification above.
     pub fn is_image_processing_error(&self) -> bool {
         matches!(
             self,
@@ -373,6 +372,19 @@ pub fn is_context_length_error(message: &str) -> bool {
         || m.contains("maximum prompt length")
         || m.contains("maximum context length")
         || m.contains("context_length_exceeded")
+}
+
+/// True when an HTTP 400 says that the request contains encrypted conversation
+/// content which the selected model family cannot decrypt. Backends use both
+/// `encrypted_content` and `encrypted content`, with inconsistent casing.
+///
+/// Keep this predicate narrow: callers use it to stop recovery rather than
+/// retrying or compacting the same incompatible history.
+pub fn is_encrypted_content_error(status_code: Option<u16>, message: &str) -> bool {
+    status_code == Some(StatusCode::BAD_REQUEST.as_u16()) && {
+        let message = message.to_ascii_lowercase();
+        message.contains("encrypted_content") || message.contains("encrypted content")
+    }
 }
 
 /// Decide whether a [`reqwest::Error`] is worth retrying.
@@ -639,10 +651,10 @@ mod tests {
     }
 
     #[test]
-    fn encrypted_content_400_is_detected() {
+    fn encrypted_content_error_accepts_spaced_case_insensitive_400_only() {
         let err = SamplingError::Api {
             status: StatusCode::BAD_REQUEST,
-            message: "Could not decrypt the provided encrypted_content. Ensure the value is the unmodified encrypted_content from a previous response.".into(),
+            message: "Could not decrypt the provided EnCrYpTeD CoNtEnT.".into(),
             model_metadata: None,
             retry_after_secs: None,
             should_retry: None,
@@ -652,35 +664,21 @@ mod tests {
             !err.is_retryable(),
             "encrypted_content errors must not be retried"
         );
-    }
-
-    #[test]
-    fn encrypted_content_wrong_status_not_detected() {
-        let err = SamplingError::Api {
-            status: StatusCode::INTERNAL_SERVER_ERROR,
-            message: "encrypted_content decryption failed".into(),
-            model_metadata: None,
-            retry_after_secs: None,
-            should_retry: None,
-        };
+        assert!(is_encrypted_content_error(
+            Some(400),
+            "Could not decrypt the provided EnCrYpTeD_CoNtEnT."
+        ));
+        assert!(is_encrypted_content_error(
+            Some(400),
+            "Could not decrypt the provided encrypted content."
+        ));
         assert!(
-            !err.is_encrypted_content_error(),
-            "only 400 should match, not 500"
+            !is_encrypted_content_error(Some(500), "ENCRYPTED_CONTENT decryption failed"),
+            "only HTTP 400 should match"
         );
-    }
-
-    #[test]
-    fn encrypted_content_unrelated_400_not_detected() {
-        let err = SamplingError::Api {
-            status: StatusCode::BAD_REQUEST,
-            message: "Invalid model parameter".into(),
-            model_metadata: None,
-            retry_after_secs: None,
-            should_retry: None,
-        };
         assert!(
-            !err.is_encrypted_content_error(),
-            "unrelated 400 errors must not match"
+            !is_encrypted_content_error(Some(400), "Invalid model parameter"),
+            "unrelated HTTP 400 errors must not match"
         );
     }
 
