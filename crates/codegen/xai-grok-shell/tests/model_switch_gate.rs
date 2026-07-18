@@ -12,6 +12,8 @@
 //! - Next-sample route uses target provider credential/base_url after apply
 //! - History length + identity preserved across successful apply (chat_history.jsonl)
 //! - Mid-turn apply does not cancel in-flight held MockInferenceServer turn
+//! - A late Grok reasoning response cannot carry encrypted payloads into the
+//!   next Codex request; same-provider Codex continuity retains them
 //!
 //! **Scope:** Shell authority only. No pager QuestionView / badges (Plans 02–04).
 //! Fixture tokens only — no live ChatGPT/xAI OAuth.
@@ -38,6 +40,7 @@ use std::time::Duration;
 use agent_client_protocol::{self as acp, Agent as _};
 use chrono::{Duration as ChronoDuration, Utc};
 use serial_test::serial;
+use serde_json::{Value, json};
 use tempfile::TempDir;
 use tokio_util::compat::{TokioAsyncReadCompatExt, TokioAsyncWriteCompatExt};
 use xai_acp_lib::{
@@ -53,7 +56,7 @@ use xai_grok_shell::agent::mvp_agent::MvpAgent;
 use xai_grok_shell::auth::{
     provider_slot_usable, AuthMode, AuthStore, GrokAuth, PROVIDER_CODEX, PROVIDER_XAI,
 };
-use xai_grok_test_support::MockInferenceServer;
+use xai_grok_test_support::{MockInferenceServer, ScriptedResponse, SseEvent};
 
 const XAI_FAKE: &str = "xai-fake-token-p6";
 const CODEX_FAKE: &str = "codex-fake-token-p6";
@@ -65,6 +68,12 @@ const XAI_MODEL: &str = "grok-build";
 const BYOK_MODEL: &str = "p6-byok-codex";
 const DUPLEX_BUFFER_BYTES: usize = 4 * 1024 * 1024;
 const HISTORY_MARKER: &str = "p6-history-marker-unique-prompt-string";
+const PROVIDER_HISTORY_MARKER: &str = "p10-normal-history-must-survive";
+const PROVIDER_HISTORY_REPLY: &str = "p10-normal-assistant-history-must-survive";
+const REASONING_ID: &str = "p10-reasoning-id";
+const REASONING_SUMMARY: &str = "p10-visible-reasoning-summary";
+const REASONING_CONTENT: &str = "p10-visible-reasoning-content";
+const ENCRYPTED_REASONING: &str = "p10-provider-scoped-encrypted-reasoning";
 
 // ───────────────────────── pure / unit-style ─────────────────────────
 
@@ -246,6 +255,117 @@ fn chat_history_line_count(jsonl: &str) -> usize {
         .lines()
         .filter(|l| !l.trim().is_empty())
         .count()
+}
+
+/// Responses API terminal event carrying ordinary history plus a full typed
+/// reasoning item. The test later observes the real next request body, not a
+/// synthetic `ConversationItem`, so it covers sampler parsing and history
+/// serialization together.
+fn encrypted_reasoning_events(model: &str) -> Vec<SseEvent> {
+    vec![
+        SseEvent::data(
+            json!({
+                "type": "response.created",
+                "sequence_number": 0,
+                "response": {
+                    "id": "p10-held-response",
+                    "object": "response",
+                    "created_at": 1234567890,
+                    "model": model,
+                    "status": "in_progress",
+                    "output": []
+                }
+            })
+            .to_string(),
+        ),
+        SseEvent::data(
+            json!({
+                "type": "response.completed",
+                "sequence_number": 1,
+                "response": {
+                    "id": "p10-held-response",
+                    "object": "response",
+                    "created_at": 1234567890,
+                    "model": model,
+                    "status": "completed",
+                    "output": [
+                        {
+                            "type": "reasoning",
+                            "id": REASONING_ID,
+                            "summary": [{
+                                "type": "summary_text",
+                                "text": REASONING_SUMMARY
+                            }],
+                            "content": [{ "text": REASONING_CONTENT }],
+                            "encrypted_content": ENCRYPTED_REASONING,
+                            "status": "completed"
+                        },
+                        {
+                            "type": "message",
+                            "id": "p10-history-message",
+                            "role": "assistant",
+                            "status": "completed",
+                            "content": [{
+                                "type": "output_text",
+                                "text": PROVIDER_HISTORY_REPLY,
+                                "annotations": []
+                            }]
+                        }
+                    ],
+                    "usage": {
+                        "input_tokens": 10,
+                        "output_tokens": 10,
+                        "total_tokens": 20,
+                        "input_tokens_details": { "cached_tokens": 0 },
+                        "output_tokens_details": { "reasoning_tokens": 5 }
+                    }
+                }
+            })
+            .to_string(),
+        ),
+        SseEvent::data("[DONE]"),
+    ]
+}
+
+fn reasoning_input(body: &Value) -> &Value {
+    let input = body
+        .get("input")
+        .and_then(Value::as_array)
+        .unwrap_or_else(|| panic!("Responses request must carry input: {body:#?}"));
+    input
+        .iter()
+        .find(|item| item.get("type").and_then(Value::as_str) == Some("reasoning"))
+        .unwrap_or_else(|| panic!("typed reasoning item missing from request input: {input:#?}"))
+}
+
+fn assert_reasoning_request(body: &Value, encrypted_content: Option<&str>) {
+    let reasoning = reasoning_input(body);
+    assert_eq!(
+        reasoning.get("id").and_then(Value::as_str),
+        Some(REASONING_ID),
+        "reasoning id must survive the provider transition"
+    );
+    assert_eq!(
+        reasoning["summary"][0]["text"].as_str(),
+        Some(REASONING_SUMMARY),
+        "visible reasoning summary must survive the provider transition"
+    );
+    assert_eq!(
+        reasoning["content"][0]["text"].as_str(),
+        Some(REASONING_CONTENT),
+        "visible reasoning content must survive the provider transition"
+    );
+    match encrypted_content {
+        Some(expected) => assert_eq!(
+            reasoning.get("encrypted_content").and_then(Value::as_str),
+            Some(expected),
+            "same-provider reasoning must retain its encrypted payload"
+        ),
+        None => assert!(
+            reasoning.get("encrypted_content").is_none(),
+            "cross-provider reasoning must omit encrypted_content: {reasoning:#?}"
+        ),
+    }
 }
 
 struct GateClient {
@@ -944,6 +1064,142 @@ async fn p6_mid_turn_switch_does_not_cancel_inflight() {
                 cancel_before,
                 "cancel_notifications spy must stay flat through mid-turn switch + release"
             );
+        })
+        .await;
+}
+
+#[tokio::test(flavor = "current_thread")]
+#[serial]
+async fn held_grok_response_after_codex_switch_is_sanitized() {
+    let local = tokio::task::LocalSet::new();
+    local
+        .run_until(async {
+            let (xai, codex) = dual_usable_auth();
+            let h = GateHarness::start(Some(xai), Some(codex)).await;
+            let sid = h.new_session_on_xai().await;
+
+            // Scripted responses bypass `hold_agent_completions`; the
+            // dedicated terminal gate proves the old-provider response is
+            // still in flight before we switch to Codex.
+            h.server.hold_scripted_sse_terminal();
+            let before_held_request_count = h.server.request_count();
+            h.server.enqueue_response(
+                "/v1/responses",
+                ScriptedResponse::sse(encrypted_reasoning_events(XAI_MODEL))
+                    .for_agent_turn()
+                    .hold_terminal_event(),
+            );
+            let prompt_fut = h.client.prompt(acp::PromptRequest::new(
+                sid.clone(),
+                vec![acp::ContentBlock::Text(acp::TextContent::new(
+                    PROVIDER_HISTORY_MARKER.to_owned(),
+                ))],
+            ));
+            tokio::pin!(prompt_fut);
+            let held_fut = h.server.wait_for_scripted_sse_terminal();
+            tokio::pin!(held_fut);
+            tokio::select! {
+                biased;
+                result = &mut prompt_fut => {
+                    panic!("scripted Grok prompt completed before terminal hold: {result:?}");
+                }
+                () = &mut held_fut => {}
+                () = tokio::time::sleep(Duration::from_secs(30)) => {
+                    panic!("scripted Grok response did not reach terminal hold");
+                }
+            }
+
+            let (held_path, _, held_body) = h.last_inference_after(before_held_request_count);
+            assert_eq!(held_path, "/v1/responses", "Grok uses Responses API");
+            let held_body = held_body.expect("held scripted request must have JSON body");
+            assert!(
+                held_body.to_string().contains(PROVIDER_HISTORY_MARKER),
+                "scripted terminal gate must hold the primary agent request: {held_body:#?}"
+            );
+            assert!(
+                held_body
+                    .get("tools")
+                    .and_then(Value::as_array)
+                    .is_some_and(|tools| tools.len() >= 2),
+                "scripted terminal gate must hold an agent turn: {held_body:#?}"
+            );
+
+            assert_switch_ok(
+                h.set_model(&sid, CODEX_MODEL).await,
+                "switch while scripted Grok response is held",
+            );
+            h.server.release_scripted_sse_terminal();
+            let held_response = tokio::time::timeout(Duration::from_secs(60), &mut prompt_fut)
+                .await
+                .expect("held scripted Grok prompt timed out after release")
+                .expect("held scripted Grok prompt must succeed after release");
+            assert!(
+                matches!(held_response.stop_reason, acp::StopReason::EndTurn),
+                "released scripted Grok turn must complete: {:?}",
+                held_response.stop_reason
+            );
+
+            let before_count = h.server.request_count();
+            h.server.set_response("p10-codex-followup-response");
+            let next = h
+                .prompt(&sid, "p10 next Codex prompt after held Grok response")
+                .await
+                .expect("next Codex prompt must succeed");
+            assert!(matches!(next.stop_reason, acp::StopReason::EndTurn));
+
+            let (path, _, body) = h.last_inference_after(before_count);
+            assert_eq!(path, "/v1/responses", "Codex uses Responses API");
+            let body = body.expect("captured Codex request must have JSON body");
+            let serialized = body.to_string();
+            assert!(
+                serialized.contains(PROVIDER_HISTORY_MARKER),
+                "ordinary user history must survive cross-provider sanitization: {body:#?}"
+            );
+            assert!(
+                serialized.contains(PROVIDER_HISTORY_REPLY),
+                "ordinary assistant history must survive cross-provider sanitization: {body:#?}"
+            );
+            assert_reasoning_request(&body, None);
+        })
+        .await;
+}
+
+#[tokio::test(flavor = "current_thread")]
+#[serial]
+async fn codex_to_codex_transition_retains_encrypted_reasoning() {
+    let local = tokio::task::LocalSet::new();
+    local
+        .run_until(async {
+            let (_, codex) = dual_usable_auth();
+            let h = GateHarness::start(None, Some(codex)).await;
+            let sid = h.new_session_with_model(CODEX_MODEL).await;
+
+            h.server.enqueue_response(
+                "/v1/responses",
+                ScriptedResponse::sse(encrypted_reasoning_events(CODEX_MODEL)).for_agent_turn(),
+            );
+            let seed = h
+                .prompt(&sid, PROVIDER_HISTORY_MARKER)
+                .await
+                .expect("seed Codex reasoning turn must succeed");
+            assert!(matches!(seed.stop_reason, acp::StopReason::EndTurn));
+
+            assert_switch_ok(
+                h.set_model(&sid, CODEX_MODEL_TERRA).await,
+                "same-provider Codex switch",
+            );
+            let before_count = h.server.request_count();
+            h.server.set_response("p10-Codex-Terra-followup-response");
+            let next = h
+                .prompt(&sid, "p10 next Codex Terra prompt")
+                .await
+                .expect("next Codex Terra prompt must succeed");
+            assert!(matches!(next.stop_reason, acp::StopReason::EndTurn));
+
+            let (path, _, body) = h.last_inference_after(before_count);
+            assert_eq!(path, "/v1/responses", "Codex uses Responses API");
+            let body = body.expect("captured Codex request must have JSON body");
+            assert_reasoning_request(&body, Some(ENCRYPTED_REASONING));
         })
         .await;
 }

@@ -3,6 +3,8 @@
 //! time. Pure data — no router or handler types in the public surface.
 
 use std::convert::Infallible;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use axum::Json;
 use axum::http::{HeaderName, HeaderValue, StatusCode};
@@ -10,6 +12,59 @@ use axum::response::sse::{KeepAlive, Sse};
 use axum::response::{IntoResponse, Response};
 use futures_util::stream;
 use serde_json::Value;
+use tokio::sync::Notify;
+
+/// Test-only barrier for a scripted SSE response's terminal event.
+///
+/// Unlike the mock server's agent-turn completion gate, this is deliberately
+/// owned by the scripted-response path: scripted replies bypass normal agent
+/// turn selection and therefore need their own explicit hold/release control.
+#[derive(Default)]
+pub(crate) struct ScriptedSseTerminalGate {
+    held: AtomicBool,
+    reached_terminal: AtomicBool,
+    release: Notify,
+    reached: Notify,
+}
+
+impl ScriptedSseTerminalGate {
+    pub(crate) fn hold(&self) {
+        self.reached_terminal.store(false, Ordering::SeqCst);
+        self.held.store(true, Ordering::SeqCst);
+    }
+
+    pub(crate) fn release(&self) {
+        self.held.store(false, Ordering::SeqCst);
+        self.release.notify_waiters();
+    }
+
+    /// Wait until a held scripted response has reached its terminal SSE event.
+    pub(crate) async fn wait_until_held(&self) {
+        loop {
+            let notified = self.reached.notified();
+            if self.reached_terminal.load(Ordering::SeqCst) {
+                return;
+            }
+            notified.await;
+        }
+    }
+
+    /// Wait for an explicit release only when the test armed this gate.
+    async fn wait_if_held(&self) {
+        if !self.held.load(Ordering::SeqCst) {
+            return;
+        }
+        self.reached_terminal.store(true, Ordering::SeqCst);
+        self.reached.notify_waiters();
+        loop {
+            let notified = self.release.notified();
+            if !self.held.load(Ordering::SeqCst) {
+                return;
+            }
+            notified.await;
+        }
+    }
+}
 
 /// One SSE event as data: optional `event:` name plus the `data:` payload.
 #[derive(Debug, Clone)]
@@ -45,7 +100,7 @@ pub enum ScriptedBody {
     Raw(String),
 }
 
-/// A scripted reply for a single request on one path, consumed FIFO.
+/// A scripted reply for the next eligible request on one path, consumed FIFO.
 /// Takes precedence over the response mode AND the required-auth check —
 /// a script is full control over the next reply.
 #[derive(Debug, Clone)]
@@ -53,6 +108,8 @@ pub struct ScriptedResponse {
     pub status: u16,
     pub headers: Vec<(String, String)>,
     pub body: ScriptedBody,
+    hold_terminal_event: bool,
+    agent_turn_only: bool,
 }
 
 impl ScriptedResponse {
@@ -62,6 +119,8 @@ impl ScriptedResponse {
             status: 200,
             headers: Vec::new(),
             body: ScriptedBody::Sse(events),
+            hold_terminal_event: false,
+            agent_turn_only: false,
         }
     }
 
@@ -71,6 +130,8 @@ impl ScriptedResponse {
             status,
             headers: Vec::new(),
             body: ScriptedBody::Json(body),
+            hold_terminal_event: false,
+            agent_turn_only: false,
         }
     }
 
@@ -80,7 +141,41 @@ impl ScriptedResponse {
             status,
             headers: Vec::new(),
             body: ScriptedBody::Raw(body.into()),
+            hold_terminal_event: false,
+            agent_turn_only: false,
         }
+    }
+
+    /// Hold this scripted SSE response immediately before its terminal event.
+    ///
+    /// Call [`MockInferenceServer::hold_scripted_sse_terminal`] before the
+    /// request and [`MockInferenceServer::release_scripted_sse_terminal`] to
+    /// finish it. This intentionally does not use `hold_agent_completions`:
+    /// scripts bypass the mock server's agent-turn response path.
+    ///
+    /// [`MockInferenceServer::hold_scripted_sse_terminal`]: crate::MockInferenceServer::hold_scripted_sse_terminal
+    /// [`MockInferenceServer::release_scripted_sse_terminal`]: crate::MockInferenceServer::release_scripted_sse_terminal
+    pub fn hold_terminal_event(mut self) -> Self {
+        assert!(
+            matches!(&self.body, ScriptedBody::Sse(_)),
+            "only scripted SSE responses can hold a terminal event"
+        );
+        self.hold_terminal_event = true;
+        self
+    }
+
+    /// Consume this script only for a primary agent turn (a request with at
+    /// least two tools), leaving it queued through title/classifier requests.
+    ///
+    /// Use this when a test needs to control the conversation turn itself
+    /// rather than incidental inference requests made around it.
+    pub fn for_agent_turn(mut self) -> Self {
+        self.agent_turn_only = true;
+        self
+    }
+
+    pub(crate) fn requires_agent_turn(&self) -> bool {
+        self.agent_turn_only
     }
 
     /// Validate status and headers eagerly so a bad script panics at the
@@ -97,8 +192,17 @@ impl ScriptedResponse {
     /// event, mirroring the fixed/echo `paced_events` pacing) so
     /// `set_chunk_delay` also holds scripted turns open. `None` streams
     /// instantly. Non-SSE bodies ignore the delay.
-    pub(crate) fn into_response_paced(self, delay: Option<std::time::Duration>) -> Response {
+    pub(crate) fn into_response_paced(
+        self,
+        delay: Option<std::time::Duration>,
+        terminal_gate: Option<Arc<ScriptedSseTerminalGate>>,
+    ) -> Response {
         use futures_util::StreamExt as _;
+        assert!(
+            !self.hold_terminal_event || terminal_gate.is_some(),
+            "held scripted SSE response requires a terminal gate"
+        );
+        let hold_terminal_event = self.hold_terminal_event;
         let mut resp = match self.body {
             ScriptedBody::Json(v) => Json(v).into_response(),
             ScriptedBody::Raw(s) => s.into_response(),
@@ -113,14 +217,24 @@ impl ScriptedResponse {
                         }
                     })
                     .collect();
-                let stream = stream::iter(events.into_iter().map(Ok::<_, Infallible>)).then(
-                    move |event| async move {
-                        if let Some(d) = delay {
-                            tokio::time::sleep(d).await;
+                let last_idx = events.len().saturating_sub(1);
+                let stream =
+                    stream::iter(events.into_iter().enumerate()).then(move |(idx, event)| {
+                        let terminal_gate = terminal_gate.clone();
+                        async move {
+                            if let Some(d) = delay {
+                                tokio::time::sleep(d).await;
+                            }
+                            if hold_terminal_event && idx == last_idx {
+                                terminal_gate
+                                    .as_deref()
+                                    .expect("held scripted SSE response has a terminal gate")
+                                    .wait_if_held()
+                                    .await;
+                            }
+                            Ok::<_, Infallible>(event)
                         }
-                        event
-                    },
-                );
+                    });
                 Sse::new(stream)
                     .keep_alive(KeepAlive::default())
                     .into_response()

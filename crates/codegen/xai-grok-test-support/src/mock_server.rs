@@ -27,6 +27,7 @@ use serde_json::{Value, json};
 use tokio::net::TcpListener;
 use tokio::sync::oneshot;
 
+use crate::scripted::ScriptedSseTerminalGate;
 pub use crate::scripted::{ScriptedBody, ScriptedResponse, SseEvent};
 use crate::sse;
 
@@ -313,6 +314,9 @@ pub struct MockInferenceServer {
     /// Opt-in barrier holding agent turns' terminal event (see
     /// [`Self::hold_agent_completions`]). Inert until a test holds it.
     completion_gate: Arc<CompletionGate>,
+    /// Opt-in barrier holding scripted SSE terminal events. This is separate
+    /// from `completion_gate` because scripts bypass agent-turn selection.
+    scripted_sse_terminal_gate: Arc<ScriptedSseTerminalGate>,
     /// See [`Self::set_user_subscription_tier`].
     user_tier: Arc<std::sync::RwLock<Option<String>>>,
 }
@@ -353,6 +357,7 @@ impl MockInferenceServer {
         let chunk_delay = Arc::new(std::sync::RwLock::new(None::<Duration>));
         let storage = Arc::new(StorageState::default());
         let completion_gate = Arc::new(CompletionGate::default());
+        let scripted_sse_terminal_gate = Arc::new(ScriptedSseTerminalGate::default());
         let user_tier = Arc::new(std::sync::RwLock::new(None::<String>));
         let app = Self::build_router(
             log.clone(),
@@ -365,6 +370,7 @@ impl MockInferenceServer {
             chunk_delay.clone(),
             storage.clone(),
             completion_gate.clone(),
+            scripted_sse_terminal_gate.clone(),
             user_tier.clone(),
             required_token,
         );
@@ -406,6 +412,7 @@ impl MockInferenceServer {
             chunk_delay,
             storage,
             completion_gate,
+            scripted_sse_terminal_gate,
             user_tier,
         })
     }
@@ -501,6 +508,27 @@ impl MockInferenceServer {
     /// [`hold_agent_completions`]: Self::hold_agent_completions
     pub fn release_agent_completions(&self) {
         self.completion_gate.release();
+    }
+
+    /// Hold the terminal event of a scripted SSE response that opted in via
+    /// [`ScriptedResponse::hold_terminal_event`]. Call
+    /// [`Self::wait_for_scripted_sse_terminal`] to prove the response is held,
+    /// then [`Self::release_scripted_sse_terminal`] to let it finish.
+    ///
+    /// This deliberately does not affect [`Self::hold_agent_completions`]:
+    /// scripted responses bypass normal agent-turn response selection.
+    pub fn hold_scripted_sse_terminal(&self) {
+        self.scripted_sse_terminal_gate.hold();
+    }
+
+    /// Wait until a held scripted SSE response reaches its terminal event.
+    pub async fn wait_for_scripted_sse_terminal(&self) {
+        self.scripted_sse_terminal_gate.wait_until_held().await;
+    }
+
+    /// Release a terminal event held by [`Self::hold_scripted_sse_terminal`].
+    pub fn release_scripted_sse_terminal(&self) {
+        self.scripted_sse_terminal_gate.release();
     }
 
     /// e.g. `http://127.0.0.1:12345/v1`
@@ -683,25 +711,39 @@ impl MockInferenceServer {
             .collect()
     }
 
-    fn pop_scripted(scripted: &ScriptQueues, path: &str) -> Option<ScriptedResponse> {
-        scripted
-            .lock()
-            .unwrap()
-            .get_mut(path)
-            .and_then(VecDeque::pop_front)
+    fn pop_scripted(
+        scripted: &ScriptQueues,
+        path: &str,
+        body: Option<&Value>,
+    ) -> Option<ScriptedResponse> {
+        let mut queues = scripted.lock().unwrap();
+        let queue = queues.get_mut(path)?;
+        if queue
+            .front()
+            .is_some_and(|script| script.requires_agent_turn())
+            && !body.is_some_and(Self::is_agent_turn)
+        {
+            return None;
+        }
+        queue.pop_front()
     }
 
-    /// Pop the next scripted turn, gated to agent turns (2+ tools) so aux
-    /// requests don't consume one.
+    /// Whether a request is a primary agent turn rather than auxiliary model
+    /// work such as title generation or classification.
+    fn is_agent_turn(body: &Value) -> bool {
+        body.get("tools")
+            .and_then(Value::as_array)
+            .map_or(0, Vec::len)
+            >= 2
+    }
+
+    /// Pop the next scripted turn, gated to agent turns so aux requests don't
+    /// consume one.
     fn pop_agent_turn(
         agent_turns: &Arc<std::sync::Mutex<VecDeque<String>>>,
         body: &Value,
     ) -> Option<String> {
-        let tool_count = body
-            .get("tools")
-            .and_then(Value::as_array)
-            .map_or(0, Vec::len);
-        if tool_count < 2 {
+        if !Self::is_agent_turn(body) {
             return None;
         }
         agent_turns.lock().unwrap().pop_front()
@@ -737,6 +779,7 @@ impl MockInferenceServer {
         chunk_delay: Arc<std::sync::RwLock<Option<Duration>>>,
         storage: Arc<StorageState>,
         completion_gate: Arc<CompletionGate>,
+        scripted_sse_terminal_gate: Arc<ScriptedSseTerminalGate>,
         user_tier: Arc<std::sync::RwLock<Option<String>>>,
         required_token: Option<String>,
     ) -> Router {
@@ -756,6 +799,9 @@ impl MockInferenceServer {
         let delay_cc = chunk_delay.clone();
         let delay_rs = chunk_delay.clone();
         let delay_msg = chunk_delay;
+        let scripted_gate_cc = scripted_sse_terminal_gate.clone();
+        let scripted_gate_rs = scripted_sse_terminal_gate.clone();
+        let scripted_gate_msg = scripted_sse_terminal_gate;
 
         Router::new()
             .route(
@@ -768,6 +814,7 @@ impl MockInferenceServer {
                     let agent_turns = agent_turns.clone();
                     let delay = delay_cc.clone();
                     let completion_gate = completion_gate.clone();
+                    let scripted_gate = scripted_gate_cc.clone();
                     async move {
                         let auth = Self::extract_auth(&headers);
                         log.record(
@@ -778,8 +825,11 @@ impl MockInferenceServer {
                             Self::headers_vec(&headers),
                         );
 
-                        if let Some(s) = Self::pop_scripted(&scripted, "/v1/chat/completions") {
-                            return s.into_response_paced(*delay.read().unwrap());
+                        if let Some(s) =
+                            Self::pop_scripted(&scripted, "/v1/chat/completions", Some(&body))
+                        {
+                            return s
+                                .into_response_paced(*delay.read().unwrap(), Some(scripted_gate));
                         }
 
                         if let Some(rejection) =
@@ -840,6 +890,7 @@ impl MockInferenceServer {
                     let mode = mode_rs.clone();
                     let scripted = scripted_rs.clone();
                     let delay = delay_rs.clone();
+                    let scripted_gate = scripted_gate_rs.clone();
                     async move {
                         let auth = Self::extract_auth(&headers);
                         log.record(
@@ -850,8 +901,10 @@ impl MockInferenceServer {
                             Self::headers_vec(&headers),
                         );
 
-                        if let Some(s) = Self::pop_scripted(&scripted, "/v1/responses") {
-                            return s.into_response_paced(*delay.read().unwrap());
+                        if let Some(s) = Self::pop_scripted(&scripted, "/v1/responses", Some(&body))
+                        {
+                            return s
+                                .into_response_paced(*delay.read().unwrap(), Some(scripted_gate));
                         }
 
                         if let Some(rejection) =
@@ -918,6 +971,7 @@ impl MockInferenceServer {
                     let scripted = scripted_msg.clone();
                     let stop_reason = messages_stop_reason.clone();
                     let delay = delay_msg.clone();
+                    let scripted_gate = scripted_gate_msg.clone();
                     async move {
                         let auth = Self::extract_auth(&headers);
                         log.record(
@@ -928,8 +982,10 @@ impl MockInferenceServer {
                             Self::headers_vec(&headers),
                         );
 
-                        if let Some(s) = Self::pop_scripted(&scripted, "/v1/messages") {
-                            return s.into_response_paced(*delay.read().unwrap());
+                        if let Some(s) = Self::pop_scripted(&scripted, "/v1/messages", Some(&body))
+                        {
+                            return s
+                                .into_response_paced(*delay.read().unwrap(), Some(scripted_gate));
                         }
 
                         if let Some(rejection) =
@@ -1022,8 +1078,8 @@ impl MockInferenceServer {
                             // test can serve a transient payload (e.g. one
                             // stale gated snapshot) and fall back to the
                             // steady-state `set_settings` value afterwards.
-                            if let Some(s) = Self::pop_scripted(&scripted, "/v1/settings") {
-                                return s.into_response_paced(None);
+                            if let Some(s) = Self::pop_scripted(&scripted, "/v1/settings", None) {
+                                return s.into_response_paced(None, None);
                             }
                             let maybe = settings.read().unwrap().clone();
                             match maybe {
@@ -1310,6 +1366,37 @@ mod tests {
             responses_stream_text(&resp.text().await.unwrap()),
             "Echo: hi there "
         );
+    }
+
+    #[tokio::test]
+    async fn agent_turn_script_waits_for_a_request_with_tools() {
+        let server = MockInferenceServer::start().await.unwrap();
+        server.enqueue_response(
+            "/v1/chat/completions",
+            ScriptedResponse::text(200, "primary turn only").for_agent_turn(),
+        );
+
+        // Auxiliary inference must take the normal path without consuming the
+        // agent-turn-only script.
+        let aux = post_chat(&server, "title this").await;
+        assert_eq!(aux.status(), 200);
+        assert_eq!(
+            chat_stream_text(&aux.text().await.unwrap()),
+            "Echo: title this"
+        );
+
+        let agent = reqwest::Client::new()
+            .post(format!("{}/chat/completions", server.url()))
+            .json(&json!({
+                "model": "test-model",
+                "messages": [{ "role": "user", "content": "solve this" }],
+                "tools": [{ "type": "function" }, { "type": "function" }]
+            }))
+            .send()
+            .await
+            .expect("POST primary agent turn");
+        assert_eq!(agent.status(), 200);
+        assert_eq!(agent.text().await.unwrap(), "primary turn only");
     }
 
     /// Pins the documented precedence: a script bypasses the required-auth
