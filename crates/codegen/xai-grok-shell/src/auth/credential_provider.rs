@@ -566,6 +566,7 @@ mod tests {
             api_key: Some(sampling_api_key),
             base_url,
             model: "test-model".to_owned(),
+            responses_wire_profile: xai_grok_sampler::ResponsesWireProfile::Disabled,
             ..Default::default()
         };
         assert_eq!(
