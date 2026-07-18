@@ -3650,6 +3650,7 @@ async fn p7_spawn_missing_provider_creates_neither_worktree_nor_child_session() 
 fn p7_invalid_effort_tool_provenance_fails_closed() {
     let mut sampling = xai_grok_sampler::SamplerConfig {
         model: "gpt-5.6-sol".into(),
+        responses_wire_profile: xai_grok_sampler::ResponsesWireProfile::Disabled,
         ..Default::default()
     };
     let err = super::handle_request::apply_subagent_reasoning_effort(
@@ -3677,6 +3678,7 @@ fn p7_invalid_effort_supported_model_applies_medium() {
     use xai_grok_sampling_types::ReasoningEffort;
     let mut sampling = xai_grok_sampler::SamplerConfig {
         model: "gpt-5.6-sol".into(),
+        responses_wire_profile: xai_grok_sampler::ResponsesWireProfile::Disabled,
         ..Default::default()
     };
     super::handle_request::apply_subagent_reasoning_effort(
@@ -3695,6 +3697,7 @@ fn p7_invalid_effort_supported_model_applies_medium() {
 fn p7_invalid_effort_unsupported_model_tool_fails_closed() {
     let mut sampling = xai_grok_sampler::SamplerConfig {
         model: "grok-plain".into(),
+        responses_wire_profile: xai_grok_sampler::ResponsesWireProfile::Disabled,
         ..Default::default()
     };
     let err = super::handle_request::apply_subagent_reasoning_effort(
@@ -3717,6 +3720,7 @@ fn p7_invalid_effort_unsupported_model_tool_fails_closed() {
 fn p7_invalid_effort_harness_soft_skips_unsupported() {
     let mut sampling = xai_grok_sampler::SamplerConfig {
         model: "grok-plain".into(),
+        responses_wire_profile: xai_grok_sampler::ResponsesWireProfile::Disabled,
         ..Default::default()
     };
     super::handle_request::apply_subagent_reasoning_effort(
@@ -3735,6 +3739,7 @@ fn p7_invalid_effort_harness_soft_skips_unsupported() {
 fn p7_tool_model_stamp_role_effort_soft_skips_unsupported() {
     let mut sampling = xai_grok_sampler::SamplerConfig {
         model: "grok-plain".into(),
+        responses_wire_profile: xai_grok_sampler::ResponsesWireProfile::Disabled,
         ..Default::default()
     };
     // Explicit runtime effort = false → Harness even when model stamp is Tool.
@@ -3759,6 +3764,7 @@ fn p7_tool_model_stamp_role_effort_soft_skips_unsupported() {
 fn p7_explicit_tool_effort_hard_fails_unsupported() {
     let mut sampling = xai_grok_sampler::SamplerConfig {
         model: "grok-plain".into(),
+        responses_wire_profile: xai_grok_sampler::ResponsesWireProfile::Disabled,
         ..Default::default()
     };
     let provenance = super::handle_request::effort_apply_provenance(
