@@ -56,6 +56,8 @@ use xai_grok_shell::agent::mvp_agent::MvpAgent;
 use xai_grok_shell::auth::{
     provider_slot_usable, AuthMode, AuthStore, GrokAuth, PROVIDER_CODEX, PROVIDER_XAI,
 };
+use xai_grok_shell::sampling::ApiBackend;
+use xai_grok_test_support::mock_server::LogEntry;
 use xai_grok_test_support::{MockInferenceServer, ScriptedResponse, SseEvent};
 
 const XAI_FAKE: &str = "xai-fake-token-p6";
@@ -66,6 +68,8 @@ const CODEX_MODEL: &str = "gpt-5.6-sol";
 const CODEX_MODEL_TERRA: &str = "gpt-5.6-terra";
 const XAI_MODEL: &str = "grok-build";
 const BYOK_MODEL: &str = "p6-byok-codex";
+const CUSTOM_MODEL: &str = "p10-custom-codex";
+const CUSTOM_KEY: &str = "custom-own-key-p10";
 const DUPLEX_BUFFER_BYTES: usize = 4 * 1024 * 1024;
 const HISTORY_MARKER: &str = "p6-history-marker-unique-prompt-string";
 const PROVIDER_HISTORY_MARKER: &str = "p10-normal-history-must-survive";
@@ -74,6 +78,13 @@ const REASONING_ID: &str = "p10-reasoning-id";
 const REASONING_SUMMARY: &str = "p10-visible-reasoning-summary";
 const REASONING_CONTENT: &str = "p10-visible-reasoning-content";
 const ENCRYPTED_REASONING: &str = "p10-provider-scoped-encrypted-reasoning";
+const RESERVED_CODEX_IDENTITY_HEADERS: [&str; 5] = [
+    "ChatGPT-Account-ID",
+    "originator",
+    "session-id",
+    "thread-id",
+    "x-client-request-id",
+];
 
 // ───────────────────────── pure / unit-style ─────────────────────────
 
@@ -207,7 +218,7 @@ fn write_auth_document(home: &Path, xai: Option<GrokAuth>, codex: Option<GrokAut
     .expect("write auth.json");
 }
 
-fn agent_config_with_byok() -> AgentConfig {
+fn agent_config_with_byok_and_custom(custom_base_url: &str) -> AgentConfig {
     let mut cfg = AgentConfig::default();
     let mut byok = ConfigModelOverride::default();
     byok.model = Some(BYOK_MODEL.to_owned());
@@ -217,6 +228,20 @@ fn agent_config_with_byok() -> AgentConfig {
     byok.supported_in_api = Some(true);
     byok.hidden = Some(false);
     cfg.config_models.insert(BYOK_MODEL.to_owned(), byok);
+
+    // Keep this endpoint on the same loopback host but a different port from
+    // the configured Codex endpoint. It is a concrete outbound regression for
+    // the effective-port trust boundary, not merely a route-unit fixture.
+    let mut custom = ConfigModelOverride::default();
+    custom.model = Some(CUSTOM_MODEL.to_owned());
+    custom.name = Some("P10 Custom Codex".to_owned());
+    custom.provider = Some(ModelProvider::Codex);
+    custom.api_key = Some(CUSTOM_KEY.to_owned());
+    custom.base_url = Some(custom_base_url.to_owned());
+    custom.api_backend = Some(ApiBackend::Responses);
+    custom.supported_in_api = Some(true);
+    custom.hidden = Some(false);
+    cfg.config_models.insert(CUSTOM_MODEL.to_owned(), custom);
     cfg
 }
 
@@ -432,6 +457,8 @@ struct GateHarness {
     workdir: TempDir,
     /// Mock inference server (hold/release + request log for route/cancel proofs).
     server: MockInferenceServer,
+    /// Same-host/different-port custom endpoint for fail-closed wire regressions.
+    custom_server: MockInferenceServer,
     mock_base_url: String,
 }
 
@@ -444,6 +471,9 @@ impl GateHarness {
         let server = MockInferenceServer::start()
             .await
             .expect("start mock inference server");
+        let custom_server = MockInferenceServer::start()
+            .await
+            .expect("start custom mock inference server");
         let mock_base_url = server.url();
         // Point first-party + Codex bases at mock so bootstrap and next-sample
         // route proofs hit the fixture server (not live chatgpt.com / xAI).
@@ -460,7 +490,7 @@ impl GateHarness {
             .current_dir(workdir.path())
             .output();
 
-        let agent_config = agent_config_with_byok();
+        let agent_config = agent_config_with_byok_and_custom(&custom_server.url());
         let auth_manager = Arc::new(agent_config.create_auth_manager());
         let (gw_tx, gw_rx) = tokio::sync::mpsc::unbounded_channel();
         let gateway = GatewaySender::new(gw_tx);
@@ -546,6 +576,7 @@ impl GateHarness {
             cancel_notifications,
             workdir,
             server,
+            custom_server,
             mock_base_url,
         }
     }
@@ -613,6 +644,51 @@ impl GateHarness {
         self.cancel_notifications.load(Ordering::SeqCst)
     }
 
+    fn inference_requests_after_server(
+        server: &MockInferenceServer,
+        after_total: u32,
+    ) -> Vec<LogEntry> {
+        server
+            .requests()
+            .into_iter()
+            // Request log is append-only; after_total is previous request_count.
+            .skip(after_total as usize)
+            .filter(|e| {
+                e.method == "POST"
+                    && (e.path.contains("chat/completions")
+                        || e.path.contains("responses")
+                        || e.path.contains("messages"))
+            })
+            .collect()
+    }
+
+    /// Recorded inference POSTs after `after_total`, including their header maps.
+    fn inference_requests_after(&self, after_total: u32) -> Vec<LogEntry> {
+        Self::inference_requests_after_server(&self.server, after_total)
+    }
+
+    /// Primary agent turns carry the full tool registry. The one-tool title
+    /// generator is an auxiliary xAI request and must not be mistaken for the
+    /// selected model's outbound turn.
+    fn agent_turn_inference_requests_after(&self, after_total: u32) -> Vec<LogEntry> {
+        self.inference_requests_after(after_total)
+            .into_iter()
+            .filter(is_primary_agent_turn)
+            .collect()
+    }
+
+    /// Recorded inference POSTs sent to the explicit same-host/different-port endpoint.
+    fn custom_inference_requests_after(&self, after_total: u32) -> Vec<LogEntry> {
+        Self::inference_requests_after_server(&self.custom_server, after_total)
+    }
+
+    fn custom_agent_turn_inference_requests_after(&self, after_total: u32) -> Vec<LogEntry> {
+        self.custom_inference_requests_after(after_total)
+            .into_iter()
+            .filter(is_primary_agent_turn)
+            .collect()
+    }
+
     /// Last inference POST after `after_count` total requests (exclusive).
     fn last_inference_after(
         &self,
@@ -623,23 +699,20 @@ impl GateHarness {
         Option<serde_json::Value>,
     ) {
         let entry = self
-            .server
-            .requests()
+            .inference_requests_after(after_total)
             .into_iter()
-            .enumerate()
-            // Request log is append-only; after_total is previous request_count.
-            .skip(after_total as usize)
-            .map(|(_, e)| e)
-            .filter(|e| {
-                e.method == "POST"
-                    && (e.path.contains("chat/completions")
-                        || e.path.contains("responses")
-                        || e.path.contains("messages"))
-            })
             .next_back()
             .expect("expected inference request after switch");
         (entry.path, entry.authorization, entry.body)
     }
+}
+
+fn is_primary_agent_turn(entry: &LogEntry) -> bool {
+    entry.body.as_ref().is_some_and(|body| {
+        body.get("tools")
+            .and_then(Value::as_array)
+            .is_some_and(|tools| tools.len() >= 2)
+    })
 }
 
 fn assert_not_missing_provider(err: &acp::Error) {
@@ -657,6 +730,55 @@ fn assert_switch_ok(result: Result<acp::SetSessionModelResponse, acp::Error>, la
             panic!("{label}: set_session_model failed: {err:?}");
         }
     }
+}
+
+fn assert_reserved_codex_headers_absent(entry: &LogEntry) {
+    for name in RESERVED_CODEX_IDENTITY_HEADERS {
+        assert!(
+            entry.header(name).is_none(),
+            "untrusted request must omit reserved Codex header {name}: {:?}",
+            entry.headers
+        );
+    }
+}
+
+fn assert_no_upstream_codex_identity_additions(entry: &LogEntry) {
+    for (name, value) in &entry.headers {
+        let combined = format!("{name}:{value}").to_ascii_lowercase();
+        for forbidden in ["codex_cli", "telemetry", "attestation", "install", "beta"] {
+            assert!(
+                !combined.contains(forbidden),
+                "bum must not send upstream Codex {forbidden} metadata: {:?}",
+                entry.headers
+            );
+        }
+    }
+}
+
+fn assert_trusted_codex_wire_headers(entry: &LogEntry) -> String {
+    assert_eq!(
+        entry.header("originator"),
+        Some("bum"),
+        "trusted agent request must identify as bum: {entry:?}"
+    );
+    assert!(
+        entry.header("ChatGPT-Account-ID").is_none(),
+        "fixture has no known account ID, so only bum-owned identity metadata is expected"
+    );
+    let session_id = entry
+        .header("session-id")
+        .expect("trusted request must include session-id")
+        .to_owned();
+    uuid::Uuid::parse_str(&session_id).expect("session-id must be a UUID");
+    for name in ["thread-id", "x-client-request-id"] {
+        assert_eq!(
+            entry.header(name),
+            Some(session_id.as_str()),
+            "{name} must use the stable bum session UUID"
+        );
+    }
+    assert_no_upstream_codex_identity_additions(entry);
+    session_id
 }
 
 #[tokio::test(flavor = "current_thread")]
@@ -896,6 +1018,132 @@ async fn p6_dual_login_next_sample_uses_target_provider() {
                 "https://chatgpt.com/backend-api/codex"
             );
             let _ = &h.mock_base_url;
+        })
+        .await;
+}
+
+#[tokio::test(flavor = "current_thread")]
+#[serial]
+async fn trusted_codex_wire_headers_are_sent_and_stable() {
+    let local = tokio::task::LocalSet::new();
+    local
+        .run_until(async {
+            let (_, codex) = dual_usable_auth();
+            let h = GateHarness::start(None, Some(codex)).await;
+            let sid = h.new_session_with_model(CODEX_MODEL).await;
+
+            let mut observed_ids = Vec::new();
+            for prompt in ["p10 trusted wire first", "p10 trusted wire second"] {
+                let before = h.server.request_count();
+                h.server.set_response("p10 trusted Codex reply");
+                let response = h.prompt(&sid, prompt).await.expect("trusted Codex prompt");
+                assert!(matches!(response.stop_reason, acp::StopReason::EndTurn));
+
+                let entries = h.agent_turn_inference_requests_after(before);
+                assert!(
+                    !entries.is_empty(),
+                    "trusted turn must send at least one inference request"
+                );
+                for entry in entries {
+                    assert_eq!(entry.path, "/v1/responses", "Codex uses Responses API");
+                    observed_ids.push(assert_trusted_codex_wire_headers(&entry));
+                }
+            }
+            assert_eq!(
+                observed_ids[0], observed_ids[1],
+                "one session must retain one bum request UUID across turns"
+            );
+        })
+        .await;
+}
+
+#[tokio::test(flavor = "current_thread")]
+#[serial]
+async fn codex_wire_headers_do_not_leak_to_xai_byok_or_custom() {
+    let local = tokio::task::LocalSet::new();
+    local
+        .run_until(async {
+            let (xai, codex) = dual_usable_auth();
+            let h = GateHarness::start(Some(xai), Some(codex)).await;
+
+            let xai_sid = h.new_session_on_xai().await;
+            let xai_before = h.server.request_count();
+            h.server.set_response("p10 xAI reply");
+            h.prompt(&xai_sid, "p10 xAI wire isolation")
+                .await
+                .expect("xAI prompt");
+            let xai_entries = h.agent_turn_inference_requests_after(xai_before);
+            assert!(!xai_entries.is_empty(), "xAI must send an inference request");
+            for entry in xai_entries {
+                assert_reserved_codex_headers_absent(&entry);
+            }
+
+            let byok_sid = h.new_session_with_model(BYOK_MODEL).await;
+            let byok_before = h.server.request_count();
+            h.server.set_response("p10 BYOK reply");
+            h.prompt(&byok_sid, "p10 BYOK wire isolation")
+                .await
+                .expect("BYOK prompt");
+            let byok_entries = h.agent_turn_inference_requests_after(byok_before);
+            assert!(!byok_entries.is_empty(), "BYOK must send an inference request");
+            for entry in byok_entries {
+                assert_reserved_codex_headers_absent(&entry);
+            }
+
+            let custom_sid = h.new_session_with_model(CUSTOM_MODEL).await;
+            let custom_before = h.custom_server.request_count();
+            h.custom_server.set_response("p10 custom reply");
+            h.prompt(&custom_sid, "p10 custom wire isolation")
+                .await
+                .expect("custom-endpoint prompt");
+            let custom_entries = h.custom_agent_turn_inference_requests_after(custom_before);
+            assert!(
+                !custom_entries.is_empty(),
+                "same-host/different-port custom endpoint must receive an inference request"
+            );
+            for entry in custom_entries {
+                assert_eq!(entry.path, "/v1/responses");
+                assert_reserved_codex_headers_absent(&entry);
+            }
+        })
+        .await;
+}
+
+#[tokio::test(flavor = "current_thread")]
+#[serial]
+async fn trusted_to_untrusted_switch_strips_codex_identity_headers() {
+    let local = tokio::task::LocalSet::new();
+    local
+        .run_until(async {
+            let (xai, codex) = dual_usable_auth();
+            let h = GateHarness::start(Some(xai), Some(codex)).await;
+            let sid = h.new_session_with_model(CODEX_MODEL).await;
+
+            let trusted_before = h.server.request_count();
+            h.server.set_response("p10 trusted before switch reply");
+            h.prompt(&sid, "p10 trusted request before switch")
+                .await
+                .expect("trusted prompt before switch");
+            let trusted_entries = h.agent_turn_inference_requests_after(trusted_before);
+            assert!(!trusted_entries.is_empty());
+            for entry in trusted_entries {
+                assert_trusted_codex_wire_headers(&entry);
+            }
+
+            assert_switch_ok(
+                h.set_model(&sid, XAI_MODEL).await,
+                "trusted Codex to xAI switch",
+            );
+            let untrusted_before = h.server.request_count();
+            h.server.set_response("p10 xAI after switch reply");
+            h.prompt(&sid, "p10 xAI request after trusted switch")
+                .await
+                .expect("xAI prompt after trusted switch");
+            let untrusted_entries = h.agent_turn_inference_requests_after(untrusted_before);
+            assert!(!untrusted_entries.is_empty());
+            for entry in untrusted_entries {
+                assert_reserved_codex_headers_absent(&entry);
+            }
         })
         .await;
 }

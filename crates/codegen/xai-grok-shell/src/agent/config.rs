@@ -4501,12 +4501,14 @@ pub fn resolve_provider_route(
 /// First-party Codex OAuth hosts for product session tokens.
 ///
 /// Allowlist:
-/// - Host `chatgpt.com` / `www.chatgpt.com` with path prefix `/backend-api/codex`
-/// - Same host **and path prefix** as the configured
+/// - HTTPS `chatgpt.com` / `www.chatgpt.com` on the default effective port
+///   with path prefix `/backend-api/codex`
+/// - Same scheme, host, effective port **and path prefix** as the configured
 ///   [`EndpointsConfig::resolve_codex_base_url`] (operator env/config override
 ///   of the product Codex endpoint). Host-only match is insufficient — product
-///   session OAuth must not attach to arbitrary paths on the Codex host
-///   (e.g. `https://chatgpt.com/` without `/backend-api/codex`).
+///   session OAuth must not attach to arbitrary paths or ports on the Codex host
+///   (e.g. `https://chatgpt.com/` without `/backend-api/codex`, or
+///   `https://chatgpt.com:8443/backend-api/codex`).
 ///
 /// Platform `api.openai.com` is intentionally **not** first-party for product
 /// session OAuth (D-15).
@@ -4518,14 +4520,18 @@ pub fn is_first_party_codex_url(url: &str, endpoints: &EndpointsConfig) -> bool 
         return false;
     };
     let host_l = host.to_ascii_lowercase();
-    if (host_l == "chatgpt.com" || host_l == "www.chatgpt.com")
+    if parsed.scheme().eq_ignore_ascii_case("https")
+        && parsed.port_or_known_default() == Some(443)
+        && (host_l == "chatgpt.com" || host_l == "www.chatgpt.com")
         && parsed.path().starts_with("/backend-api/codex")
     {
         return true;
     }
     if let Ok(configured) = reqwest::Url::parse(&endpoints.resolve_codex_base_url())
         && let Some(cfg_host) = configured.host_str()
+        && parsed.scheme().eq_ignore_ascii_case(configured.scheme())
         && host.eq_ignore_ascii_case(cfg_host)
+        && parsed.port_or_known_default() == configured.port_or_known_default()
     {
         let cfg_path = configured.path().trim_end_matches('/');
         let req_path = parsed.path();

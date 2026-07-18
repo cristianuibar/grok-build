@@ -18,6 +18,7 @@ use crate::agent::config::{
 };
 use crate::auth::{AuthMode, AuthProvider, GrokAuth, mutate_provider_store_or_prune};
 use chrono::{Duration, Utc};
+use indexmap::IndexMap;
 use serial_test::serial;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
@@ -80,6 +81,7 @@ async fn make_codex_actor(
     let (gateway_tx, _) = mpsc::unbounded_channel();
     let (persistence_tx, persistence_rx) = mpsc::unbounded_channel();
     let mut actor = create_test_actor(50_000, 100_000, 85, gateway_tx, persistence_tx).await;
+    actor.session_info.id = agent_client_protocol::SessionId::new(uuid::Uuid::new_v4().to_string());
     actor.auth_method_id = test_auth_method_id("cached_token");
     actor.model_auth_facts.replace(Some((
         "gpt-test-codex".to_string(),
@@ -110,6 +112,51 @@ async fn make_codex_actor(
     let _ = &mut sampling;
     actor.chat_state_handle.update_sampling_config(sampling);
     (Arc::new(actor), persistence_rx)
+}
+
+fn mixed_case_reserved_headers() -> IndexMap<String, String> {
+    [
+        ("chatgpt-account-id", "spoofed-account"),
+        ("ORIGINATOR", "codex_cli_rs"),
+        ("Session-ID", "spoofed-session"),
+        ("THREAD-id", "spoofed-thread"),
+        ("X-Client-Request-ID", "spoofed-request"),
+    ]
+    .into_iter()
+    .map(|(name, value)| (name.to_string(), value.to_string()))
+    .collect()
+}
+
+async fn set_extra_headers(actor: &Arc<SessionActor>, headers: IndexMap<String, String>) {
+    let mut sampling = actor
+        .chat_state_handle
+        .get_sampling_config()
+        .await
+        .expect("test actor has sampling config");
+    sampling.extra_headers = headers;
+    actor.chat_state_handle.update_sampling_config(sampling);
+}
+
+fn header_value<'a>(headers: &'a IndexMap<String, String>, name: &str) -> Option<&'a str> {
+    headers
+        .iter()
+        .find(|(key, _)| key.eq_ignore_ascii_case(name))
+        .map(|(_, value)| value.as_str())
+}
+
+fn assert_reserved_headers_absent(headers: &IndexMap<String, String>) {
+    for name in [
+        "ChatGPT-Account-ID",
+        "originator",
+        "session-id",
+        "thread-id",
+        "x-client-request-id",
+    ] {
+        assert!(
+            header_value(headers, name).is_none(),
+            "untrusted route must not retain reserved Codex header {name}: {headers:?}"
+        );
+    }
 }
 
 /// Mid-session: prepared SessionToken is stale; reconstruct spends RT and
@@ -261,6 +308,124 @@ async fn codex_oauth_bearer_absent_on_custom_endpoint() {
                 !cfg.extra_headers.contains_key("ChatGPT-Account-ID"),
                 "custom host must not receive ChatGPT-Account-ID"
             );
+        })
+        .await;
+}
+
+/// Trusted reconstruction owns the Codex wire profile and request identity.
+/// Every route that does not meet the existing SessionToken + first-party
+/// Codex gate must have inherited reserved values removed instead.
+#[tokio::test(flavor = "current_thread")]
+#[serial]
+async fn trusted_codex_reconstruct_enables_profile_and_metadata() {
+    let local = tokio::task::LocalSet::new();
+    local
+        .run_until(async {
+            clear_ensure_fresh_codex_test_hooks();
+            let dir = tempfile::tempdir().expect("tempdir");
+            let path = dir.path().join("auth.json");
+            write_codex_slot(&path, near_expiry_codex_auth());
+            set_ensure_fresh_codex_synthetic_success(
+                path,
+                fresh_codex_auth(),
+                Arc::new(AtomicUsize::new(0)),
+            );
+
+            let (trusted, _rx) = make_codex_actor(
+                STALE_BEARER,
+                xai_chat_state::AuthType::SessionToken,
+                CODEX_BASE_URL_DEFAULT,
+                ModelProvider::Codex,
+                ModelByok::NotByok,
+            )
+            .await;
+            set_extra_headers(&trusted, mixed_case_reserved_headers()).await;
+
+            let first = trusted.reconstruct_full_config().await;
+            let second = trusted.reconstruct_full_config().await;
+            clear_ensure_fresh_codex_test_hooks();
+
+            assert_eq!(
+                first.responses_wire_profile,
+                xai_grok_sampler::ResponsesWireProfile::TrustedCodex,
+                "only the trusted Codex OAuth path enables the Responses profile"
+            );
+            assert_eq!(header_value(&first.extra_headers, "originator"), Some("bum"));
+            assert_eq!(
+                header_value(&first.extra_headers, "ChatGPT-Account-ID"),
+                Some("chatgpt-acct-fixture"),
+                "known account identity remains available only through the trusted gate"
+            );
+            let session_id = header_value(&first.extra_headers, "session-id")
+                .expect("trusted request must include session-id")
+                .to_owned();
+            uuid::Uuid::parse_str(&session_id).expect("session metadata must be a UUID");
+            for name in ["thread-id", "x-client-request-id"] {
+                assert_eq!(
+                    header_value(&first.extra_headers, name),
+                    Some(session_id.as_str()),
+                    "{name} must use the stable bum session UUID"
+                );
+                assert_eq!(
+                    header_value(&second.extra_headers, name),
+                    Some(session_id.as_str()),
+                    "{name} must remain stable across reconstruction"
+                );
+            }
+            assert_eq!(
+                header_value(&second.extra_headers, "session-id"),
+                Some(session_id.as_str()),
+                "session-id must remain stable across reconstruction"
+            );
+            assert_ne!(
+                header_value(&first.extra_headers, "originator"),
+                Some("codex_cli_rs"),
+                "bum must not identify as the upstream CLI"
+            );
+
+            let (byok, _rx) = make_codex_actor(
+                BYOK_KEY,
+                xai_chat_state::AuthType::ApiKey,
+                CODEX_BASE_URL_DEFAULT,
+                ModelProvider::Codex,
+                ModelByok::Byok,
+            )
+            .await;
+            let (custom, _rx) = make_codex_actor(
+                "custom-prepared-key",
+                xai_chat_state::AuthType::SessionToken,
+                "https://custom.example/v1",
+                ModelProvider::Codex,
+                ModelByok::NotByok,
+            )
+            .await;
+            let (same_host_different_port, _rx) = make_codex_actor(
+                "custom-prepared-key",
+                xai_chat_state::AuthType::SessionToken,
+                "https://chatgpt.com:8443/backend-api/codex",
+                ModelProvider::Codex,
+                ModelByok::NotByok,
+            )
+            .await;
+            let (xai, _rx) = make_codex_actor(
+                "xai-prepared-key",
+                xai_chat_state::AuthType::SessionToken,
+                "https://api.x.ai/v1",
+                ModelProvider::Xai,
+                ModelByok::NotByok,
+            )
+            .await;
+
+            for actor in [&byok, &custom, &same_host_different_port, &xai] {
+                set_extra_headers(actor, mixed_case_reserved_headers()).await;
+                let cfg = actor.reconstruct_full_config().await;
+                assert_eq!(
+                    cfg.responses_wire_profile,
+                    xai_grok_sampler::ResponsesWireProfile::Disabled,
+                    "untrusted routes must keep the trusted profile disabled"
+                );
+                assert_reserved_headers_absent(&cfg.extra_headers);
+            }
         })
         .await;
 }

@@ -303,6 +303,56 @@ fn resolve_provider_route_first_party_codex_override_allows_oauth() {
     );
 }
 
+/// First-party Codex matching binds its scheme, host, and normalized effective
+/// port. A same-host endpoint on another port is a custom endpoint and cannot
+/// receive product session OAuth.
+#[test]
+fn codex_first_party_requires_matching_effective_port() {
+    let endpoints = deterministic_endpoints();
+    for url in [
+        "https://chatgpt.com/backend-api/codex",
+        "https://chatgpt.com:443/backend-api/codex",
+    ] {
+        assert!(
+            is_first_party_codex_url(url, &endpoints),
+            "default HTTPS port variant {url} must remain first-party"
+        );
+    }
+    for url in [
+        "https://chatgpt.com:8443/backend-api/codex",
+        "http://chatgpt.com/backend-api/codex",
+    ] {
+        let route = resolve_provider_route(ModelProvider::Codex, &endpoints, Some(url));
+        assert!(
+            !route.session_oauth_allowed,
+            "same-host custom endpoint {url} must fail closed"
+        );
+        assert!(
+            !is_first_party_codex_url(url, &endpoints),
+            "is_first_party_codex_url({url}) must fail closed"
+        );
+    }
+
+    let configured = EndpointsConfig {
+        codex_base_url: "https://codex.enterprise.example:9443/backend-api/codex".to_owned(),
+        ..deterministic_endpoints()
+    };
+    assert!(
+        is_first_party_codex_url(
+            "https://codex.enterprise.example:9443/backend-api/codex/responses",
+            &configured,
+        ),
+        "the explicitly configured authority remains first-party"
+    );
+    assert!(
+        !is_first_party_codex_url(
+            "https://codex.enterprise.example:8443/backend-api/codex",
+            &configured,
+        ),
+        "a different effective port must not inherit configured endpoint trust"
+    );
+}
+
 /// Host-only match on chatgpt.com must not allow session OAuth without the
 /// Codex backend path (configured endpoint path alignment).
 #[test]

@@ -2,6 +2,25 @@
 //! facts/gates and retry, sampler config reconstruction, sampling-failure
 //! recovery, and per-response usage recording.
 use super::*;
+
+const RESERVED_CODEX_IDENTITY_HEADERS: [&str; 5] = [
+    "ChatGPT-Account-ID",
+    "originator",
+    "session-id",
+    "thread-id",
+    "x-client-request-id",
+];
+
+/// Codex identity metadata is owned by the trusted OAuth reconstruction path.
+/// Remove inherited variants before deciding whether this request is entitled to
+/// canonical bum-owned values; `IndexMap` keys are case-sensitive while HTTP
+/// header names are not.
+fn is_reserved_codex_identity_header(name: &str) -> bool {
+    RESERVED_CODEX_IDENTITY_HEADERS
+        .iter()
+        .any(|reserved| name.eq_ignore_ascii_case(reserved))
+}
+
 /// Auth-failure detector for tool errors. Matches strictly on HTTP 401
 /// when the error carries a structured status code, mirroring
 /// `SamplingError::is_auth_error` in xai-grok-sampling-types: 403 is
@@ -318,6 +337,11 @@ impl SessionActor {
             creds.alpha_test_key.as_deref(),
             &cfg.base_url,
         );
+        // Never allow inherited configuration to smuggle Codex identity metadata
+        // onto an untrusted route. This must happen after URL-derived headers and
+        // before trusted reconstruction reinserts bum-owned values.
+        extra_headers.retain(|name, _| !is_reserved_codex_identity_header(name));
+
         // Trusted-host ChatGPT-Account-ID only (D-11) — same first-party gate as bearer.
         if codex_session_oauth {
             crate::agent::config::inject_chatgpt_account_id_header(
@@ -326,6 +350,11 @@ impl SessionActor {
                 &endpoints,
                 codex_account_id.as_deref(),
             );
+            let session_id = self.session_info.id.to_string();
+            extra_headers.insert("originator".to_string(), "bum".to_string());
+            extra_headers.insert("session-id".to_string(), session_id.clone());
+            extra_headers.insert("thread-id".to_string(), session_id.clone());
+            extra_headers.insert("x-client-request-id".to_string(), session_id);
         }
         let compaction_at_tokens = self.compaction_at_tokens.get();
         let compactions_remaining = self.compactions_remaining.get();
@@ -360,7 +389,11 @@ impl SessionActor {
             top_p: cfg.top_p,
             api_backend: cfg.api_backend,
             auth_scheme,
-            responses_wire_profile: xai_grok_sampler::ResponsesWireProfile::Disabled,
+            responses_wire_profile: if codex_session_oauth {
+                xai_grok_sampler::ResponsesWireProfile::TrustedCodex
+            } else {
+                xai_grok_sampler::ResponsesWireProfile::Disabled
+            },
             extra_headers,
             context_window: cfg.context_window.get(),
             client_version: creds.client_version,
