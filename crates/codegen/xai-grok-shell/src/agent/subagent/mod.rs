@@ -915,6 +915,17 @@ async fn read_parent_sampling_config(
             let auth_scheme = crate::agent::config::try_resolve_model_credentials(&cfg.model, None)
                 .map(|r| r.auth_scheme)
                 .unwrap_or_default();
+            // Wire profile must reflect THIS (inherited) model's own provider +
+            // auth mode, not the parent's session state — a Codex-model child
+            // inheriting the parent's live config needs TrustedCodex when that
+            // model is on first-party Codex OAuth, same as a main session would.
+            let endpoints = crate::agent::config::EndpointsConfig::from_effective_config();
+            let responses_wire_profile = crate::agent::config::resolve_responses_wire_profile(
+                crate::agent::config::resolve_model_auth_facts(&cfg.model).provider,
+                creds.auth_type,
+                &cfg.base_url,
+                &endpoints,
+            );
             let inherited = xai_grok_sampler::SamplerConfig {
                 api_key: creds.api_key,
                 base_url: cfg.base_url,
@@ -924,7 +935,7 @@ async fn read_parent_sampling_config(
                 top_p: cfg.top_p,
                 api_backend: cfg.api_backend,
                 auth_scheme,
-                responses_wire_profile: xai_grok_sampler::ResponsesWireProfile::Disabled,
+                responses_wire_profile,
                 extra_headers,
                 context_window: cfg.context_window.get(),
                 client_version: creds.client_version,
@@ -1080,13 +1091,23 @@ fn resolve_model_override_to_config(
         resolve_credentials_for_provider(&entry, &endpoints, xai_key, codex_key);
     credentials.auth_type = subagent_auth_type(Some(&entry), &ctx.auth_method_id);
     let resolved_auth_type = credentials.auth_type;
-    let config = sampling_config_for_model(
+    let base_url = credentials.base_url.clone();
+    let mut config = sampling_config_for_model(
         &entry,
         credentials,
         ctx.alpha_test_key.clone(),
         ctx.sampling_config.client_version.clone(),
         ctx.sampling_config.deployment_id.clone(),
         ctx.sampling_config.user_id.clone(),
+    );
+    // Derive from THIS child's own resolved provider + auth mode (never the
+    // parent's), so a Codex-model child spawned by a Grok parent (or vice
+    // versa) gets the correct wire shape on the child's own endpoint.
+    config.responses_wire_profile = crate::agent::config::resolve_responses_wire_profile(
+        Some(entry.info.provider),
+        resolved_auth_type,
+        &base_url,
+        &endpoints,
     );
     xai_grok_telemetry::unified_log::debug(
         "subagent resolve_model_override_to_config",

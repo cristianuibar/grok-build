@@ -384,6 +384,12 @@ impl SessionActor {
                 extra_headers.insert("x-compaction-at".to_string(), value.to_string());
             }
         }
+        let responses_wire_profile = crate::agent::config::resolve_responses_wire_profile(
+            model_facts.provider,
+            creds.auth_type,
+            &cfg.base_url,
+            &endpoints,
+        );
         SamplingConfig {
             api_key,
             base_url: cfg.base_url,
@@ -393,11 +399,7 @@ impl SessionActor {
             top_p: cfg.top_p,
             api_backend: cfg.api_backend,
             auth_scheme,
-            responses_wire_profile: if codex_session_oauth {
-                xai_grok_sampler::ResponsesWireProfile::TrustedCodex
-            } else {
-                xai_grok_sampler::ResponsesWireProfile::Disabled
-            },
+            responses_wire_profile,
             extra_headers,
             context_window: cfg.context_window.get(),
             client_version: creds.client_version,

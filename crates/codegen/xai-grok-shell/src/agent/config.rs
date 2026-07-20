@@ -4540,6 +4540,29 @@ pub fn is_first_party_codex_url(url: &str, endpoints: &EndpointsConfig) -> bool 
     false
 }
 
+/// Whether a request for `model_provider`/`auth_type`/`base_url` is trusted
+/// Codex OAuth (product session token on a first-party Codex host) — the same
+/// gate main sessions use to pick [`ResponsesWireProfile::TrustedCodex`]
+/// (see `sampler_turn.rs`'s `codex_session_oauth`). Callers resolving a
+/// **child** (subagent) sampling config must pass the child's own resolved
+/// provider/auth/base_url, never the parent's — a Grok parent can spawn a
+/// Codex child and vice versa.
+pub fn resolve_responses_wire_profile(
+    model_provider: Option<ModelProvider>,
+    auth_type: xai_chat_state::AuthType,
+    base_url: &str,
+    endpoints: &EndpointsConfig,
+) -> ResponsesWireProfile {
+    let codex_oauth = model_provider == Some(ModelProvider::Codex)
+        && auth_type == xai_chat_state::AuthType::SessionToken
+        && is_first_party_codex_url(base_url, endpoints);
+    if codex_oauth {
+        ResponsesWireProfile::TrustedCodex
+    } else {
+        ResponsesWireProfile::Disabled
+    }
+}
+
 /// Whether `request_path` is the normalized `base_path` itself or a descendant
 /// separated by `/`. A root (or empty) configured path intentionally trusts all
 /// paths on the already-matched authority.
@@ -6923,6 +6946,54 @@ reasoning_effort = "low"
         assert_eq!(
             byok_from_lookup(&ModelLookup::Loaded(Some(&byok))),
             ModelByok::Byok,
+        );
+    }
+    /// Shared wire-profile derivation (main session + subagent child must
+    /// agree): only Codex provider + SessionToken auth + first-party Codex
+    /// host earns TrustedCodex. Everything else — including a Codex model on
+    /// BYOK/ApiKey auth, or any auth on a non-Codex provider — stays Disabled.
+    #[test]
+    fn resolve_responses_wire_profile_only_trusts_codex_oauth_first_party() {
+        let endpoints = EndpointsConfig::default();
+        let codex_url = endpoints.resolve_codex_base_url();
+        assert_eq!(
+            resolve_responses_wire_profile(
+                Some(ModelProvider::Codex),
+                xai_chat_state::AuthType::SessionToken,
+                &codex_url,
+                &endpoints,
+            ),
+            ResponsesWireProfile::TrustedCodex,
+        );
+        assert_eq!(
+            resolve_responses_wire_profile(
+                Some(ModelProvider::Codex),
+                xai_chat_state::AuthType::ApiKey,
+                &codex_url,
+                &endpoints,
+            ),
+            ResponsesWireProfile::Disabled,
+            "BYOK Codex must not get the trusted OAuth wire shape"
+        );
+        assert_eq!(
+            resolve_responses_wire_profile(
+                Some(ModelProvider::Xai),
+                xai_chat_state::AuthType::SessionToken,
+                &codex_url,
+                &endpoints,
+            ),
+            ResponsesWireProfile::Disabled,
+            "non-Codex provider must never get TrustedCodex"
+        );
+        assert_eq!(
+            resolve_responses_wire_profile(
+                Some(ModelProvider::Codex),
+                xai_chat_state::AuthType::SessionToken,
+                "https://not-codex.example.com/v1",
+                &endpoints,
+            ),
+            ResponsesWireProfile::Disabled,
+            "off-allowlist host must never get TrustedCodex"
         );
         let session = test_model_entry("m", "https://api.x.ai/v1", None, None, None);
         assert_eq!(

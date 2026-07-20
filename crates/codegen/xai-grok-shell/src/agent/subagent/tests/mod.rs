@@ -3143,6 +3143,102 @@ fn subagent_auth_type_rule() {
     assert_eq!(super::subagent_auth_type(None, & session), AuthType::SessionToken);
     assert_eq!(super::subagent_auth_type(None, & api_key), AuthType::ApiKey);
 }
+
+/// Wire profile must be derived from the CHILD's own resolved provider + auth
+/// mode, never inherited from the parent session. Grok parent spawning a
+/// Codex child on session-token (OAuth) auth must get TrustedCodex so the
+/// child speaks the Responses wire shape the OAuth Codex endpoint expects —
+/// otherwise the child sends the generic shape and gets an empty response
+/// (bum classifies it `empty_response` and retries).
+#[test]
+fn p9_wire_profile_grok_parent_codex_oauth_child_gets_trusted() {
+    use crate::agent::auth_method::CACHED_TOKEN_AUTH_METHOD_ID;
+    use crate::agent::config::ModelProvider;
+
+    let dir = tempfile::TempDir::new().unwrap();
+    let auth_path = dir.path().join("auth.json");
+    p7_write_auth_json(&auth_path, true, true); // both xAI and Codex slots usable
+
+    let mut models = indexmap::IndexMap::new();
+    let mut codex = test_model_entry("gpt-5.6-sol");
+    codex.info.provider = ModelProvider::Codex;
+    models.insert("gpt-5.6-sol".to_string(), codex);
+    models.insert("grok-build".to_string(), test_model_entry("grok-build"));
+
+    // Grok parent (grok-build) spawning a Codex child.
+    let mut ctx = p7_ctx_with_models_and_auth(models, auth_path, "grok-build");
+    ctx.auth_method_id = acp::AuthMethodId::new(CACHED_TOKEN_AUTH_METHOD_ID); // session-based
+
+    let (config, canonical_id) =
+        super::resolve_model_override_to_config("gpt-5.6-sol", &ctx).expect("resolves");
+    assert_eq!(canonical_id.0.as_ref(), "gpt-5.6-sol");
+    assert_eq!(
+        config.responses_wire_profile,
+        xai_grok_sampler::ResponsesWireProfile::TrustedCodex,
+        "Codex child on first-party OAuth must get TrustedCodex regardless of Grok parent"
+    );
+}
+
+/// Mirror case: Codex parent spawning a Grok child must get Disabled — a
+/// stale TrustedCodex profile inherited from the parent would send
+/// Codex-shaped request fields to a non-Codex endpoint.
+#[test]
+fn p9_wire_profile_codex_parent_grok_child_gets_disabled() {
+    use crate::agent::auth_method::CACHED_TOKEN_AUTH_METHOD_ID;
+    use crate::agent::config::ModelProvider;
+
+    let dir = tempfile::TempDir::new().unwrap();
+    let auth_path = dir.path().join("auth.json");
+    p7_write_auth_json(&auth_path, true, true);
+
+    let mut models = indexmap::IndexMap::new();
+    let mut codex = test_model_entry("gpt-5.6-sol");
+    codex.info.provider = ModelProvider::Codex;
+    models.insert("gpt-5.6-sol".to_string(), codex);
+    models.insert("grok-build".to_string(), test_model_entry("grok-build"));
+
+    // Codex parent spawning a Grok child.
+    let mut ctx = p7_ctx_with_models_and_auth(models, auth_path, "gpt-5.6-sol");
+    ctx.auth_method_id = acp::AuthMethodId::new(CACHED_TOKEN_AUTH_METHOD_ID);
+
+    let (config, canonical_id) =
+        super::resolve_model_override_to_config("grok-build", &ctx).expect("resolves");
+    assert_eq!(canonical_id.0.as_ref(), "grok-build");
+    assert_eq!(
+        config.responses_wire_profile,
+        xai_grok_sampler::ResponsesWireProfile::Disabled,
+        "Grok child must never inherit TrustedCodex from a Codex parent"
+    );
+}
+
+/// A Codex child on BYOK (ApiKey, not session OAuth) must stay Disabled —
+/// TrustedCodex is only for the first-party product OAuth flow.
+#[test]
+fn p9_wire_profile_codex_child_byok_stays_disabled() {
+    use crate::agent::auth_method::XAI_API_KEY_METHOD_ID;
+    use crate::agent::config::ModelProvider;
+
+    let dir = tempfile::TempDir::new().unwrap();
+    let auth_path = dir.path().join("auth.json");
+    p7_write_auth_json(&auth_path, true, true);
+
+    let mut models = indexmap::IndexMap::new();
+    let mut codex = test_model_entry("gpt-5.6-sol");
+    codex.info.provider = ModelProvider::Codex;
+    models.insert("gpt-5.6-sol".to_string(), codex);
+    models.insert("grok-build".to_string(), test_model_entry("grok-build"));
+
+    let mut ctx = p7_ctx_with_models_and_auth(models, auth_path, "grok-build");
+    ctx.auth_method_id = acp::AuthMethodId::new(XAI_API_KEY_METHOD_ID); // not session-based
+
+    let (config, _) =
+        super::resolve_model_override_to_config("gpt-5.6-sol", &ctx).expect("resolves");
+    assert_eq!(
+        config.responses_wire_profile,
+        xai_grok_sampler::ResponsesWireProfile::Disabled,
+        "non-OAuth (ApiKey) Codex auth must not get TrustedCodex"
+    );
+}
 #[test]
 fn fresh_tool_model_accepts_visible_key_and_internal_id() {
     let mut models = indexmap::IndexMap::new();

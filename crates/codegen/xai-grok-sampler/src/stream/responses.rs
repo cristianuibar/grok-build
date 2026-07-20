@@ -152,6 +152,12 @@ pub fn stream_responses<'a>(
         let mut output_to_tool_index: BTreeMap<u32, u32> = BTreeMap::new();
         let mut next_tool_index: u32 = 0;
 
+        // ChatGPT/Codex backends may send a terminal `response.completed`
+        // with an empty `output` array even after streaming completed
+        // items via `response.output_item.done`. Accumulate done items so
+        // the final response can be reconstructed in that case.
+        let mut output_items_acc: Vec<rs::OutputItem> = Vec::new();
+
         let mut stream = raw_stream;
         loop {
             let event_result = match tokio::time::timeout(idle_timeout, stream.next()).await {
@@ -372,6 +378,7 @@ pub fn stream_responses<'a>(
                 // For WebSearchCall this includes the query and source URLs.
                 // For CustomToolCall this includes x_search results.
                 ResponseStreamEvent::ResponseOutputItemDone(done_event) => {
+                    output_items_acc.push(done_event.item.clone());
                     match &done_event.item {
                         rs::OutputItem::WebSearchCall(ws) => {
                             let result = serde_json::to_value(ws).ok();
@@ -466,6 +473,14 @@ pub fn stream_responses<'a>(
         // `u.total_tokens` to `context_details.input + output` when
         // the backend emits it; on older deployments the wire
         // value passes through unchanged.
+        if response.output.is_empty() && !output_items_acc.is_empty() {
+            tracing::info!(
+                n_items = output_items_acc.len(),
+                "terminal response had empty output; using accumulated output_item.done items"
+            );
+            response.output = output_items_acc;
+        }
+
         let usage = response.usage.as_ref().map(|u| TokenUsage {
             prompt_tokens: u.input_tokens,
             completion_tokens: u.output_tokens,

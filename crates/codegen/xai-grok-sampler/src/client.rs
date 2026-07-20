@@ -97,6 +97,7 @@ impl GrokRequestHeaders<'_> {
 /// the API doesn't emit `context_details` (older deployments) `total_tokens`
 /// passes through unchanged.
 fn deserialize_response_event(data: &str) -> Result<rs::ResponseStreamEvent> {
+    tracing::trace!(frame = %data, "Responses API SSE frame received");
     let mut event = match serde_json::from_str::<rs::ResponseStreamEvent>(data) {
         Ok(event) => event,
         Err(first_err) => {
@@ -127,6 +128,52 @@ fn deserialize_response_event(data: &str) -> Result<rs::ResponseStreamEvent> {
     };
     apply_terminal_event_overrides(&mut event, data);
     Ok(event)
+}
+
+/// If `err` is a deserialization failure caused solely by an unrecognized
+/// `type` tag (e.g. a new Responses API event like `response.metadata` that
+/// our vendored `rs::ResponseStreamEvent` enum doesn't model yet), return
+/// that event type so the caller can skip the frame instead of killing the
+/// stream. Returns `None` for any other failure — malformed JSON, or a
+/// *known* event type with a bad payload — which must keep erroring.
+///
+/// Serde's internally-tagged enum (`#[serde(tag = "type")]`) reports an
+/// unmatched tag as `"unknown variant ..."`, distinct from payload errors
+/// like `"missing field ..."` on a recognized variant.
+fn unrecognized_event_type(data: &str, err: &SamplingError) -> Option<String> {
+    let SamplingError::Serialization(serde_err) = err else {
+        return None;
+    };
+    if !serde_err.to_string().contains("unknown variant") {
+        return None;
+    }
+    serde_json::from_str::<serde_json::Value>(data)
+        .ok()?
+        .get("type")?
+        .as_str()
+        .map(str::to_string)
+}
+
+/// Decide what a single Responses API SSE data frame yields: `Some(_)`
+/// passes an event (or a real error) downstream; `None` swallows the frame
+/// without ending the stream, mirroring the doom-loop check interception
+/// above. Frames with an unrecognized `type` tag are swallowed with a
+/// `warn!`; any other deserialization failure — malformed JSON, or a known
+/// type with a bad payload — still errors.
+fn handle_response_frame(data: &str) -> Option<Result<rs::ResponseStreamEvent>> {
+    match deserialize_response_event(data) {
+        Ok(event) => Some(Ok(event)),
+        Err(err) => match unrecognized_event_type(data, &err) {
+            Some(event_type) => {
+                tracing::warn!(
+                    event_type = %event_type,
+                    "Skipping unrecognized Responses API SSE event"
+                );
+                None
+            }
+            None => Some(Err(err)),
+        },
+    }
 }
 
 /// On terminal Responses API events (`response.completed` /
@@ -1186,6 +1233,11 @@ impl SamplingClient {
     fn apply_trusted_codex_response_profile(request: &mut rs::CreateResponse) {
         request.store = Some(false);
         request.previous_response_id = None;
+        // ChatGPT backend rejects sampler-tuning params under the trusted
+        // profile (400 "Unsupported parameter: ...").
+        request.max_output_tokens = None;
+        request.temperature = None;
+        request.top_p = None;
 
         if let Some(reasoning) = request.reasoning.as_mut() {
             reasoning.summary = None;
@@ -1400,6 +1452,28 @@ impl SamplingClient {
         // (official Codex prepare_response_items_for_request). Prevents
         // Grok→Codex 404s on residual `rs_*` reasoning ids after sanitation.
         xai_grok_sampling_types::strip_input_item_ids_for_store_false(&mut request_body);
+        if self.defaults.responses_wire_profile == ResponsesWireProfile::TrustedCodex {
+            // Official Codex CLI always sends prompt_cache_key (session id)
+            // and `strict` on every function tool; the ChatGPT backend
+            // returns empty streams for tool-bearing requests without them.
+            let cache_key = request
+                .x_grok_session_id
+                .as_deref()
+                .filter(|s| !s.is_empty())
+                .unwrap_or(x_grok_conv_id);
+            if !cache_key.is_empty() {
+                request_body["prompt_cache_key"] = serde_json::json!(cache_key);
+            }
+            if let Some(tools) = request_body.get_mut("tools").and_then(|v| v.as_array_mut()) {
+                for tool in tools {
+                    if tool.get("type").and_then(|t| t.as_str()) == Some("function")
+                        && tool.get("strict").is_none()
+                    {
+                        tool["strict"] = serde_json::json!(false);
+                    }
+                }
+            }
+        }
         // Fresh per attempt so signals never leak across retries; `None`
         // (check disabled) sends no header and does no peek work per event.
         let doom_loop = self
@@ -1426,6 +1500,10 @@ impl SamplingClient {
             "Sending responses API stream request"
         );
         Self::log_request_headers(&built_request, "responses");
+        tracing::trace!(
+            body = %serde_json::to_string(&request_body).unwrap_or_default(),
+            "Responses API stream request body"
+        );
 
         let response = self.http.execute(built_request).await.map_err(|e| {
             tracing::debug!("HTTP request failed: {}", e);
@@ -1539,7 +1617,7 @@ impl SamplingClient {
                         } else if let Some(stream_error) = try_parse_stream_error(data) {
                             Some(Some(Err(stream_error)))
                         } else {
-                            Some(Some(deserialize_response_event(data)))
+                            Some(handle_response_frame(data))
                         }
                     }
                     Err(e) => {
@@ -2395,6 +2473,12 @@ mod tests {
             item.get("role").and_then(serde_json::Value::as_str) != Some("system")
         }));
         assert!(trusted["reasoning"].get("summary").is_none());
+        assert!(
+            trusted.get("max_output_tokens").is_none()
+                && trusted.get("temperature").is_none()
+                && trusted.get("top_p").is_none(),
+            "ChatGPT backend rejects sampler-tuning params under trusted profile: {trusted}"
+        );
         assert_eq!(trusted["tool_choice"], "auto");
         assert_eq!(trusted["parallel_tool_calls"], true);
 
@@ -3011,5 +3095,78 @@ mod tests {
             event,
             rs::ResponseStreamEvent::ResponseOutputTextDelta(_)
         ));
+    }
+
+    /// A `response.metadata` frame (a real Responses API event our vendored
+    /// async-openai 0.33.1 enum doesn't model) is swallowed rather than
+    /// killing the stream; the known events surrounding it still come
+    /// through untouched.
+    #[test]
+    fn handle_response_frame_skips_unrecognized_event_type() {
+        let metadata = r#"{"type":"response.metadata","foo":"bar"}"#;
+        let created = r#"{
+            "type": "response.created",
+            "sequence_number": 0,
+            "response": {
+                "id": "resp_1", "object": "response", "created_at": 0,
+                "model": "grok-build", "status": "in_progress", "output": []
+            }
+        }"#;
+        let delta = r#"{
+            "type": "response.output_text.delta",
+            "sequence_number": 1,
+            "item_id": "item-1",
+            "output_index": 0,
+            "content_index": 0,
+            "delta": "hello",
+            "logprobs": []
+        }"#;
+
+        assert!(handle_response_frame(metadata).is_none());
+
+        let created_event = handle_response_frame(created)
+            .expect("known event not swallowed")
+            .expect("known event parses");
+        assert!(matches!(
+            created_event,
+            rs::ResponseStreamEvent::ResponseCreated(_)
+        ));
+
+        let delta_event = handle_response_frame(delta)
+            .expect("known event not swallowed")
+            .expect("known event parses");
+        assert!(matches!(
+            delta_event,
+            rs::ResponseStreamEvent::ResponseOutputTextDelta(_)
+        ));
+    }
+
+    /// Regression guard: a *known* event type with a malformed payload must
+    /// still surface as an error — only genuinely unrecognized `type` tags
+    /// get swallowed.
+    #[test]
+    fn handle_response_frame_still_errors_on_known_type_bad_payload() {
+        // `response.completed` with `output` as a string instead of an
+        // array — a known variant, invalid payload.
+        let bad = r#"{
+            "type": "response.completed",
+            "sequence_number": 0,
+            "response": {
+                "id": "resp_1", "object": "response", "created_at": 0,
+                "model": "grok-build", "status": "completed", "output": "not-an-array"
+            }
+        }"#;
+        let result = handle_response_frame(bad).expect("known type is not swallowed");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn unrecognized_event_type_extracts_type_tag() {
+        let err = deserialize_response_event(r#"{"type":"response.metadata","foo":"bar"}"#)
+            .expect_err("unknown variant should fail typed deserialization");
+        assert_eq!(
+            unrecognized_event_type(r#"{"type":"response.metadata","foo":"bar"}"#, &err),
+            Some("response.metadata".to_string())
+        );
     }
 }
