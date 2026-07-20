@@ -56,8 +56,19 @@ fn matches_trusted_base_url(candidate: &str, trusted_base: &str) -> bool {
 /// True for cli-chat-proxy URLs (production, plus local-dev hosts when the
 /// optional non-production feature is enabled). When that feature is on,
 /// runtime env overrides can extend this trust set.
+///
+/// The `GROK_CLI_CHAT_PROXY_BASE_URL` dev/test override is only consulted in
+/// `cfg(test)`/`debug_assertions` builds — release binaries always compare
+/// against the compiled production host only, so this can't be used to
+/// redirect a live session token to an attacker-controlled host via env.
 pub fn is_cli_chat_proxy_url(url: &str) -> bool {
     if matches_trusted_base_url(url, crate::env::PROD_CLI_CHAT_PROXY_BASE_URL) {
+        return true;
+    }
+    #[cfg(any(test, debug_assertions))]
+    if let Ok(dev_base) = std::env::var("GROK_CLI_CHAT_PROXY_BASE_URL")
+        && matches_trusted_base_url(url, &dev_base)
+    {
         return true;
     }
     false

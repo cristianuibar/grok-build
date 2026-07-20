@@ -130,6 +130,19 @@ async fn make_actor_with_method_and_credentials(
             auth_type,
             ..Default::default()
         });
+    // The test sampling config's model ("test") is not in the real catalog,
+    // so resolve_model_auth_facts would fail-closed to provider=None and the
+    // reconstruct attach policy would never fire. Seed the memo directly (as
+    // the model_auth_facts_memo/BYOK tests below do) so this helper exercises
+    // a genuine xAI session-based model.
+    actor.model_auth_facts.replace(Some((
+        "test".to_string(),
+        crate::agent::config::ModelAuthFacts {
+            byok: crate::agent::auth_method::ModelByok::NotByok,
+            auth_scheme: Default::default(),
+            provider: Some(crate::agent::config::ModelProvider::Xai),
+        },
+    )));
     (Arc::new(actor), persistence_rx)
 }
 

@@ -8546,9 +8546,12 @@ reasoning_effort = "low"
             sampling.base_url, "https://custom.api/v1",
             "model's own base_url must be used"
         );
+        // Session OAuth is only attached to first-party xAI hosts (BYOK
+        // safety, D-04/D-09/D-15); use a *.x.ai base_url here so the
+        // session-key-beats-env-key path is actually exercised.
         let model_no_key = test_model_entry(
             "test",
-            "https://proxy.api/v1",
+            "https://custom.x.ai/v1",
             None,
             None,
             Some("https://api.x.ai/v1"),
@@ -8560,7 +8563,7 @@ reasoning_effort = "low"
             "session token should beat env key when model has no own credentials"
         );
         assert_eq!(
-            sampling.base_url, "https://proxy.api/v1",
+            sampling.base_url, "https://custom.x.ai/v1",
             "session auth should use base_url, not api_base_url"
         );
         let sampling = resolve_sampling(&model_no_key, None);
@@ -12219,8 +12222,13 @@ default = "grok-4.5"
             .values()
             .filter(|e| e.visible_for_auth(false))
             .collect();
-        assert_eq!(sess.len(), 1);
-        assert!(api.is_empty());
+        // Multi-provider survival always re-appends the bundled Codex defaults
+        // (gpt-5.6-sol/terra/luna) after a prefetch replace, so the xAI-only
+        // prefetched "grok-build" is joined by 3 Codex rows. grok-build itself
+        // is supported_in_api=false (session-only); the 3 Codex defaults are
+        // supported_in_api=true (visible to both).
+        assert_eq!(sess.len(), 4);
+        assert_eq!(api.len(), 3);
     }
     #[test]
     fn resolve_model_list_keeps_prefetch_only_entries_and_prunes_defaults() {

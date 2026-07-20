@@ -2739,6 +2739,15 @@ mod inline_auto_compact_flow_tests {
                 let prefix_len = conv.len();
                 let mut actor = create_test_actor(0, 40_000, 80, gateway_tx, persistence_tx).await;
                 actor.startup_hints.inherited_prefix_len = Some(prefix_len);
+                // Fail-closed sampling preflight (D-11) requires a usable static
+                // api_key or live bearer resolver before any HTTP send.
+                actor
+                    .chat_state_handle
+                    .update_credentials(xai_chat_state::Credentials {
+                        api_key: Some("test-key".to_string()),
+                        auth_type: xai_chat_state::AuthType::ApiKey,
+                        ..Default::default()
+                    });
                 let actor = Arc::new(actor);
                 let server = MockInferenceServer::start().await.unwrap();
                 server.set_response("Summary of prior work. ".repeat(30));
@@ -2814,6 +2823,15 @@ mod inline_auto_compact_flow_tests {
                 let prefix_len = conv.len();
                 let mut actor = create_test_actor(0, 40_000, 80, gateway_tx, persistence_tx).await;
                 actor.startup_hints.inherited_prefix_len = Some(prefix_len);
+                // Fail-closed sampling preflight (D-11) requires a usable static
+                // api_key or live bearer resolver before any HTTP send.
+                actor
+                    .chat_state_handle
+                    .update_credentials(xai_chat_state::Credentials {
+                        api_key: Some("test-key".to_string()),
+                        auth_type: xai_chat_state::AuthType::ApiKey,
+                        ..Default::default()
+                    });
                 let actor = Arc::new(actor);
                 let server = MockInferenceServer::start().await.unwrap();
                 server.set_response("Summary. ".repeat(70));

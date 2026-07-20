@@ -1179,6 +1179,7 @@ async fn test_compact_on_error_no_trigger_when_tokens_within_new_window() {
 /// fetches `/models-v2`, parses the response, and updates `context_window`
 /// and `max_completion_tokens` in the sampling config.
 #[tokio::test(flavor = "current_thread")]
+#[serial_test::serial]
 async fn test_e2e_idle_resume_refreshes_model_metadata() {
     use axum::routing::get;
     let local = tokio::task::LocalSet::new();
@@ -1197,6 +1198,13 @@ async fn test_e2e_idle_resume_refreshes_model_metadata() {
             let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
             let addr = listener.local_addr().unwrap();
             let mock_url = format!("http://{}/v1", addr);
+            // `maybe_refresh_model_metadata_on_resume` only fetches /models-v2
+            // when the session base_url reads as the trusted cli-chat-proxy
+            // host (never an arbitrary host, to avoid leaking the live session
+            // bearer). The dev/test-only GROK_CLI_CHAT_PROXY_BASE_URL override
+            // (cfg(test)/debug_assertions only, compiled out of release
+            // binaries) lets this test's mock server pass that check.
+            unsafe { std::env::set_var("GROK_CLI_CHAT_PROXY_BASE_URL", &mock_url) };
             tokio::task::spawn_local(async move {
                 axum::serve(listener, app).await.unwrap();
             });
@@ -1467,6 +1475,7 @@ async fn test_e2e_idle_resume_refreshes_model_metadata() {
                 Some(16384),
                 "max_completion_tokens should be updated to 16384 from /models-v2"
             );
+            unsafe { std::env::remove_var("GROK_CLI_CHAT_PROXY_BASE_URL") };
         })
         .await;
 }

@@ -608,8 +608,11 @@ async fn update_recovers_from_corrupt_auth_json_by_backing_up_old_file() {
         on_disk_raw.contains("fresh-token"),
         "auth.json must contain the new credential after recovery, got: {on_disk_raw}"
     );
+    // On-disk format is the multi-provider AuthDocument (version + per-provider
+    // slots), not a flat AuthStore map — read via read_auth_json to unwrap the
+    // xAI provider slot.
     let on_disk: AuthStore =
-        serde_json::from_str(&on_disk_raw).expect("auth.json must be valid JSON after recovery");
+        read_auth_json(&auth_path).expect("auth.json must be valid JSON after recovery");
     assert!(on_disk.contains_key(&cfg.auth_scope()));
 
     let mut backup_found = None;
@@ -2926,8 +2929,11 @@ async fn update_recovers_from_empty_auth_json() {
         !on_disk_raw.is_empty(),
         "auth.json must not be empty after recovery"
     );
+    // On-disk format is the multi-provider AuthDocument (version + per-provider
+    // slots), not a flat AuthStore map — read via read_auth_json to unwrap the
+    // xAI provider slot.
     let on_disk: AuthStore =
-        serde_json::from_str(&on_disk_raw).expect("auth.json must be valid JSON after recovery");
+        read_auth_json(&auth_path).expect("auth.json must be valid JSON after recovery");
     assert!(
         on_disk.contains_key(&cfg.auth_scope()),
         "persisted scope must be present"
