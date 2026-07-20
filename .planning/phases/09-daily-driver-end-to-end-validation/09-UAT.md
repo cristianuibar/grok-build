@@ -190,37 +190,64 @@ Structured evidence placeholders (Plan 04 fills; C1-M6 cross-ref):
 
 ### Direction A — Grok parent → Codex child
 
+**Run 1 (2026-07-20, operator live — FAILED):**
+
 | Field (C1-M6) | Value (operator fills; leave blank until live) |
 |---------------|-----------------------------------------------|
-| parent_model | |
-| child_model | |
-| effort | |
-| Spawn path (NL / Task) | |
-| result_returned | ⬜ yes · ⬜ no (start-without-return is **not** PASS) |
-| parent_model_after | (must match parent_model for PASS) |
-| error_class | if failed: PRODUCT BLOCKER / AUTH/ACCOUNT BLOCKED / PROVIDER OUTAGE/LIMIT |
-| Outcome | ⬜ PASS · ⬜ PRODUCT BLOCKER · ⬜ AUTH/ACCOUNT BLOCKED · ⬜ PROVIDER OUTAGE/LIMIT |
+| parent_model | Grok 4.5 (high effort) — xAI |
+| child_model | gpt-5.6-sol (Codex) |
+| effort | low |
+| Spawn path (NL / Task) | NL → Task tool (4 attempts: 1 foreground, 3 background) |
+| result_returned | ☑ no (start-without-return is **not** PASS) |
+| parent_model_after | Grok 4.5 (unchanged — parent stability OK) |
+| error_class | PRODUCT BLOCKER — foreground: serialization error `unknown variant response.metadata` on Codex SSE decode in child path; background: child hangs at turn 1 with 0 tool calls (decode error swallowed), operator killed after ~5–13 min |
+| Outcome | ⬜ PASS · ☑ PRODUCT BLOCKER · ⬜ AUTH/ACCOUNT BLOCKED · ⬜ PROVIDER OUTAGE/LIMIT |
+
+In-phase fix required (spawn path — allowed scope per Session notes). Re-run table after fix.
+
+**Run 2 (2026-07-20, operator live, after in-phase fixes — PASS):**
+
+| Field (C1-M6) | Value |
+|---------------|-------|
+| parent_model | grok-4.5 (xAI) — TUI session |
+| child_model | gpt-5.6-sol (Codex) |
+| effort | low |
+| Spawn path (NL / Task) | NL → Task tool |
+| result_returned | ☑ yes — child returned exact fixture contents (`uat baseline 2026-07-20T09:45:51Z`) |
+| parent_model_after | grok-4.5 (confirmed via /model — unchanged) |
+| error_class | — |
+| Outcome | ☑ PASS |
+
+In-phase fixes that unblocked Run 2 (committed this session; root causes were product blockers, not provider outage):
+1. Tolerant skip of unknown Responses SSE frame types (new backend `response.metadata` event killed child streams) — `xai-grok-sampler/src/client.rs`.
+2. Subagent child sessions hard-coded `ResponsesWireProfile::Disabled`; now derived from the child's resolved model + auth (TrustedCodex for Codex-OAuth children) — `xai-grok-shell/src/agent/{config,subagent/mod}.rs`.
+3. TrustedCodex profile now strips `temperature` / `top_p` / `max_output_tokens` (ChatGPT backend 400s "Unsupported parameter") and adds `strict` on function tools + `prompt_cache_key` (official Codex CLI parity) — `xai-grok-sampler/src/client.rs`.
+4. Backend now sends terminal `response.completed` with empty `output` after streaming tool-call items; final response is reconstructed from accumulated `response.output_item.done` items (fixes `empty_response (no_visible_content)` retry storm on all tool-using Codex turns, main sessions included) — `xai-grok-sampler/src/stream/responses.rs`.
 
 ### Direction B — Codex parent → Grok child
 
-| Field (C1-M6) | Value (operator fills; leave blank until live) |
-|---------------|-----------------------------------------------|
-| parent_model | |
-| child_model | |
-| effort | |
-| Spawn path (NL / Task) | |
-| result_returned | ⬜ yes · ⬜ no (start-without-return is **not** PASS) |
-| parent_model_after | (must match parent_model for PASS) |
-| error_class | if failed: PRODUCT BLOCKER / AUTH/ACCOUNT BLOCKED / PROVIDER OUTAGE/LIMIT |
-| Outcome | ⬜ PASS · ⬜ PRODUCT BLOCKER · ⬜ AUTH/ACCOUNT BLOCKED · ⬜ PROVIDER OUTAGE/LIMIT |
+**Run (2026-07-20, operator live — PASS):**
+
+| Field (C1-M6) | Value |
+|---------------|-------|
+| parent_model | gpt-5.6-sol (Codex) — same TUI session, switched via /model |
+| child_model | grok-4.5 (xAI) — **requested `grok-build`, effective child ran grok-4.5** (see deferred note) |
+| effort | default |
+| Spawn path (NL / Task) | NL → Task tool |
+| result_returned | ☑ yes — child returned exact fixture contents (`uat baseline 2026-07-20T09:45:51Z`) |
+| parent_model_after | gpt-5.6-sol (confirmed via /model — unchanged) |
+| error_class | — |
+| Outcome | ☑ PASS (cross-provider Codex parent → xAI child satisfied; slug substitution deferred) |
+
+Deferred (non-blocking, recorded): with a Codex parent, the Task allow-list rejects `grok-build` ("not an available model slug; supported Grok model is grok-4.5") in both TUI and headless — parent asked operator, operator approved `grok-4.5`. Root cause: `visible_for_auth` evaluates xAI models against the parent session's Codex auth mode (`is_session_auth` is session-global, not per-provider), hiding session-auth-only xAI slugs like `grok-build`. Fix candidate: derive Task-model visibility from each model's own provider auth slot. → Phase 11/12 backlog.
 
 | Step | Action | Expected | Pass? | Notes |
 |------|--------|----------|-------|-------|
-| 1 | Parent Grok → child Codex (NL or Task + model + effort) | Child completes; results return; parent model unchanged | ⬜ | |
-| 2 | Parent Codex → child Grok | Same | ⬜ | |
+| 1 | Parent Grok → child Codex (NL or Task + model + effort) | Child completes; results return; parent model unchanged | ☑ PASS | Run 2 above, 2026-07-20 |
+| 2 | Parent Codex → child Grok | Same | ☑ PASS | 2026-07-20 |
 
-**OPS-06 overall (C1-L5):** ⬜ PASS · ⬜ PRODUCT BLOCKER · ⬜ AUTH/ACCOUNT BLOCKED · ⬜ PROVIDER OUTAGE/LIMIT  
-(Requires **both** directions PASS with result_returned=yes and parent_model_after matching parent_model.)
+**OPS-06 overall (C1-L5):** ☑ PASS · ⬜ PRODUCT BLOCKER · ⬜ AUTH/ACCOUNT BLOCKED · ⬜ PROVIDER OUTAGE/LIMIT  
+(Both directions PASS with result_returned=yes and parent_model_after matching parent_model — operator live, 2026-07-20.)
 
 ---
 
@@ -249,19 +276,19 @@ Structured evidence placeholders (Plan 04 fills; C1-M6 cross-ref):
 
 | Field | Value |
 |-------|-------|
-| Operator | Cristian (fill remaining after OPS-06) |
-| Date (UTC) | 2026-07-18 (OPS-03..05); OPS-06 date: ________ |
-| Binary version / commit | `bum 0.1.220-alpha.4 (9a5c2ee)` / HEAD `2880636` (confirm if rebuilt) |
-| Models under test | xAI: `grok-build` / Codex: GPT-5.6 (incl. **gpt-5.6-luna** on OPS-05); OPS-06 models: ________ |
+| Operator | Cristian |
+| Date (UTC) | 2026-07-18 (OPS-03..05); OPS-06: **2026-07-20** |
+| Binary version / commit | OPS-06: `bum 0.1.220-alpha.4 (5b68602)` + uncommitted in-phase fixes (committed immediately after this sign-off; see Run 2 fix list) |
+| Models under test | xAI: `grok-build` / `grok-4.5` / Codex: GPT-5.6 (incl. **gpt-5.6-luna** on OPS-05, **gpt-5.6-sol** on OPS-06 both dirs) |
 | Capability gaps documented | Codex thinking often none; effort ultra polish → Phase 11 |
 | Secrets committed? | **No** (must remain No) |
-| Disposable workspace path | (operator fills for OPS-06 session) |
-| Chrome preflight outcome | ⬜ PASS · ⬜ BLOCKER DECISION — residual `Usage: grok` in `--help` still present; product line is `bum TUI` (operator judges C1-M4) |
+| Disposable workspace path | `/tmp/bum-uat-fixture-Fu3LE3` (throwaway fixture file, Option B; cleanup after session close) |
+| Chrome preflight outcome | ☑ PASS (cosmetic) — residual `Usage: grok` / `~/.grok` in `--help` accepted as non-blocking; product line is `bum TUI`; full residual-string rebrand sweep is the immediately following task |
 | OPS-03 (C1-L5) | ☑ PASS · ⬜ PRODUCT BLOCKER · ⬜ AUTH/ACCOUNT BLOCKED · ⬜ PROVIDER OUTAGE/LIMIT |
 | OPS-04 (C1-L5) | ☑ PASS · ⬜ PRODUCT BLOCKER · ⬜ AUTH/ACCOUNT BLOCKED · ⬜ PROVIDER OUTAGE/LIMIT |
 | OPS-05 (C1-L5) | ☑ PASS · ⬜ PRODUCT BLOCKER · ⬜ AUTH/ACCOUNT BLOCKED · ⬜ PROVIDER OUTAGE/LIMIT |
-| OPS-06 both dirs (C1-L5) | ⬜ PASS · ⬜ PRODUCT BLOCKER · ⬜ AUTH/ACCOUNT BLOCKED · ⬜ PROVIDER OUTAGE/LIMIT |
-| Hybrid gate note | Fixture/auto residual green does **not** substitute any failed live row (D-16). OPS-06 still open. |
+| OPS-06 both dirs (C1-L5) | ☑ PASS · ⬜ PRODUCT BLOCKER · ⬜ AUTH/ACCOUNT BLOCKED · ⬜ PROVIDER OUTAGE/LIMIT |
+| Hybrid gate note | All OPS-03..06 rows PASS with live operator evidence (D-16 satisfied). |
 Signed live PASS rows become evidence for `09-VERIFICATION.md` (Plan 05).
 
 ---

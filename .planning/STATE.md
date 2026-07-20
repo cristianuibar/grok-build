@@ -4,15 +4,15 @@ milestone: v1.0
 milestone_name: milestone
 current_phase: 09
 current_phase_name: daily-driver-end-to-end-validation
-current_plan: 1
-status: executing
-stopped_at: Goal-backward verification for Phase 10 after live OPS-04/OPS-05 PASS
-last_updated: "2026-07-18T15:11:46.737Z"
-last_activity: 2026-07-18
-last_activity_desc: Phase 09 execution started
+current_plan: 5
+status: phase_complete
+stopped_at: Phase 9 verified — OPS-03..06 all live PASS (OPS-06 both directions 2026-07-20)
+last_updated: "2026-07-20T12:45:00.000Z"
+last_activity: 2026-07-20
+last_activity_desc: Phase 09 closed — OPS-06 live PASS after 4 in-phase Codex wire/stream fixes
 progress:
   total_phases: 10
-  completed_phases: 6
+  completed_phases: 7
   total_plans: 57
   completed_plans: 51
 ---
@@ -28,14 +28,11 @@ See: .planning/PROJECT.md (updated 2026-07-17)
 
 ## Current Position
 
-Phase: 09 (daily-driver-end-to-end-validation) — EXECUTING
-Plan: 1 of 5
-Status: Executing Phase 09
-Last activity: 2026-07-18 — Phase 09 execution started
-Current Plan: 1
-Total Plans in Phase: 5
+Phase: 09 (daily-driver-end-to-end-validation) — COMPLETE (verified 2026-07-20, 09-VERIFICATION.md passed)
+Next: Phase 11 (Codex effort & catalog fidelity) or rebrand residual-string sweep
+Last activity: 2026-07-20 — OPS-06 both directions live PASS; Phase 9 closed
 
-Progress: [█████████░] Phase 9 remains 3/5 summaries; Phase 10 complete (7/7 + VERIFICATION passed)
+Progress: [██████████] Phases 1-10 complete; remaining: Phase 11, 12 (polish)
 
 ## Performance Metrics
 

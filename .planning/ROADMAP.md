@@ -21,7 +21,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [x] **Phase 6: Mid-session switch & missing-provider gate** - Switch anytime; fail closed with login prompt (completed 2026-07-17)
 - [x] **Phase 7: Cross-provider multi-agent orchestration** - Same-provider regression + parent/child cross-provider spawn (completed 2026-07-17)
 - [x] **Phase 8: Quiet fork & rebrand polish** - No auto-update/telemetry; full bum chrome/strings (completed 2026-07-17)
-- [ ] **Phase 9: Daily-driver end-to-end validation** - Real sessions both providers, mid-session switch, cross-provider agents
+- [x] **Phase 9: Daily-driver end-to-end validation** - Real sessions both providers, mid-session switch, cross-provider agents (completed 2026-07-20)
 - [x] **Phase 10: Codex Responses wire parity** - Align bum request shape with official Codex CLI (headers, reasoning defaults, continuity) (completed 2026-07-18)
 - [ ] **Phase 11: Codex effort & catalog fidelity** - GPT-5.6 effort levels, soft-clamp UX, catalog capability flags from Codex models.json patterns
 - [ ] **Phase 12: Codex depth & attribution polish** - Optional tool/WS/originator depth; honest product attribution (bum ≠ Codex CLI)
