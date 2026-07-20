@@ -50,22 +50,22 @@ pub(crate) enum MinimumVersionError {
         source: semver::Error,
     },
     #[error(
-        "This version of Grok ({current}) is no longer supported. \
-         Run `grok update` to install version {minimum} or later."
+        "This version of bum ({current}) is no longer supported. \
+         Run `bum update` to install version {minimum} or later."
     )]
     AutoUpdateDisabled { current: String, minimum: String },
     /// `npm` / `gh` / `internal` GCS — none detected.
     #[error(
-        "This version of Grok ({current}) is no longer supported. \
-         Run `grok update` to install version {minimum} or later."
+        "This version of bum ({current}) is no longer supported. \
+         Run `bum update` to install version {minimum} or later."
     )]
     NoInstaller { current: String, minimum: String },
     /// `detail` is telemetry-only; omitted from `Display` to avoid stacking
     /// the installer's own action language.
     #[error(
-        "This version of Grok ({current}) is no longer supported, \
+        "This version of bum ({current}) is no longer supported, \
          and the update to version {minimum} didn't complete.\n\n\
-         Run `grok update` to try again."
+         Run `bum update` to try again."
     )]
     UpgradeFailed {
         current: String,
@@ -75,7 +75,7 @@ pub(crate) enum MinimumVersionError {
     /// Latest release is known but still below the floor (vs `NoReleaseFound`,
     /// which couldn't probe at all).
     #[error(
-        "This version of Grok ({current}) is no longer supported. \
+        "This version of bum ({current}) is no longer supported. \
          Version {minimum} or later is required, but the most recent release is {latest}. \
          Contact your administrator."
     )]
@@ -86,7 +86,7 @@ pub(crate) enum MinimumVersionError {
     },
     /// Couldn't probe the registry — likely transient.
     #[error(
-        "This version of Grok ({current}) is no longer supported. \
+        "This version of bum ({current}) is no longer supported. \
          Version {minimum} or later is required, but no release was found. \
          Check your network connection, or contact your administrator."
     )]
@@ -94,7 +94,7 @@ pub(crate) enum MinimumVersionError {
     /// `grok update --version X` requested a version below the floor.
     #[error(
         "Cannot install Grok {target}: the configured minimum is {minimum}. \
-         Run `grok update` to install the latest allowed version."
+         Run `bum update` to install the latest allowed version."
     )]
     TargetBelowFloor { target: String, minimum: String },
 }
@@ -225,7 +225,7 @@ async fn enforce_minimum_version(
 
     info!(%current, %target, installer, "minimum_version: installing upgrade");
     eprintln!(
-        "This version of Grok ({current}) is no longer supported. \
+        "This version of bum ({current}) is no longer supported. \
          Updating to {target}…"
     );
 

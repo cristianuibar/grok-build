@@ -12,19 +12,19 @@ use crate::util::display_user_grok_path;
 const ADD_AFTER_HELP: &str = "\
 Examples:
   # Add a stdio server (everything after -- is the server command)
-  grok mcp add xcode -- xcrun mcpbridge
+  bum mcp add xcode -- xcrun mcpbridge
 
   # Add a stdio server with environment variables
-  grok mcp add postgres -e DATABASE_URL=postgres://localhost/mydb -- npx -y @modelcontextprotocol/server-postgres
+  bum mcp add postgres -e DATABASE_URL=postgres://localhost/mydb -- npx -y @modelcontextprotocol/server-postgres
 
   # Add a remote HTTP server
-  grok mcp add --transport http sentry https://mcp.sentry.dev/mcp
+  bum mcp add --transport http sentry https://mcp.sentry.dev/mcp
 
   # Add a remote server with an authentication header
-  grok mcp add --transport http api https://mcp.example.com/mcp --header \"Authorization: Bearer YOUR_TOKEN\"
+  bum mcp add --transport http api https://mcp.example.com/mcp --header \"Authorization: Bearer YOUR_TOKEN\"
 
-  # Add to the project config (./.grok/config.toml) instead of ~/.grok/config.toml
-  grok mcp add --scope project github -- npx -y @modelcontextprotocol/server-github";
+  # Add to the project config (./.grok/config.toml) instead of ~/.bum/config.toml
+  bum mcp add --scope project github -- npx -y @modelcontextprotocol/server-github";
 
 #[derive(Debug, clap::Args, Clone)]
 pub struct McpArgs {
@@ -46,7 +46,7 @@ pub enum McpTransport {
 /// Which config file an MCP server definition is written to.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
 pub enum McpScope {
-    /// `~/.grok/config.toml`, available in all your projects
+    /// `~/.bum/config.toml`, available in all your projects
     User,
     /// `./.grok/config.toml`, shared with everyone working in this directory
     Project,
@@ -111,7 +111,7 @@ pub struct AddArgs {
     #[arg(short = 't', long, value_enum)]
     transport: Option<McpTransport>,
 
-    /// Config to write to: user (~/.grok/config.toml) or project (./.grok/config.toml)
+    /// Config to write to: user (~/.bum/config.toml) or project (./.grok/config.toml)
     #[arg(short = 's', long, value_enum, default_value = "user")]
     scope: McpScope,
 
@@ -166,7 +166,7 @@ fn run_list(json: bool) -> Result<()> {
             .collect();
         println!("{}", serde_json::to_string_pretty(&payload)?);
     } else if servers.is_empty() {
-        println!("No MCP servers configured. Run `grok mcp add --help` to get started.");
+        println!("No MCP servers configured. Run `bum mcp add --help` to get started.");
     } else {
         for (name, (config, scope)) in &servers {
             let transport = match &config.transport {
@@ -291,7 +291,7 @@ fn resolve_add(args: &AddArgs) -> Result<ResolvedAdd> {
         McpTransport::Stdio => {
             let Some(command) = source else {
                 bail!(
-                    "A command is required for stdio servers. Usage: grok mcp add <name> -- <command> [args...]"
+                    "A command is required for stdio servers. Usage: bum mcp add <name> -- <command> [args...]"
                 );
             };
             if !args.header.is_empty() {
@@ -325,7 +325,7 @@ fn resolve_add(args: &AddArgs) -> Result<ResolvedAdd> {
                         format!("http://{command}")
                     };
                 warnings.push(format!(
-                    "Warning: '{command}' looks like a URL, but it is being added as a stdio command because --transport was not specified.\nFor a remote server, use: grok mcp add --transport http {} {suggested_url}",
+                    "Warning: '{command}' looks like a URL, but it is being added as a stdio command because --transport was not specified.\nFor a remote server, use: bum mcp add --transport http {} {suggested_url}",
                     args.name
                 ));
             }
@@ -349,7 +349,7 @@ fn resolve_add(args: &AddArgs) -> Result<ResolvedAdd> {
             };
             let Some(url) = source else {
                 bail!(
-                    "A URL is required for {label} servers. Usage: grok mcp add --transport {label} <name> <url>"
+                    "A URL is required for {label} servers. Usage: bum mcp add --transport {label} <name> <url>"
                 );
             };
             if !url.starts_with("http://") && !url.starts_with("https://") {
@@ -551,7 +551,7 @@ async fn run_remove(name: &str, requested_scope: Option<McpScope>) -> Result<()>
             eprintln!("MCP server '{name}' exists in multiple scopes:");
             eprintln!("  user: {}", display_user_grok_path("config.toml"));
             eprintln!("  project: {}", project_path.display());
-            eprintln!("Specify which one to remove, e.g.: grok mcp remove {name} --scope project");
+            eprintln!("Specify which one to remove, e.g.: bum mcp remove {name} --scope project");
             std::process::exit(1);
         }
     };

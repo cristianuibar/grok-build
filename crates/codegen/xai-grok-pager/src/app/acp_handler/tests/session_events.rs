@@ -463,7 +463,7 @@
             &RetryState::Failed {
                 error_type: "legacy_auth".into(),
                 message: "Unauthorized (401) ... deprecated authentication method (WebLogin) ... \
-                          run `grok logout` then `grok login`"
+                          run `bum logout` then `bum login`"
                     .into(),
             },
             &mut session,

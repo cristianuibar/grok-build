@@ -800,7 +800,7 @@ async fn apply_headless_model_and_effort(
     .map_err(|e| {
         if let Some(name) = model_name {
             anyhow::anyhow!(
-                "Couldn't set model '{}': {}. Run 'grok models' to see available models.",
+                "Couldn't set model '{}': {}. Run 'bum models' to see available models.",
                 name,
                 e
             )
@@ -1764,7 +1764,7 @@ mod tests {
             );
             assert!(
                 !msg.contains("grok login"),
-                "must not instruct stock grok login: {msg}"
+                "must not instruct stock bum login: {msg}"
             );
         }
         assert!(

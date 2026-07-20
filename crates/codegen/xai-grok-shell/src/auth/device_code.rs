@@ -570,7 +570,7 @@ pub(crate) mod tests {
         );
         assert!(
             !not_enabled.contains("grok login"),
-            "device-code NotEnabled must not instruct stock grok login: {not_enabled}"
+            "device-code NotEnabled must not instruct stock bum login: {not_enabled}"
         );
 
         let expired = super::DEVICE_CODE_EXPIRED_MSG;
@@ -580,7 +580,7 @@ pub(crate) mod tests {
         );
         assert!(
             !expired.contains("grok login"),
-            "expiry recovery must not instruct stock grok login: {expired}"
+            "expiry recovery must not instruct stock bum login: {expired}"
         );
     }
 

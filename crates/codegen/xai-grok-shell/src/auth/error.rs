@@ -144,7 +144,7 @@ mod p8_shell_runtime_cli_tests {
             );
             assert!(
                 !msg.contains("grok login"),
-                "auth recovery must not instruct stock grok login: {msg}"
+                "auth recovery must not instruct stock bum login: {msg}"
             );
         }
     }
