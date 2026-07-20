@@ -1653,14 +1653,36 @@ mod platform {
     }
 
     #[cfg(target_os = "linux")]
+    #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+    enum X11PrimaryTool {
+        Xclip,
+        Xsel,
+    }
+
+    #[cfg(target_os = "linux")]
+    fn classify_x11_primary_tool(spec: &ToolSpec) -> Option<X11PrimaryTool> {
+        match spec.name {
+            name if name == XCLIP_SPEC.name => Some(X11PrimaryTool::Xclip),
+            name if name == XSEL_SPEC.name => Some(X11PrimaryTool::Xsel),
+            _ => None,
+        }
+    }
+
+    #[cfg(target_os = "linux")]
     fn x11_primary_tool_available(spec: &ToolSpec) -> bool {
         static XCLIP_DISCOVERED: std::sync::OnceLock<()> = std::sync::OnceLock::new();
         static XSEL_DISCOVERED: std::sync::OnceLock<()> = std::sync::OnceLock::new();
-        if std::ptr::eq(spec, &XCLIP_SPEC) {
-            cache_successful_probe(&XCLIP_DISCOVERED, || tool_available(&XCLIP_SPEC))
-        } else {
-            debug_assert!(std::ptr::eq(spec, &XSEL_SPEC));
-            cache_successful_probe(&XSEL_DISCOVERED, || tool_available(&XSEL_SPEC))
+        // Tool specs are `const` values, so references to them may point at
+        // distinct promoted allocations. Classify by semantic identity rather
+        // than pointer identity.
+        match classify_x11_primary_tool(spec) {
+            Some(X11PrimaryTool::Xclip) => {
+                cache_successful_probe(&XCLIP_DISCOVERED, || tool_available(&XCLIP_SPEC))
+            }
+            Some(X11PrimaryTool::Xsel) => {
+                cache_successful_probe(&XSEL_DISCOVERED, || tool_available(&XSEL_SPEC))
+            }
+            None => false,
         }
     }
 
@@ -2229,6 +2251,19 @@ mod platform {
                 Some(&["xsel", "--primary", "--output"][..])
             );
             assert_eq!(WL_SPEC.read_primary, None);
+        }
+
+        #[test]
+        fn primary_tool_classification_uses_semantic_identity() {
+            assert_eq!(
+                classify_x11_primary_tool(&XCLIP_SPEC),
+                Some(X11PrimaryTool::Xclip)
+            );
+            assert_eq!(
+                classify_x11_primary_tool(&XSEL_SPEC),
+                Some(X11PrimaryTool::Xsel)
+            );
+            assert_eq!(classify_x11_primary_tool(&WL_SPEC), None);
         }
 
         #[test]
