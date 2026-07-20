@@ -6,7 +6,7 @@ current_phase: 09
 current_phase_name: daily-driver-end-to-end-validation
 current_plan: 5
 status: phase_complete
-stopped_at: Phase 9 verified — OPS-03..06 all live PASS (OPS-06 both directions 2026-07-20)
+stopped_at: Pager --lib suite green (7142/0); ready for Phase 11 planning
 last_updated: "2026-07-20T12:45:00.000Z"
 last_activity: 2026-07-20
 last_activity_desc: Phase 09 closed — OPS-06 live PASS after 4 in-phase Codex wire/stream fixes
@@ -29,7 +29,7 @@ See: .planning/PROJECT.md (updated 2026-07-17)
 ## Current Position
 
 Phase: 09 (daily-driver-end-to-end-validation) — COMPLETE (verified 2026-07-20, 09-VERIFICATION.md passed)
-Next: Phase 11 (Codex effort & catalog fidelity). Queued quick task: 28 pre-existing `xai-grok-pager --lib` test failures (paste/dashboard/event_loop) — run via /gsd-quick, pattern precedent in commit 4a78ded. Rebrand sweep done (42aaa61); shell lib tests green (4a78ded).
+Next: Phase 11 (Codex effort & catalog fidelity). Queued quick task cleared 2026-07-20 — pager `--lib` now 7142 pass / 0 fail (1b80800). Rebrand sweep done (42aaa61); shell lib tests green (4a78ded). Known unrelated failure: `xai-file-utils` queue::tests::cleanup_orphans_uses_sidecar_age_for_pairs.
 Last activity: 2026-07-20 — OPS-06 both directions live PASS; Phase 9 closed
 
 Progress: [██████████] Phases 1-10 complete; remaining: Phase 11, 12 (polish)
@@ -142,3 +142,9 @@ Progress: [██████████] Phases 1-10 complete; remaining: Phas
 1. **Route 0 preferred:** resume Phase 9 remaining plans (09-04 live UAT / 09-05 hybrid close) — do not skip incomplete Phase 9 for Phase 11
 2. Optional: `/gsd-plan-phase 11` only after Phase 9 hybrid green (or explicit skip)
 3. Workspace `cargo fmt` hygiene chore remains deferred (does not block Phase 10 goal)
+
+## Quick Tasks Completed
+
+| Date | Slug | Result |
+|------|------|--------|
+| 2026-07-20 | pager-lib-test-failures | 21 `xai-grok-pager --lib` failures fixed → 7142 pass / 0 fail (1b80800) |
