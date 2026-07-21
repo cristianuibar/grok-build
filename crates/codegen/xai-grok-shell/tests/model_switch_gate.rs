@@ -70,6 +70,14 @@ const XAI_MODEL: &str = "grok-build";
 const BYOK_MODEL: &str = "p6-byok-codex";
 const CUSTOM_MODEL: &str = "p10-custom-codex";
 const CUSTOM_KEY: &str = "custom-own-key-p10";
+/// Codex model with empty supported-effort menu (HIGH#4 null-vs-absent pin).
+const EMPTY_EFFORT_MODEL: &str = "p11-empty-effort-codex";
+const EMPTY_EFFORT_KEY: &str = "p11-empty-effort-key";
+/// Catalog map key for the alias/routing-slug fixture (A2 pin).
+const ALIAS_CATALOG_KEY: &str = "p11-alias-catalog-key";
+/// Routing slug (`info.model`) that is NOT the map key — raw lookup misses it.
+const ALIAS_ROUTING_SLUG: &str = "p11-alias-routing-slug";
+const ALIAS_API_KEY: &str = "p11-alias-api-key";
 const DUPLEX_BUFFER_BYTES: usize = 4 * 1024 * 1024;
 const HISTORY_MARKER: &str = "p6-history-marker-unique-prompt-string";
 const PROVIDER_HISTORY_MARKER: &str = "p10-normal-history-must-survive";
@@ -256,6 +264,63 @@ fn agent_config_with_byok_and_custom_opts(
     custom.supported_in_api = Some(true);
     custom.hidden = Some(false);
     cfg.config_models.insert(CUSTOM_MODEL.to_owned(), custom);
+
+    // Empty supported-effort list + supports flag: wire omits effort; clamp notice silent.
+    let mut empty_effort = ConfigModelOverride::default();
+    empty_effort.model = Some(EMPTY_EFFORT_MODEL.to_owned());
+    empty_effort.name = Some("P11 Empty Effort Codex".to_owned());
+    empty_effort.provider = Some(ModelProvider::Codex);
+    empty_effort.api_key = Some(EMPTY_EFFORT_KEY.to_owned());
+    empty_effort.api_backend = Some(ApiBackend::Responses);
+    empty_effort.supports_reasoning_effort = Some(true);
+    empty_effort.supported_in_api = Some(true);
+    empty_effort.hidden = Some(false);
+    cfg.config_models
+        .insert(EMPTY_EFFORT_MODEL.to_owned(), empty_effort);
+
+    // Catalog key ≠ routing slug; raw model_reasoning_efforts(slug) returns [].
+    use xai_grok_sampling_types::ReasoningEffortOption;
+    let mut alias = ConfigModelOverride::default();
+    alias.model = Some(ALIAS_ROUTING_SLUG.to_owned());
+    alias.name = Some("P11 Alias Codex".to_owned());
+    alias.provider = Some(ModelProvider::Codex);
+    alias.api_key = Some(ALIAS_API_KEY.to_owned());
+    alias.api_backend = Some(ApiBackend::Responses);
+    alias.supports_reasoning_effort = Some(true);
+    alias.reasoning_effort = Some(ReasoningEffort::Low);
+    alias.reasoning_efforts = vec![
+        ReasoningEffortOption {
+            id: "low".into(),
+            value: ReasoningEffort::Low,
+            label: "Low".into(),
+            description: None,
+            default: true,
+        },
+        ReasoningEffortOption {
+            id: "medium".into(),
+            value: ReasoningEffort::Medium,
+            label: "Medium".into(),
+            description: None,
+            default: false,
+        },
+        ReasoningEffortOption {
+            id: "high".into(),
+            value: ReasoningEffort::High,
+            label: "High".into(),
+            description: None,
+            default: false,
+        },
+        ReasoningEffortOption {
+            id: "xhigh".into(),
+            value: ReasoningEffort::Xhigh,
+            label: "XHigh".into(),
+            description: None,
+            default: false,
+        },
+    ];
+    alias.supported_in_api = Some(true);
+    alias.hidden = Some(false);
+    cfg.config_models.insert(ALIAS_CATALOG_KEY.to_owned(), alias);
 
     if opts.sol_api_key || opts.sol_unsupported_effort_default {
         let mut sol = ConfigModelOverride::default();
@@ -692,15 +757,80 @@ impl GateHarness {
         session_id: &acp::SessionId,
         model_id: &str,
     ) -> Result<acp::SetSessionModelResponse, acp::Error> {
+        self.set_model_with_effort(session_id, model_id, None).await
+    }
+
+    /// Model switch with optional explicit `reasoningEffort` override (meta).
+    async fn set_model_with_effort(
+        &self,
+        session_id: &acp::SessionId,
+        model_id: &str,
+        reasoning_effort: Option<&str>,
+    ) -> Result<acp::SetSessionModelResponse, acp::Error> {
+        let meta = reasoning_effort.map(|eff| {
+            let mut m = acp::Meta::new();
+            m.insert(
+                "reasoningEffort".to_string(),
+                serde_json::Value::String(eff.to_owned()),
+            );
+            m
+        });
         tokio::time::timeout(
             Duration::from_secs(30),
-            self.client.set_session_model(acp::SetSessionModelRequest::new(
-                session_id.clone(),
-                acp::ModelId::new(model_id.to_owned()),
-            )),
+            self.client.set_session_model(
+                acp::SetSessionModelRequest::new(
+                    session_id.clone(),
+                    acp::ModelId::new(model_id.to_owned()),
+                )
+                .meta(meta),
+            ),
         )
         .await
         .expect("set_session_model timed out")
+    }
+
+    /// Resume via ACP `session/load` (same path as production restore).
+    async fn load_session(
+        &self,
+        session_id: &acp::SessionId,
+    ) -> Result<acp::LoadSessionResponse, acp::Error> {
+        tokio::time::timeout(
+            Duration::from_secs(60),
+            self.client.load_session(acp::LoadSessionRequest::new(
+                session_id.clone(),
+                self.workdir.path().to_path_buf(),
+            )),
+        )
+        .await
+        .expect("session/load timed out")
+    }
+
+    /// Poll on-disk summary until `reasoning_effort_preference` matches (or is absent).
+    async fn wait_summary_preference(
+        &self,
+        session_id: &acp::SessionId,
+        expected: Option<&str>,
+    ) {
+        let path = self.session_dir(session_id).join("summary.json");
+        for _ in 0..100 {
+            if let Ok(text) = std::fs::read_to_string(&path) {
+                if let Ok(v) = serde_json::from_str::<Value>(&text) {
+                    let pref = v
+                        .get("reasoning_effort_preference")
+                        .and_then(|x| x.as_str());
+                    match (expected, pref) {
+                        (Some(e), Some(p)) if e == p => return,
+                        (None, None) => return,
+                        _ => {}
+                    }
+                }
+            }
+            tokio::time::sleep(Duration::from_millis(50)).await;
+        }
+        let text = std::fs::read_to_string(&path).unwrap_or_default();
+        panic!(
+            "timed out waiting for summary reasoning_effort_preference={expected:?}; summary={text}"
+        );
     }
 
     async fn prompt(
@@ -815,6 +945,53 @@ fn assert_switch_ok(result: Result<acp::SetSessionModelResponse, acp::Error>, la
             panic!("{label}: set_session_model failed: {err:?}");
         }
     }
+}
+
+fn assert_switch_ok_resp(
+    result: Result<acp::SetSessionModelResponse, acp::Error>,
+    label: &str,
+) -> acp::SetSessionModelResponse {
+    match result {
+        Ok(resp) => resp,
+        Err(err) => {
+            assert_not_missing_provider(&err);
+            panic!("{label}: set_session_model failed: {err:?}");
+        }
+    }
+}
+
+fn meta_effort(resp: &acp::SetSessionModelResponse) -> Option<&str> {
+    resp.meta
+        .as_ref()
+        .and_then(|m| m.get("reasoning_effort"))
+        .and_then(|v| v.as_str())
+}
+
+fn meta_effort_raw(resp: &acp::SetSessionModelResponse) -> Option<&Value> {
+    resp.meta
+        .as_ref()
+        .and_then(|m| m.get("reasoning_effort"))
+}
+
+fn meta_clamped(resp: &acp::SetSessionModelResponse) -> bool {
+    resp.meta
+        .as_ref()
+        .and_then(|m| m.get("reasoning_effort_clamped"))
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false)
+}
+
+fn meta_supported(resp: &acp::SetSessionModelResponse) -> Vec<String> {
+    resp.meta
+        .as_ref()
+        .and_then(|m| m.get("reasoning_effort_supported"))
+        .and_then(|v| v.as_array())
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|v| v.as_str().map(str::to_owned))
+                .collect()
+        })
+        .unwrap_or_default()
 }
 
 fn assert_reserved_codex_headers_absent(entry: &LogEntry) {
@@ -1819,6 +1996,361 @@ async fn codex_to_codex_transition_retains_encrypted_reasoning() {
             assert_eq!(path, "/v1/responses", "Codex uses Responses API");
             let body = body.expect("captured Codex request must have JSON body");
             assert_reasoning_request(&body, Some(ENCRYPTED_REASONING));
+        })
+        .await;
+}
+
+// ───────────────────────── Phase 11 sticky preference / clamp (MOD-02) ─────────
+
+/// Grok→Codex→Grok: raw preference X survives round-trip (MOD-02/ordering).
+#[tokio::test(flavor = "current_thread")]
+#[serial]
+async fn p11_sticky_preference_survives_grok_to_codex_to_grok_round_trip() {
+    let local = tokio::task::LocalSet::new();
+    local
+        .run_until(async {
+            let (xai, codex) = dual_usable_auth();
+            let h = GateHarness::start(Some(xai), Some(codex)).await;
+            let sid = h.new_session_on_xai().await;
+
+            // (1) Explicit minimal while on Grok — stores raw preference (Grok
+            // gate does not stamp unsupported effort into the request; meta
+            // effective may be null, but preference is sticky).
+            let r1 = assert_switch_ok_resp(
+                h.set_model_with_effort(&sid, XAI_MODEL, Some("minimal")).await,
+                "grok+minimal",
+            );
+            assert!(!meta_clamped(&r1), "Grok is not Codex — no clamp flag");
+
+            // (2) Sol menu excludes minimal → clamp to middle (medium).
+            let r2 = assert_switch_ok_resp(h.set_model(&sid, CODEX_MODEL).await, "sol no override");
+            assert!(meta_clamped(&r2), "minimal must clamp on Sol; meta={:?}", r2.meta);
+            assert_eq!(meta_effort(&r2), Some("medium"), "middle of Sol list");
+            assert_ne!(meta_effort(&r2), Some("minimal"));
+
+            // (3) Back to Grok then (4) Sol again: still clamps — raw preference
+            // survived the Grok hop (L2: prove via response meta only).
+            let _r3 = assert_switch_ok_resp(h.set_model(&sid, XAI_MODEL).await, "back to grok");
+            let r4 = assert_switch_ok_resp(h.set_model(&sid, CODEX_MODEL).await, "sol again");
+            assert!(
+                meta_clamped(&r4),
+                "preference must still be minimal after Grok hop; meta={:?}",
+                r4.meta
+            );
+            assert_eq!(meta_effort(&r4), Some("medium"));
+        })
+        .await;
+}
+
+/// HIGH#2: no preference → each Codex target uses its own catalog default.
+#[tokio::test(flavor = "current_thread")]
+#[serial]
+async fn p11_no_preference_switch_uses_target_catalog_default_not_prior_model_default() {
+    let local = tokio::task::LocalSet::new();
+    local
+        .run_until(async {
+            let (xai, codex) = dual_usable_auth();
+            let h = GateHarness::start(Some(xai), Some(codex)).await;
+            // Start on Sol with no effort override
+            let sid = h.new_session_with_model(CODEX_MODEL).await;
+
+            let r1 = assert_switch_ok_resp(h.set_model(&sid, CODEX_MODEL).await, "sol reselect");
+            assert_eq!(meta_effort(&r1), Some("low"), "Sol catalog default");
+            assert!(!meta_clamped(&r1));
+
+            let r2 = assert_switch_ok_resp(h.set_model(&sid, CODEX_MODEL_TERRA).await, "terra");
+            assert_eq!(
+                meta_effort(&r2),
+                Some("medium"),
+                "Terra own default, not Sol low; meta={:?}",
+                r2.meta
+            );
+            assert!(!meta_clamped(&r2));
+        })
+        .await;
+}
+
+/// Soft-clamp never hard-fails (phase goal criterion 2).
+#[tokio::test(flavor = "current_thread")]
+#[serial]
+async fn p11_unsupported_effort_soft_clamps_to_middle_no_hard_fail() {
+    let local = tokio::task::LocalSet::new();
+    local
+        .run_until(async {
+            let (xai, codex) = dual_usable_auth();
+            let h = GateHarness::start(Some(xai), Some(codex)).await;
+            let sid = h.new_session_on_xai().await;
+
+            let resp = assert_switch_ok_resp(
+                h.set_model_with_effort(&sid, CODEX_MODEL, Some("minimal")).await,
+                "sol+minimal",
+            );
+            assert!(meta_clamped(&resp));
+            assert_eq!(meta_effort(&resp), Some("medium"));
+        })
+        .await;
+}
+
+/// Empty supported list: response null effort + wire omits reasoning.effort.
+#[tokio::test(flavor = "current_thread")]
+#[serial]
+async fn p11_empty_effort_list_omits_wire_effort_and_does_not_hard_fail() {
+    let local = tokio::task::LocalSet::new();
+    local
+        .run_until(async {
+            let (xai, codex) = dual_usable_auth();
+            let h = GateHarness::start(Some(xai), Some(codex)).await;
+            let sid = h.new_session_on_xai().await;
+
+            let resp = assert_switch_ok_resp(
+                h.set_model_with_effort(&sid, EMPTY_EFFORT_MODEL, Some("high"))
+                    .await,
+                "empty-list model",
+            );
+            assert!(!meta_clamped(&resp));
+            assert_eq!(
+                meta_effort_raw(&resp),
+                Some(&Value::Null),
+                "present-null contract for empty supported list; meta={:?}",
+                resp.meta
+            );
+
+            let before = h.server.request_count();
+            h.server.set_response("p11 empty list wire reply");
+            let turn = h
+                .prompt(&sid, "p11 empty effort list turn")
+                .await
+                .expect("turn must complete");
+            assert!(matches!(turn.stop_reason, acp::StopReason::EndTurn));
+            let entries = h.agent_turn_inference_requests_after(before);
+            assert!(!entries.is_empty());
+            let body = entries[0].body.as_ref().expect("json body");
+            assert!(
+                body.pointer("/reasoning/effort").is_none(),
+                "wire must omit reasoning.effort for empty supported list; body={body}"
+            );
+        })
+        .await;
+}
+
+/// Supported preference kept; clamp flag false.
+#[tokio::test(flavor = "current_thread")]
+#[serial]
+async fn p11_supported_effort_switch_keeps_value_and_no_clamp_flag() {
+    let local = tokio::task::LocalSet::new();
+    local
+        .run_until(async {
+            let (xai, codex) = dual_usable_auth();
+            let h = GateHarness::start(Some(xai), Some(codex)).await;
+            let sid = h.new_session_on_xai().await;
+
+            let resp = assert_switch_ok_resp(
+                h.set_model_with_effort(&sid, CODEX_MODEL, Some("high")).await,
+                "sol+high",
+            );
+            assert!(!meta_clamped(&resp));
+            assert_eq!(meta_effort(&resp), Some("high"));
+        })
+        .await;
+}
+
+/// HIGH#3/NEW-C: Codex preference never reaches Grok wire unguarded.
+#[tokio::test(flavor = "current_thread")]
+#[serial]
+async fn p11_grok_path_gate_restored_unsupported_preference_dropped_not_sent() {
+    let local = tokio::task::LocalSet::new();
+    local
+        .run_until(async {
+            let (xai, codex) = dual_usable_auth();
+            let h = GateHarness::start(Some(xai), Some(codex)).await;
+            let sid = h.new_session_with_model(CODEX_MODEL).await;
+
+            assert_switch_ok_resp(
+                h.set_model_with_effort(&sid, CODEX_MODEL, Some("xhigh"))
+                    .await,
+                "codex+xhigh",
+            );
+
+            let r_grok = assert_switch_ok_resp(h.set_model(&sid, XAI_MODEL).await, "to grok");
+            // Grok drops unsupported effort — effective effort is None
+            assert!(
+                meta_effort(&r_grok).is_none()
+                    || meta_effort_raw(&r_grok) == Some(&Value::Null),
+                "grok switch must not surface codex preference as effective; meta={:?}",
+                r_grok.meta
+            );
+
+            let before = h.server.request_count();
+            h.server.set_response("p11 grok gate reply");
+            let turn = h
+                .prompt(&sid, "p11 grok path gate turn")
+                .await
+                .expect("grok turn");
+            assert!(matches!(turn.stop_reason, acp::StopReason::EndTurn));
+            let entries = h.agent_turn_inference_requests_after(before);
+            assert!(!entries.is_empty());
+            let body = entries[0].body.as_ref().expect("json body");
+            assert!(
+                body.pointer("/reasoning/effort").is_none(),
+                "Codex preference must not reach Grok wire; body={body}"
+            );
+        })
+        .await;
+}
+
+/// A2: alias/routing-slug uses resolved entry supported list.
+#[tokio::test(flavor = "current_thread")]
+#[serial]
+async fn p11_switch_via_alias_model_id_uses_resolved_entry_supported_list() {
+    let local = tokio::task::LocalSet::new();
+    local
+        .run_until(async {
+            let (xai, codex) = dual_usable_auth();
+            let h = GateHarness::start(Some(xai), Some(codex)).await;
+            let sid = h.new_session_on_xai().await;
+
+            // minimal unsupported on the alias model's 4-level menu → clamp
+            let resp = assert_switch_ok_resp(
+                h.set_model_with_effort(&sid, ALIAS_ROUTING_SLUG, Some("minimal"))
+                    .await,
+                "alias+minimal",
+            );
+            let supported = meta_supported(&resp);
+            assert_eq!(
+                supported,
+                vec!["low", "medium", "high", "xhigh"],
+                "must use resolved entry list, not empty raw map lookup; meta={:?}",
+                resp.meta
+            );
+            assert!(meta_clamped(&resp));
+            assert_eq!(meta_effort(&resp), Some("medium"));
+        })
+        .await;
+}
+
+/// HIGH#2/NEW-B: resume with no preference does not inherit catalog default as sticky.
+#[tokio::test(flavor = "current_thread")]
+#[serial]
+async fn p11_resumed_session_with_no_explicit_preference_does_not_inherit_persisted_catalog_default()
+{
+    let local = tokio::task::LocalSet::new();
+    local
+        .run_until(async {
+            let (xai, codex) = dual_usable_auth();
+            let h = GateHarness::start(Some(xai), Some(codex)).await;
+            let sid = h.new_session_with_model(CODEX_MODEL).await;
+
+            // Touch a switch so CurrentModel persistence fires with preference None
+            assert_switch_ok_resp(h.set_model(&sid, CODEX_MODEL).await, "sol touch");
+            h.wait_summary_preference(&sid, None).await;
+
+            h.load_session(&sid)
+                .await
+                .expect("load_session must succeed");
+
+            let r = assert_switch_ok_resp(
+                h.set_model(&sid, CODEX_MODEL_TERRA).await,
+                "terra after resume",
+            );
+            assert_eq!(
+                meta_effort(&r),
+                Some("medium"),
+                "resume must not stick Sol low; meta={:?}",
+                r.meta
+            );
+            assert!(!meta_clamped(&r));
+        })
+        .await;
+}
+
+/// Explicit preference survives full persist/resume and stays preference-typed.
+#[tokio::test(flavor = "current_thread")]
+#[serial]
+async fn p11_explicit_effort_preference_survives_persist_resume_round_trip() {
+    let local = tokio::task::LocalSet::new();
+    local
+        .run_until(async {
+            let (xai, codex) = dual_usable_auth();
+            let h = GateHarness::start(Some(xai), Some(codex)).await;
+            let sid = h.new_session_with_model(CODEX_MODEL).await;
+
+            let r0 = assert_switch_ok_resp(
+                h.set_model_with_effort(&sid, CODEX_MODEL, Some("high")).await,
+                "sol+high",
+            );
+            assert_eq!(meta_effort(&r0), Some("high"));
+            assert!(!meta_clamped(&r0));
+            h.wait_summary_preference(&sid, Some("high")).await;
+
+            h.load_session(&sid)
+                .await
+                .expect("load_session must succeed");
+
+            // After resume, re-select Sol: high should still be the preference/effective
+            let r1 = assert_switch_ok_resp(h.set_model(&sid, CODEX_MODEL).await, "sol after resume");
+            assert_eq!(
+                meta_effort(&r1),
+                Some("high"),
+                "explicit preference must survive resume; meta={:?}",
+                r1.meta
+            );
+
+            // Switch to a model where high is unsupported? Both Sol and Terra support high.
+            // Use empty-effort model: preference high, effective None, clamped false
+            // (empty menu). Better: use alias with only low/medium? Simpler proof:
+            // switch to empty-list model then back — plan wants clamp on next model
+            // that excludes high. Our alias has high. Use a 2-level model?
+            // Sol/Terra both have high. Create clamp by switching with no override
+            // to Sol after forcing preference minimal via... already have high.
+            //
+            // Plan: "SUBSEQUENT no-override switch to a DIFFERENT Codex model whose
+            // supported list excludes high still clamps against high"
+            // Empty-list model: clamp uses empty list → effective None, effort_clamped
+            // false due to empty guard. That does NOT prove preference-typed.
+            //
+            // Re-use unsupported path: after resume with high, we need a model without
+            // high. The EMPTY model has empty list. Clamp: clamp(high, [], None)=None,
+            // effort_clamped = false (empty guard).
+            //
+            // Alternative: switch to Grok? Not codex clamp.
+            // Best: assert that after resume, switching to Terra with no override
+            // keeps high (supported) — proves preference typed if it weren't sticky
+            // we'd get Terra medium. That's the positive preference-typed pin when
+            // high IS supported on Terra.
+            let r2 = assert_switch_ok_resp(
+                h.set_model(&sid, CODEX_MODEL_TERRA).await,
+                "terra with sticky high",
+            );
+            assert_eq!(
+                meta_effort(&r2),
+                Some("high"),
+                "preference high must carry to Terra (not Terra medium default); meta={:?}",
+                r2.meta
+            );
+            assert!(!meta_clamped(&r2));
+
+            // Clamp path: switch with sticky high to empty-list? Not clamp flag.
+            // Switch to Grok and back? Or set minimal somehow...
+            // Force unsupported via set_model_with_effort minimal, then resume already done.
+            // For clamp proof: no-override to Sol after preference is minimal.
+            // Re-set preference to minimal after the high checks:
+            assert_switch_ok_resp(
+                h.set_model_with_effort(&sid, CODEX_MODEL, Some("minimal"))
+                    .await,
+                "sol+minimal sticky",
+            );
+            h.wait_summary_preference(&sid, Some("minimal")).await;
+            h.load_session(&sid).await.expect("second load");
+            let r3 = assert_switch_ok_resp(
+                h.set_model(&sid, CODEX_MODEL_TERRA).await,
+                "terra clamps minimal",
+            );
+            assert!(
+                meta_clamped(&r3),
+                "minimal must clamp on Terra after resume; meta={:?}",
+                r3.meta
+            );
+            assert_eq!(meta_effort(&r3), Some("medium"));
         })
         .await;
 }

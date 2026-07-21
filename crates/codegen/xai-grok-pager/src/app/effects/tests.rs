@@ -2019,3 +2019,38 @@ fn session_picker_entry_maps_to_dormant_roster_row() {
     assert_eq!(roster.origin.kind, "local");
     assert_eq!(roster.origin.host.as_deref(), Some("box"));
 }
+
+#[test]
+fn resolve_switch_model_response_effort_distinguishes_null_from_absent() {
+    use xai_grok_shell::sampling::types::ReasoningEffort;
+
+    // (a) key absent entirely → legacy fallback
+    assert_eq!(
+        resolve_switch_model_response_effort(None, Some(ReasoningEffort::High)),
+        Some(ReasoningEffort::High)
+    );
+    let empty = serde_json::Map::new();
+    assert_eq!(
+        resolve_switch_model_response_effort(Some(&empty), Some(ReasoningEffort::High)),
+        Some(ReasoningEffort::High)
+    );
+
+    // (b) present-null → never fall back (HIGH#4)
+    let mut null_map = serde_json::Map::new();
+    null_map.insert("reasoning_effort".into(), serde_json::Value::Null);
+    assert_eq!(
+        resolve_switch_model_response_effort(Some(&null_map), Some(ReasoningEffort::High)),
+        None
+    );
+
+    // (c) present value takes priority over client-requested
+    let mut med_map = serde_json::Map::new();
+    med_map.insert(
+        "reasoning_effort".into(),
+        serde_json::Value::String("medium".into()),
+    );
+    assert_eq!(
+        resolve_switch_model_response_effort(Some(&med_map), Some(ReasoningEffort::High)),
+        Some(ReasoningEffort::Medium)
+    );
+}

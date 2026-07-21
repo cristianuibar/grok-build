@@ -648,6 +648,181 @@ fn switch_model_complete_skips_message_and_persist_when_unchanged() {
     );
 }
 
+fn scrollback_system_texts(app: &AppView, id: AgentId) -> Vec<String> {
+    let agent = &app.agents[&id];
+    agent
+        .scrollback
+        .iter_entries()
+        .filter_map(|(_, e)| match &e.block {
+            crate::scrollback::block::RenderBlock::System(s) => Some(s.text.clone()),
+            _ => None,
+        })
+        .collect()
+}
+
+#[test]
+fn switch_model_complete_renders_clamp_notice_when_effort_clamped() {
+    use xai_grok_shell::sampling::types::ReasoningEffort;
+    let mut app = test_app_with_agent();
+    let id = AgentId(0);
+    let model_id = acp::ModelId::new(std::sync::Arc::from("gpt-5.6-sol"));
+    app.agents.get_mut(&id).unwrap().session.models.available.insert(
+        model_id.clone(),
+        acp::ModelInfo::new(model_id.clone(), "GPT-5.6 Sol".to_string()),
+    );
+    app.agents.get_mut(&id).unwrap().session.model_switch_pending = true;
+
+    let effects = dispatch(
+        Action::TaskComplete(TaskResult::SwitchModelComplete {
+            agent_id: id,
+            model_id: model_id.clone(),
+            effort: Some(ReasoningEffort::Medium),
+            effort_clamped: true,
+            effort_supported: vec![ReasoningEffort::Low, ReasoningEffort::Medium],
+            result: Ok(()),
+            prev_model_id: None,
+            persist_default: false,
+        }),
+        &mut app,
+    );
+
+    let texts = scrollback_system_texts(&app, id);
+    assert!(
+        texts.iter().any(|t| {
+            t.starts_with("reasoning effort clamped to medium (") && t.contains("low, medium")
+        }),
+        "clamp notice from dispatched effort_supported; texts={texts:?}"
+    );
+    let _ = effects;
+}
+
+#[test]
+fn switch_model_complete_silent_when_not_clamped() {
+    use xai_grok_shell::sampling::types::ReasoningEffort;
+    let mut app = test_app_with_agent();
+    let id = AgentId(0);
+    let model_id = acp::ModelId::new(std::sync::Arc::from("gpt-5.6-sol"));
+    app.agents.get_mut(&id).unwrap().session.models.available.insert(
+        model_id.clone(),
+        acp::ModelInfo::new(model_id.clone(), "GPT-5.6 Sol".to_string()),
+    );
+    app.agents.get_mut(&id).unwrap().session.model_switch_pending = true;
+
+    let _ = dispatch(
+        Action::TaskComplete(TaskResult::SwitchModelComplete {
+            agent_id: id,
+            model_id: model_id.clone(),
+            effort: Some(ReasoningEffort::Low),
+            effort_clamped: false,
+            effort_supported: vec![],
+            result: Ok(()),
+            prev_model_id: None,
+            persist_default: false,
+        }),
+        &mut app,
+    );
+
+    let texts = scrollback_system_texts(&app, id);
+    assert!(
+        texts
+            .iter()
+            .all(|t| !t.starts_with("reasoning effort clamped to")),
+        "no clamp notice when not clamped; texts={texts:?}"
+    );
+    assert!(
+        texts.iter().any(|t| t.starts_with("Switched to")),
+        "pre-existing switch notice still present; texts={texts:?}"
+    );
+}
+
+#[test]
+fn switch_model_complete_clamp_notice_single_line_at_max_supported_list_length() {
+    use xai_grok_shell::sampling::types::ReasoningEffort;
+    let mut app = test_app_with_agent();
+    let id = AgentId(0);
+    let model_id = acp::ModelId::new(std::sync::Arc::from("gpt-5.6-sol"));
+    app.agents.get_mut(&id).unwrap().session.models.available.insert(
+        model_id.clone(),
+        acp::ModelInfo::new(model_id.clone(), "GPT-5.6 Sol".to_string()),
+    );
+    app.agents.get_mut(&id).unwrap().session.model_switch_pending = true;
+
+    let _ = dispatch(
+        Action::TaskComplete(TaskResult::SwitchModelComplete {
+            agent_id: id,
+            model_id: model_id.clone(),
+            effort: Some(ReasoningEffort::Medium),
+            effort_clamped: true,
+            effort_supported: vec![
+                ReasoningEffort::Low,
+                ReasoningEffort::Medium,
+                ReasoningEffort::High,
+                ReasoningEffort::Xhigh,
+            ],
+            result: Ok(()),
+            prev_model_id: None,
+            persist_default: false,
+        }),
+        &mut app,
+    );
+
+    let notice = scrollback_system_texts(&app, id)
+        .into_iter()
+        .find(|t| t.starts_with("reasoning effort clamped to"))
+        .expect("clamp notice");
+    assert!(
+        !notice.contains('\n'),
+        "notice must be a single line; got {notice:?}"
+    );
+    for level in ["low", "medium", "high", "xhigh"] {
+        assert!(
+            notice.contains(level),
+            "notice must contain {level}; got {notice:?}"
+        );
+    }
+}
+
+#[test]
+fn switch_model_complete_does_not_persist_effort_when_clamped() {
+    use xai_grok_shell::sampling::types::ReasoningEffort;
+    let mut app = test_app_with_agent();
+    let id = AgentId(0);
+    let model_id = acp::ModelId::new(std::sync::Arc::from("gpt-5.6-sol"));
+    app.agents.get_mut(&id).unwrap().session.models.available.insert(
+        model_id.clone(),
+        acp::ModelInfo::new(model_id.clone(), "GPT-5.6 Sol".to_string()),
+    );
+    app.agents.get_mut(&id).unwrap().session.model_switch_pending = true;
+
+    let effects = dispatch(
+        Action::TaskComplete(TaskResult::SwitchModelComplete {
+            agent_id: id,
+            model_id: model_id.clone(),
+            effort: Some(ReasoningEffort::Medium),
+            effort_clamped: true,
+            effort_supported: vec![ReasoningEffort::Low, ReasoningEffort::Medium],
+            result: Ok(()),
+            prev_model_id: None,
+            persist_default: false,
+        }),
+        &mut app,
+    );
+
+    let persist = effects.iter().find_map(|e| match e {
+        Effect::PersistPreferredModel {
+            model_id: mid,
+            reasoning_effort,
+        } => Some((mid, reasoning_effort)),
+        _ => None,
+    });
+    let (mid, effort) = persist.expect("PersistPreferredModel still emitted");
+    assert_eq!(mid, &model_id);
+    assert_eq!(
+        *effort, None,
+        "clamped switch must pass reasoning_effort: None (skip, not clear)"
+    );
+}
+
 #[test]
 fn switch_model_complete_persists_resolved_effort_from_catalog_meta() {
     use xai_grok_shell::sampling::types::ReasoningEffort;
