@@ -275,6 +275,8 @@ mod tests {
             extra_headers: Default::default(),
             context_window: std::num::NonZeroU64::new(128_000).unwrap(),
             reasoning_effort: None,
+            reasoning_effort_supported: None,
+            reasoning_summary_omit: false,
             stream_tool_calls: None,
         }
     }

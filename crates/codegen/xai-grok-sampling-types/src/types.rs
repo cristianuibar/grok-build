@@ -844,6 +844,28 @@ impl std::str::FromStr for ReasoningEffort {
     }
 }
 
+/// Port of official Codex clamp semantics (`codex-rs` `turn_context.rs`):
+/// keep preference when it is in `supported`, otherwise pick the middle element
+/// at index `(len-1)/2` (lower-biased on even counts), else `catalog_default`.
+///
+/// Empty `supported` is not special-cased here — callers that want "omit from
+/// the wire when the model has no menu" decide that outside this function.
+pub fn clamp_reasoning_effort(
+    preference: Option<ReasoningEffort>,
+    supported: &[ReasoningEffort],
+    catalog_default: Option<ReasoningEffort>,
+) -> Option<ReasoningEffort> {
+    if let Some(current) = preference {
+        if supported.contains(&current) {
+            return Some(current);
+        }
+    }
+    supported
+        .get(supported.len().saturating_sub(1) / 2)
+        .copied()
+        .or(catalog_default)
+}
+
 /// Canonical wire parse only (`max` → `Xhigh`); remapped menu ids need a model catalog.
 pub fn parse_canonical_effort_token(token: &str) -> Option<ReasoningEffort> {
     token.parse().ok()
@@ -1048,6 +1070,17 @@ pub struct SamplingConfig {
     /// Reasoning effort level for reasoning models.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub reasoning_effort: Option<ReasoningEffort>,
+    /// Catalog-supported effort levels for the active model.
+    ///
+    /// `None` = provider-agnostic / not a Codex-catalog model (legacy pass-through).
+    /// `Some([])` = Codex model with no effort menu (omit `reasoning.effort` on wire).
+    /// `Some(list)` = clamp preference against `list` at request-build time.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reasoning_effort_supported: Option<Vec<ReasoningEffort>>,
+    /// When true, omit `reasoning.summary` on the Responses wire (catalog
+    /// default `none` for GPT-5.6). Independent of effort clamping.
+    #[serde(default)]
+    pub reasoning_summary_omit: bool,
     /// When true, inject `stream_tool_calls: true` into the Responses
     /// API request body so the upstream emits per-chunk argument deltas.
     #[serde(default, skip_serializing_if = "Option::is_none")]

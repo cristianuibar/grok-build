@@ -544,6 +544,14 @@ pub struct ConversationRequest {
     pub trace: Option<Box<dyn TraceContext>>,
     /// Reasoning effort level for reasoning models.
     pub reasoning_effort: Option<crate::ReasoningEffort>,
+    /// Catalog-supported effort levels for the active model.
+    ///
+    /// `None` = provider-agnostic pass-through (Grok/xAI).
+    /// `Some([])` = omit `reasoning.effort` on the wire.
+    /// `Some(list)` = clamp preference against `list`.
+    pub reasoning_effort_supported: Option<Vec<crate::ReasoningEffort>>,
+    /// When true, omit `reasoning.summary` (catalog default `none`).
+    pub reasoning_summary_omit: bool,
     /// JSON Schema for structured output (strict mode).
     pub json_schema: Option<serde_json::Value>,
 }
@@ -2157,8 +2165,25 @@ impl From<&ConversationRequest> for rs::CreateResponse {
             prompt_cache_key: None,
             prompt_cache_retention: None,
             reasoning: Some(rs::Reasoning {
-                effort: req.reasoning_effort.map(|e| e.to_responses_api()),
-                summary: Some(rs::ReasoningSummary::Concise),
+                effort: match req.reasoning_effort_supported.as_deref() {
+                    // Provider-agnostic / non-Codex: byte-identical legacy pass-through.
+                    None => req.reasoning_effort.map(|e| e.to_responses_api()),
+                    // Codex model with empty menu: omit effort entirely.
+                    Some([]) => None,
+                    // Codex model with a menu: clamp preference against supported list.
+                    Some(supported) => crate::clamp_reasoning_effort(
+                        req.reasoning_effort,
+                        supported,
+                        None,
+                    )
+                    .map(|e| e.to_responses_api()),
+                },
+                // Catalog-driven summary omission (independent of effort axis).
+                summary: if req.reasoning_summary_omit {
+                    None
+                } else {
+                    Some(rs::ReasoningSummary::Concise)
+                },
             }),
             safety_identifier: None,
             service_tier: None,
@@ -5239,6 +5264,8 @@ mod tests {
                 .with_model("test");
             let req = ConversationRequest {
                 reasoning_effort: Some(variant),
+                reasoning_effort_supported: None,
+                reasoning_summary_omit: false,
                 ..req
             };
             let chat: ChatCompletionRequest = req.into();
@@ -5276,6 +5303,8 @@ mod tests {
         ] {
             let req = ConversationRequest {
                 reasoning_effort: Some(variant),
+                reasoning_effort_supported: None,
+                reasoning_summary_omit: false,
                 ..ConversationRequest::from_items(vec![ConversationItem::user("hi")])
                     .with_model("test")
             };
@@ -5308,6 +5337,8 @@ mod tests {
     fn test_messages_request_thinking_carries_summarized_display() {
         let req = ConversationRequest {
             reasoning_effort: Some(crate::ReasoningEffort::High),
+            reasoning_effort_supported: None,
+            reasoning_summary_omit: false,
             ..ConversationRequest::from_items(vec![ConversationItem::user("hi")])
                 .with_model("messages-compatible-model")
         };

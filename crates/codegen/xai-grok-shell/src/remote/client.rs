@@ -891,6 +891,8 @@ pub fn parse_remote_model_value(
             .and_then(|v| v.as_array())
             .map(|arr| xai_grok_sampling_types::parse_reasoning_effort_options(arr))
             .unwrap_or_default(),
+        // Remote catalog has no local Codex summary-default metadata; keep summary.
+        default_reasoning_summary_none: false,
         supports_backend_search: obj
             .get("supportsBackendSearch")
             .or_else(|| obj.get("supports_backend_search"))

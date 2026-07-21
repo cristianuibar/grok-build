@@ -286,6 +286,8 @@ impl SessionActor {
                 extra_headers: Default::default(),
                 context_window: std::num::NonZeroU64::new(256_000).unwrap(),
                 reasoning_effort: None,
+                reasoning_effort_supported: None,
+                reasoning_summary_omit: false,
                 stream_tool_calls: None,
             });
         let creds = self.chat_state_handle.get_credentials().await;
@@ -404,6 +406,8 @@ impl SessionActor {
             context_window: cfg.context_window.get(),
             client_version: creds.client_version,
             reasoning_effort: cfg.reasoning_effort,
+            reasoning_effort_supported: cfg.reasoning_effort_supported.clone(),
+            reasoning_summary_omit: cfg.reasoning_summary_omit,
             force_http1: false,
             max_retries: Some(self.max_retries),
             stream_tool_calls: cfg.stream_tool_calls.unwrap_or(false),
@@ -518,6 +522,8 @@ impl SessionActor {
                             xai_grok_workspace::permission::classifier_output_json_schema(),
                         ),
                         reasoning_effort: classifier_reasoning_effort,
+                        reasoning_effort_supported: None,
+                        reasoning_summary_omit: false,
                         x_grok_conv_id: Some(session_id.clone()),
                         x_grok_req_id: Some(format!("xai-perm-auto-{}", uuid::Uuid::new_v4())),
                         x_grok_session_id: Some(session_id),

@@ -3456,6 +3456,9 @@ struct DefaultModelJson {
     supports_reasoning_effort: bool,
     #[serde(default)]
     reasoning_efforts: Vec<ReasoningEffortOption>,
+    /// When true, Responses wire omits `reasoning.summary` (catalog default `none`).
+    #[serde(default)]
+    default_reasoning_summary_none: bool,
     /// When false, only OAuth users see this in the picker.
     #[serde(default = "default_true")]
     supported_in_api: bool,
@@ -3528,6 +3531,7 @@ fn default_models(endpoints: &EndpointsConfig) -> IndexMap<String, ModelEntryCon
                 reasoning_effort: m.reasoning_effort,
                 supports_reasoning_effort: m.supports_reasoning_effort,
                 reasoning_efforts: m.reasoning_efforts,
+                default_reasoning_summary_none: m.default_reasoning_summary_none,
                 supports_backend_search: m.supports_backend_search,
                 compactions_remaining: m.compactions_remaining,
                 compaction_at_tokens: m.compaction_at_tokens,
@@ -3586,6 +3590,9 @@ pub struct ModelEntryConfig {
     /// above are derived from this list when it is non-empty.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub reasoning_efforts: Vec<ReasoningEffortOption>,
+    /// When true, Responses wire omits `reasoning.summary` (catalog default `none`).
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub default_reasoning_summary_none: bool,
     /// Extra headers to send with requests to this model's endpoint.
     /// Useful for BYOK (Bring Your Own Key) scenarios.
     /// Example: { "x-anthropic-api-key" = "sk-ant-..." }
@@ -3898,6 +3905,9 @@ pub struct ModelInfo {
     /// Per-model reasoning-effort menu (source of truth); legacy fields derived from it.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub reasoning_efforts: Vec<ReasoningEffortOption>,
+    /// When true, Responses wire omits `reasoning.summary` (catalog default `none`).
+    #[serde(default)]
+    pub default_reasoning_summary_none: bool,
     pub supports_backend_search: bool,
     /// Per-model config for the `x-compactions-remaining` header; `None` disables it.
     pub compactions_remaining: Option<CompactionsRemaining>,
@@ -3943,6 +3953,7 @@ impl ModelInfo {
             reasoning_effort: None,
             supports_reasoning_effort: false,
             reasoning_efforts: Vec::new(),
+            default_reasoning_summary_none: false,
             supports_backend_search: false,
             compactions_remaining: None,
             compaction_at_tokens: None,
@@ -3979,6 +3990,7 @@ impl ModelInfo {
             reasoning_effort: entry.reasoning_effort,
             supports_reasoning_effort: entry.supports_reasoning_effort,
             reasoning_efforts: entry.reasoning_efforts.clone(),
+            default_reasoning_summary_none: entry.default_reasoning_summary_none,
             supports_backend_search: entry.supports_backend_search,
             compactions_remaining: entry.compactions_remaining,
             compaction_at_tokens: entry.compaction_at_tokens,
@@ -4702,6 +4714,11 @@ pub fn apply_prepared_sampling_to_chat_state_fields(
         extra_headers: prepared.sampler_config.extra_headers.clone(),
         context_window,
         reasoning_effort: prepared.sampler_config.reasoning_effort,
+        reasoning_effort_supported: prepared
+            .sampler_config
+            .reasoning_effort_supported
+            .clone(),
+        reasoning_summary_omit: prepared.sampler_config.reasoning_summary_omit,
         stream_tool_calls: Some(prepared.sampler_config.stream_tool_calls),
     };
     let credentials = xai_chat_state::Credentials {
@@ -5171,6 +5188,7 @@ pub fn resolve_aux_model_sampling_config(
                 reasoning_effort: None,
                 supports_reasoning_effort: false,
                 reasoning_efforts: Vec::new(),
+                default_reasoning_summary_none: false,
                 supports_backend_search: false,
                 compactions_remaining: None,
                 compaction_at_tokens: None,
@@ -5277,6 +5295,8 @@ pub fn sampling_config_for_model(
         &credentials.base_url,
     );
     let api_backend = info.api_backend.clone();
+    let reasoning_effort_supported = (model.info.provider == ModelProvider::Codex)
+        .then(|| info.reasoning_efforts.iter().map(|o| o.value).collect::<Vec<_>>());
     SamplerConfig {
         api_key: credentials.api_key,
         model: model_name,
@@ -5291,6 +5311,8 @@ pub fn sampling_config_for_model(
         context_window: info.context_window.get(),
         client_version,
         reasoning_effort: info.reasoning_effort,
+        reasoning_effort_supported,
+        reasoning_summary_omit: info.default_reasoning_summary_none,
         force_http1: false,
         max_retries: info.max_retries,
         stream_tool_calls: info.stream_tool_calls.unwrap_or(false),
@@ -5397,6 +5419,7 @@ fn resolve_hidden_default_web_search_sampling_config(
             reasoning_effort: None,
             supports_reasoning_effort: false,
             reasoning_efforts: Vec::new(),
+            default_reasoning_summary_none: false,
             supports_backend_search: false,
             compactions_remaining: None,
             compaction_at_tokens: None,
@@ -6377,6 +6400,7 @@ reasoning_effort = "low"
                 reasoning_effort: None,
                 supports_reasoning_effort: false,
                 reasoning_efforts: Vec::new(),
+                default_reasoning_summary_none: false,
                 supports_backend_search: false,
                 compactions_remaining: None,
                 compaction_at_tokens: None,
@@ -7480,6 +7504,7 @@ reasoning_effort = "low"
             reasoning_effort: None,
             supports_reasoning_effort: false,
             reasoning_efforts: Vec::new(),
+            default_reasoning_summary_none: false,
             supports_backend_search: false,
             compactions_remaining: None,
             compaction_at_tokens: None,
@@ -7640,6 +7665,7 @@ reasoning_effort = "low"
             reasoning_effort: None,
             supports_reasoning_effort: false,
             reasoning_efforts: Vec::new(),
+            default_reasoning_summary_none: false,
             supports_backend_search: false,
             compactions_remaining: None,
             compaction_at_tokens: None,
@@ -8119,6 +8145,7 @@ reasoning_effort = "low"
             reasoning_effort: None,
             supports_reasoning_effort: false,
             reasoning_efforts: Vec::new(),
+            default_reasoning_summary_none: false,
             supports_backend_search: false,
             compactions_remaining: None,
             compaction_at_tokens: None,
@@ -11846,6 +11873,7 @@ default = "grok-4.5"
                 reasoning_effort: None,
                 supports_reasoning_effort: false,
                 reasoning_efforts: Vec::new(),
+                default_reasoning_summary_none: false,
                 supports_backend_search: false,
                 compactions_remaining: None,
                 compaction_at_tokens: None,

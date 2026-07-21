@@ -84,6 +84,8 @@ fn sampler_config_for_mock(
         stream_tool_calls: false,
         idle_timeout_secs: None,
         reasoning_effort: None,
+        reasoning_effort_supported: None,
+        reasoning_summary_omit: false,
         origin_client: None,
         client_identifier: None,
         deployment_id: None,

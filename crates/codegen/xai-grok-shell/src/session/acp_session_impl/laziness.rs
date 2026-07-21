@@ -557,6 +557,8 @@ impl SessionActor {
             // JSON object — even on reasoning-capable models the
             // default suffices; no need to force it off.
             reasoning_effort: None,
+            reasoning_effort_supported: None,
+            reasoning_summary_omit: false,
             x_grok_conv_id: Some(session_id_str.clone()),
             x_grok_req_id: Some(format!("{LAZINESS_REQ_ID_PREFIX}{}", uuid::Uuid::new_v4())),
             x_grok_session_id: Some(session_id_str),

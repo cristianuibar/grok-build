@@ -3108,6 +3108,7 @@ fn test_model_entry(model_id: &str) -> crate::agent::config::ModelEntry {
             reasoning_effort: None,
             supports_reasoning_effort: false,
             reasoning_efforts: Vec::new(),
+            default_reasoning_summary_none: false,
             supports_backend_search: false,
             compactions_remaining: None,
             compaction_at_tokens: None,
@@ -3974,6 +3975,8 @@ fn test_sampling_config(model_slug: &str) -> xai_grok_sampling_types::SamplingCo
         extra_headers: Default::default(),
         context_window: NonZeroU64::new(256_000).expect("non-zero context window"),
         reasoning_effort: None,
+        reasoning_effort_supported: None,
+        reasoning_summary_omit: false,
         stream_tool_calls: None,
     }
 }

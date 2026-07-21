@@ -940,6 +940,8 @@ async fn read_parent_sampling_config(
                 context_window: cfg.context_window.get(),
                 client_version: creds.client_version,
                 reasoning_effort: cfg.reasoning_effort,
+                reasoning_effort_supported: cfg.reasoning_effort_supported.clone(),
+                reasoning_summary_omit: cfg.reasoning_summary_omit,
                 force_http1: false,
                 max_retries: None,
                 stream_tool_calls: cfg.stream_tool_calls.unwrap_or(false),

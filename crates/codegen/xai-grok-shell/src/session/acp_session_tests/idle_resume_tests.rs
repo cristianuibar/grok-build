@@ -115,6 +115,8 @@ async fn test_e2e_idle_resume_refreshes_model_metadata() {
                     extra_headers: Default::default(),
                     context_window: std::num::NonZeroU64::new(200_000).unwrap(),
                     reasoning_effort: None,
+                    reasoning_effort_supported: None,
+                    reasoning_summary_omit: false,
                     stream_tool_calls: None,
                 },
                 Box::new(xai_chat_state::NullChatPersistence),

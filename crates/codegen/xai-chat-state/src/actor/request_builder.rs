@@ -143,6 +143,12 @@ impl ChatStateActor {
             x_grok_user_id: None,
             trace,
             reasoning_effort: self.state.sampling_config.reasoning_effort,
+            reasoning_effort_supported: self
+                .state
+                .sampling_config
+                .reasoning_effort_supported
+                .clone(),
+            reasoning_summary_omit: self.state.sampling_config.reasoning_summary_omit,
             json_schema: None,
         }
     }

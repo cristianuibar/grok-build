@@ -3396,6 +3396,7 @@ mod tests {
             reasoning_effort: None,
             supports_reasoning_effort: false,
             reasoning_efforts: Vec::new(),
+            default_reasoning_summary_none: false,
             supports_backend_search: false,
             compactions_remaining: None,
             compaction_at_tokens: None,

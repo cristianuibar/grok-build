@@ -105,6 +105,8 @@ async fn make_codex_actor(
         extra_headers: Default::default(),
         context_window: std::num::NonZeroU64::new(256_000).unwrap(),
         reasoning_effort: None,
+        reasoning_effort_supported: None,
+        reasoning_summary_omit: false,
         stream_tool_calls: None,
     };
     // Keep extra_headers empty; reconstruct injects account header.

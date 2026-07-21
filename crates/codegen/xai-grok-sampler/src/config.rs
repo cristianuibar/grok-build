@@ -92,6 +92,16 @@ pub struct SamplerConfig {
 
     // Reasoning effort
     pub reasoning_effort: Option<ReasoningEffort>,
+    /// Catalog-supported effort levels for the active model.
+    ///
+    /// `None` = provider-agnostic pass-through (Grok/xAI).
+    /// `Some([])` = omit `reasoning.effort` on the wire.
+    /// `Some(list)` = clamp preference against `list`.
+    #[serde(default)]
+    pub reasoning_effort_supported: Option<Vec<ReasoningEffort>>,
+    /// When true, omit `reasoning.summary` on the Responses wire.
+    #[serde(default)]
+    pub reasoning_summary_omit: bool,
 
     // Client identity
     pub origin_client: Option<OriginClientInfo>,
@@ -168,6 +178,8 @@ impl Default for SamplerConfig {
             stream_tool_calls: false,
             idle_timeout_secs: None,
             reasoning_effort: None,
+            reasoning_effort_supported: None,
+            reasoning_summary_omit: false,
             origin_client: None,
             client_identifier: None,
             deployment_id: None,
