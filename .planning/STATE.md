@@ -4,17 +4,17 @@ milestone: v1.0
 milestone_name: milestone
 current_phase: 09
 current_phase_name: daily-driver-end-to-end-validation
-current_plan: 5
 status: phase_complete
-stopped_at: Pager --lib suite green (7142/0); ready for Phase 11 planning
-last_updated: "2026-07-20T12:45:00.000Z"
+stopped_at: Phase 11 UI-SPEC approved
+last_updated: "2026-07-21T04:04:19.609Z"
 last_activity: 2026-07-20
-last_activity_desc: Phase 09 closed — OPS-06 live PASS after 4 in-phase Codex wire/stream fixes
+last_activity_desc: OPS-06 both directions live PASS; Phase 9 closed
 progress:
-  total_phases: 10
-  completed_phases: 7
+  total_phases: 11
+  completed_phases: 6
   total_plans: 57
   completed_plans: 51
+current_plan: 5
 ---
 
 # Project State
@@ -84,6 +84,11 @@ Progress: [██████████] Phases 1-10 complete; remaining: Phas
 
 ## Decisions
 
+### Phase 11 (Codex effort & catalog fidelity)
+
+- [Phase 11]: Planning: decision-coverage-plan gate override recorded — CONTEXT.md decisions use smart-discuss area-bullet format (no D-NN ids), parser extracted 0; gsd-plan-checker independently verified all locked CONTEXT decisions are implemented in plan task text (2 plans, 1 blocker fixed: 11-02 assumption_delta_decision block added inline). Verify-phase should treat decision coverage as evidenced by the checker report, not the D-NN regex.
+
+
 ### Phase 9 (Daily-driver end-to-end validation)
 
 - [Phase 9]: Plan 02: PHASE-GATE sole SoT full P0/P1/p9_; isolation list dirs then aggregate once; human_uat required unsigned
@@ -133,9 +138,9 @@ Progress: [██████████] Phases 1-10 complete; remaining: Phas
 
 ## Session
 
-**Last session:** 2026-07-18 (Phase 10 formal close complete)
-**Stopped at:** Phase 10 verified and marked complete; STATE advanced toward Phase 11 (Phase 9 still has incomplete plans)
-**Resume file:** `.planning/phases/10-codex-responses-wire-parity/10-VERIFICATION.md`
+**Last session:** 2026-07-21T04:04:19.601Z
+**Stopped at:** Phase 11 UI-SPEC approved
+**Resume file:** .planning/phases/11-codex-effort-catalog-fidelity/11-UI-SPEC.md
 **Binary preflight:** `target/debug/bum` rebuilt 2026-07-18; operator retested post store=false fix
 **Next:**
 

@@ -273,8 +273,12 @@ Plans:
 **Plans**: 2 plans
 
 Plans:
+**Wave 1**
 
 - [ ] 11-01-PLAN.md — Clamp helper + catalog supported-levels threading through SamplerConfig/SamplingConfig/ConversationRequest + choke-point wire emission (effort clamp, summary omit)
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
 - [ ] 11-02-PLAN.md — Sticky per-session effort preference in the switch handler + ACP response meta threading + TUI clamp notice + UAT-notes closure
 
 ### Phase 12: Codex depth & attribution polish
