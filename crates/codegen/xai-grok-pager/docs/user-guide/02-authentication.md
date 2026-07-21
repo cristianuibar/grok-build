@@ -32,20 +32,35 @@ bum stores provider-scoped credentials in `~/.bum/auth.json` and reuses them acr
 
 ### Re-authenticate
 
-To switch accounts or resolve an authentication problem, run:
+To switch accounts or resolve an authentication problem, select the provider
+slot explicitly:
 
 ```bash
-bum login
+bum login --provider xai
+bum login --provider codex
+bum login --provider codex --device-auth
 ```
 
-Running `bum login` starts the sign-in flow again for the selected provider slot. By default, it opens your browser and signs in through SpaceXAI OAuth at `auth.x.ai`. Pass a flag to select a different flow:
+Bare `bum login` is retained as an xAI-only compatibility shortcut. Provider
+selection (`--provider xai|codex`) is separate from transport selection. By
+default, login opens the selected provider's browser flow. Use a transport flag
+when that provider supports the alternate flow:
 
 | Flag | Description |
 |------|-------------|
-| `--oauth` | Sign in through SpaceXAI OAuth at `auth.x.ai`. This is the default, so the flag is optional. |
+| `--oauth` | Use the browser OAuth flow. For xAI this signs in at `auth.x.ai`; the flag is optional because browser OAuth is the default. |
 | `--device-auth` (alias `--device-code`) | Sign in with the device-code flow for headless or remote environments. |
 
-To sign out, run `bum logout`. It clears credentials for the selected provider without replacing the other provider's slot.
+Sign out of one provider slot, or explicitly clear both:
+
+```bash
+bum logout --provider xai
+bum logout --provider codex
+bum logout --all
+```
+
+Bare `bum logout` is rejected and does not mutate credentials. A provider-scoped
+logout preserves the other provider's slot.
 
 ---
 

@@ -19,7 +19,7 @@
 #
 # Latest focused Rust evidence (credential-free):
 #   2026-07-21 on buffupmedia — GREEN
-#   pager-p12=2, agent-p12=1, apply-patch=41, trusted-reconstruct=1,
+#   pager-p12=3, agent-p12=1, apply-patch=41, trusted-reconstruct=1,
 #   trusted-wire-headers=1, trusted-header-non-leakage=1,
 #   trusted-to-untrusted-switch=1. This is current Phase 12 execution evidence;
 #   prior Phase 10 live dual-login evidence is context only and was not rerun.
@@ -200,8 +200,8 @@ discover_exact() {
 rust_gate() {
   [[ "$NO_LIVE_OAUTH_OR_NETWORK" == true ]] || fail "Rust gate must remain credential-free"
 
-  discover_exact pager-p12 xai-grok-pager 2 \
-    '::p12_(embedded_docs_use_bum_product_identity|capability_disclosure_is_embedded_and_complete)$' \
+  discover_exact pager-p12 xai-grok-pager 3 \
+    '::p12_(embedded_docs_use_bum_product_identity|capability_disclosure_is_embedded_and_complete|authentication_documents_exact_provider_commands)$' \
     p12_ --lib
   discover_exact agent-p12 xai-grok-agent 1 \
     '::p12_codex_toolset_identity$' p12_codex_toolset_identity --lib

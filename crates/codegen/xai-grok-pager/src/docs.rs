@@ -396,6 +396,41 @@ mod tests {
     }
 
     #[test]
+    fn p12_authentication_documents_exact_provider_commands() {
+        let getting_started =
+            get_howto_doc("Getting Started").expect("embedded Getting Started guide");
+        let auth = get_howto_doc("Authentication").expect("embedded Authentication guide");
+
+        for command in [
+            "bum login --provider xai",
+            "bum login --provider codex",
+            "bum login --provider codex --device-auth",
+            "bum logout --provider xai",
+            "bum logout --provider codex",
+            "bum logout --all",
+        ] {
+            assert!(
+                auth.contains(command),
+                "02-authentication.md is missing exact provider command {command:?}"
+            );
+        }
+
+        assert!(
+            getting_started.contains("bum login --provider xai")
+                && getting_started.contains("bum login --provider codex"),
+            "01-getting-started.md must present both provider selectors"
+        );
+        assert!(
+            !auth.contains("To sign out, run `bum logout`"),
+            "Authentication guide must not claim bare logout is valid"
+        );
+        assert!(
+            !getting_started.contains("run `bum login` and choose"),
+            "Getting Started must not claim bare login offers provider selection"
+        );
+    }
+
+    #[test]
     fn list_howto_titles_returns_all() {
         let titles = list_howto_titles();
         assert_eq!(titles.len(), USER_GUIDE.len() + REFERENCE_DOCS.len());

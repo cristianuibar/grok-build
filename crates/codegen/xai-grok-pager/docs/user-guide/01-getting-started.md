@@ -44,8 +44,15 @@ Start bum by running:
 bum
 ```
 
-To authenticate or add another provider explicitly, run `bum login` and choose
-the provider flow you need.
+Authenticate the provider slot you intend to use explicitly:
+
+```bash
+bum login --provider xai
+bum login --provider codex
+```
+
+Bare `bum login` remains an xAI-only compatibility shortcut; it does not prompt
+you to choose a provider.
 
 On first launch, bum guides you through authentication for the provider you
 use. After you sign in, bum stores the provider credentials in
