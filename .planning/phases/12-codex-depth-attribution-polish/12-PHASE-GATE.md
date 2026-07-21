@@ -377,8 +377,9 @@ validation_rows() {
 }
 
 flag_count() {
-  local key="$1" value="$2"
-  rg -c "^${key}: ${value}$" "$VALIDATION_PATH" || true
+  local key="$1" value="$2" count
+  count=$(rg -c "^${key}: ${value}$" "$VALIDATION_PATH" || true)
+  echo "${count:-0}"
 }
 
 assert_flags() {
