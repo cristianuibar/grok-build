@@ -255,6 +255,59 @@ pub fn extract_user_guide_docs(grok_home: &std::path::Path) {
 mod tests {
     use super::*;
 
+    fn identity_violation(markdown: &str) -> Option<&'static str> {
+        let stock_subject = regex::Regex::new(
+            r"(?i)\b(?:grok build|grok)\s+(?:is|supports|uses|stores|opens|automatically|prompts|provides|includes|runs|will|can)\b",
+        )
+        .expect("valid stock-product regex");
+        let imperative_stock_name = regex::Regex::new(
+            r"(?i)\b(?:launch|invoke|run|start)\s+(?:the\s+)?(?:`|\./)?grok(?:`|\s|$)",
+        )
+        .expect("valid stock-command regex");
+        let inline_stock_executable =
+            regex::Regex::new(r"(?i)`(?:\./)?grok(?:`|\s)").expect("valid inline-command regex");
+        let stock_cli_name =
+            regex::Regex::new(r"(?i)\b(?:the\s+)?grok cli\b").expect("valid stock-CLI regex");
+        let stock_home = regex::Regex::new(r"(?i)~/\.grok(?:/|[^[:alnum:]_-]|$)")
+            .expect("valid stock-home regex");
+        let stock_codex_identity = regex::Regex::new(
+            r"(?i)\bbum\s+is\s+(?:the\s+)?(?:stock\s+)?(?:openai\s+)?codex cli\b",
+        )
+        .expect("valid Codex-identity regex");
+        let fenced_stock_command = regex::Regex::new(
+            r"(?i)^\s*(?:\$\s*)?(?:\./)?grok(?:\s+(?:-{1,2}[[:alnum:]-]+|login|logout|auth|agent|mcp|plugin|sessions?|inspect|update|workspace|models?))?\s*$",
+        )
+        .expect("valid fenced-command regex");
+
+        if stock_subject.is_match(markdown) {
+            return Some("stock product used as the acting subject");
+        }
+        if imperative_stock_name.is_match(markdown)
+            || inline_stock_executable.is_match(markdown)
+            || stock_cli_name.is_match(markdown)
+        {
+            return Some("stock executable used in command position");
+        }
+        if stock_home.is_match(markdown) {
+            return Some("user-global stock home path");
+        }
+        if stock_codex_identity.is_match(markdown) {
+            return Some("stock Codex CLI impersonation claim");
+        }
+
+        let mut in_fence = false;
+        for line in markdown.lines() {
+            if line.trim_start().starts_with("```") {
+                in_fence = !in_fence;
+                continue;
+            }
+            if in_fence && fenced_stock_command.is_match(line) {
+                return Some("stock executable used in a command block");
+            }
+        }
+        None
+    }
+
     #[test]
     fn user_guide_entries_are_valid() {
         for doc in USER_GUIDE {
@@ -324,22 +377,6 @@ mod tests {
         // Provider/model brands (Grok, xAI, Codex, OpenAI), fork lineage, legal
         // notices, internal GROK_*/xai-grok-* identifiers, hosted domains such
         // as grok.com, and project-local .grok/ compatibility paths are valid.
-        const STOCK_PRODUCT_SUBJECT_CLAIMS: &[&str] = &[
-            "grok build is",
-            "grok build supports",
-            "grok build uses",
-            "grok is",
-            "grok supports",
-            "grok uses",
-            "grok stores",
-            "grok opens",
-            "grok automatically",
-            "grok prompts",
-        ];
-        const STOCK_EXECUTABLE_CLAIMS: &[&str] =
-            &["`grok ", "$ grok ", "run `grok", "invoke `grok"];
-        const STOCK_GLOBAL_HOME_CLAIMS: &[&str] = &["~/.grok/", "~/.grok`"];
-
         assert_eq!(
             USER_GUIDE.len(),
             22,
@@ -359,17 +396,48 @@ mod tests {
                 doc.filename
             );
 
-            for forbidden in STOCK_PRODUCT_SUBJECT_CLAIMS
-                .iter()
-                .chain(STOCK_EXECUTABLE_CLAIMS)
-                .chain(STOCK_GLOBAL_HOME_CLAIMS)
-            {
-                assert!(
-                    !lower.contains(forbidden),
-                    "{} contains stale stock-product identity claim {forbidden:?}",
-                    doc.filename
-                );
-            }
+            assert_eq!(
+                identity_violation(doc.content),
+                None,
+                "{} contains a stale stock-product identity claim",
+                doc.filename
+            );
+        }
+    }
+
+    #[test]
+    fn p12_identity_classifier_adversarial_contract() {
+        let allowed = [
+            "bum supports xAI Grok models and OpenAI Codex models.",
+            "bum is built from the Grok Build harness lineage.",
+            "Authenticate through https://grok.com when using xAI.",
+            "The internal identifiers `GROK_HOME` and `xai-grok-shell` remain compatible.",
+            "A project-local `.grok/config.toml` is supported for compatibility.",
+            "The legal notice records Grok Build ancestry.",
+        ];
+        let forbidden = [
+            "Grok provides a terminal coding workflow.",
+            "Launch Grok to begin.",
+            "Use the Grok CLI for this task.",
+            "Run `grok` now.",
+            "```bash\ngrok\n```",
+            "```bash\n./grok login\n```",
+            "Credentials are stored in ~/.grok.",
+            "bum is the stock OpenAI Codex CLI.",
+        ];
+
+        for fixture in allowed {
+            assert_eq!(
+                identity_violation(fixture),
+                None,
+                "allowed identity category was rejected: {fixture:?}"
+            );
+        }
+        for fixture in forbidden {
+            assert!(
+                identity_violation(fixture).is_some(),
+                "forbidden identity category was accepted: {fixture:?}"
+            );
         }
     }
 

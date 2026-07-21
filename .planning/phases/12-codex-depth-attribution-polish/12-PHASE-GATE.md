@@ -19,7 +19,7 @@
 #
 # Latest focused Rust evidence (credential-free):
 #   2026-07-21 on buffupmedia — GREEN
-#   pager-p12=3, agent-p12=1, apply-patch=41, trusted-reconstruct=1,
+#   pager-p12=4, agent-p12=1, apply-patch=41, trusted-reconstruct=1,
 #   trusted-wire-headers=1, trusted-header-non-leakage=1,
 #   trusted-to-untrusted-switch=1. This is current Phase 12 execution evidence;
 #   prior Phase 10 live dual-login evidence is context only and was not rerun.
@@ -41,6 +41,10 @@ readonly DOCS_RS=crates/codegen/xai-grok-pager/src/docs.rs
 readonly AUTH_DOC=crates/codegen/xai-grok-pager/docs/user-guide/02-authentication.md
 readonly CODEX_AUTH=crates/codegen/xai-grok-shell/src/auth/codex/mod.rs
 readonly NO_LIVE_OAUTH_OR_NETWORK=true
+readonly IDENTITY_STOCK_SUBJECT='(^|[^[:alnum:]_])(grok build|grok)[[:space:]]+(is|supports|uses|stores|opens|automatically|prompts|provides|includes|runs|will|can)([^[:alnum:]_]|$)'
+readonly IDENTITY_STOCK_COMMAND='`(\./)?grok([[:space:]]|`)|(^|[^[:alnum:]_])(the[[:space:]]+)?grok cli([^[:alnum:]_]|$)|(^|[^[:alnum:]_])(launch|invoke|run|start)[[:space:]]+(the[[:space:]]+)?(`|\./)?grok(`|[[:space:]]|$)|^[[:space:]]*(\$[[:space:]]*)?(\./)?grok([[:space:]]+(-{1,2}[[:alnum:]-]+|login|logout|auth|agent|mcp|plugin|sessions?|inspect|update|workspace|models?))?[[:space:]]*$'
+readonly IDENTITY_STOCK_HOME='~/.grok(/|[^[:alnum:]_-]|$)'
+readonly IDENTITY_STOCK_CODEX='bum[[:space:]]+is[[:space:]]+(the[[:space:]]+)?(stock[[:space:]]+)?(openai[[:space:]]+)?codex cli'
 
 readonly -a GUIDE_FILES=(
   crates/codegen/xai-grok-pager/docs/user-guide/01-getting-started.md
@@ -120,25 +124,53 @@ classify_identity_file() {
 
   rg -q -i '\bbum\b' "$file" || fail "$file does not identify bum where applicable"
 
-  local stock_subject='(^|[^[:alnum:]_])(grok build|grok)[[:space:]]+(is|supports|uses|stores|opens|automatically|prompts|provides|includes|runs|will|can)([^[:alnum:]_]|$)'
-  local stock_command='`grok([[:space:]]|`)|(^|[[:space:]$])grok[[:space:]]+(-{1,2}[[:alnum:]-]+|login|logout|auth|agent|mcp|plugin|sessions?|inspect|update|workspace|models?)([^[:alnum:]_-]|$)'
-  local stock_home='~/.grok(/|`|[[:space:]]|$)'
-  local stock_codex='bum[[:space:]]+is[[:space:]]+(the[[:space:]]+)?(stock[[:space:]]+)?(openai[[:space:]]+)?codex cli'
-
-  if rg -n -i "$stock_subject" "$file"; then
+  if rg -n -i "$IDENTITY_STOCK_SUBJECT" "$file"; then
     fail "$file contains a stock-product subject claim"
   fi
-  if rg -n -i "$stock_command" "$file"; then
+  if rg -n -i "$IDENTITY_STOCK_COMMAND" "$file"; then
     fail "$file contains a stock executable command"
   fi
-  if rg -n -i "$stock_home" "$file"; then
+  if rg -n -i "$IDENTITY_STOCK_HOME" "$file"; then
     fail "$file contains a user-global stock-home path"
   fi
-  if rg -n -i "$stock_codex" "$file"; then
+  if rg -n -i "$IDENTITY_STOCK_CODEX" "$file"; then
     fail "$file claims bum is the stock Codex CLI"
   fi
 
   echo "identity clean: $file"
+}
+
+identity_fixture_gate() {
+  local fixture
+  local -a allowed=(
+    'bum supports xAI Grok models and OpenAI Codex models.'
+    'bum is built from the Grok Build harness lineage.'
+    'Authenticate through https://grok.com when using xAI.'
+    'The internal identifiers `GROK_HOME` and `xai-grok-shell` remain compatible.'
+    'A project-local `.grok/config.toml` is supported for compatibility.'
+    'The legal notice records Grok Build ancestry.'
+  )
+  local -a forbidden=(
+    'Grok provides a terminal coding workflow.'
+    'Launch Grok to begin.'
+    'Use the Grok CLI for this task.'
+    'Run `grok` now.'
+    $'```bash\ngrok\n```'
+    $'```bash\n./grok login\n```'
+    'Credentials are stored in ~/.grok.'
+    'bum is the stock OpenAI Codex CLI.'
+  )
+  local combined="$IDENTITY_STOCK_SUBJECT|$IDENTITY_STOCK_COMMAND|$IDENTITY_STOCK_HOME|$IDENTITY_STOCK_CODEX"
+
+  for fixture in "${allowed[@]}"; do
+    ! rg -q -i "$combined" <<< "$fixture" ||
+      fail "identity classifier rejected allowed fixture: $fixture"
+  done
+  for fixture in "${forbidden[@]}"; do
+    rg -q -i "$combined" <<< "$fixture" ||
+      fail "identity classifier accepted forbidden fixture: $fixture"
+  done
+  echo "identity classifier fixtures: ${#allowed[@]} allowed, ${#forbidden[@]} forbidden"
 }
 
 docs_files_gate() {
@@ -244,8 +276,8 @@ discover_exact() {
 rust_gate() {
   [[ "$NO_LIVE_OAUTH_OR_NETWORK" == true ]] || fail "Rust gate must remain credential-free"
 
-  discover_exact pager-p12 xai-grok-pager 3 \
-    '::p12_(embedded_docs_use_bum_product_identity|capability_disclosure_is_embedded_and_complete|authentication_documents_exact_provider_commands)$' \
+  discover_exact pager-p12 xai-grok-pager 4 \
+    '::p12_(embedded_docs_use_bum_product_identity|identity_classifier_adversarial_contract|capability_disclosure_is_embedded_and_complete|authentication_documents_exact_provider_commands)$' \
     p12_ --lib
   discover_exact agent-p12 xai-grok-agent 1 \
     '::p12_codex_toolset_identity$' p12_codex_toolset_identity --lib
@@ -402,6 +434,7 @@ static_gate() {
   [[ "$NO_LIVE_OAUTH_OR_NETWORK" == true ]] || fail "static gate must remain network-free"
   inventory_gate
   markdown_link_gate
+  identity_fixture_gate
   docs_files_gate "${ENTRYPOINT_FILES[@]}" "${GUIDE_FILES[@]}" "${REFERENCE_FILES[@]}"
   capability_gate
   notice_and_originator_gate
