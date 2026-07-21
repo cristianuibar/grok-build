@@ -25,6 +25,9 @@ runtime. It keeps the Grok Build harness lineage (crates remain `xai-grok-*`,
 model catalog still includes **Grok Build (xAI)** / `grok-build`) and evolves
 it into a private multi-provider product:
 
+bum uses ChatGPT/Codex OAuth and compatible model APIs, but it is not the stock OpenAI Codex CLI.
+See the [provider capability contract](crates/codegen/xai-grok-pager/docs/user-guide/02-authentication.md#provider-capability-contract) for the supported transport, identity, continuity, and tool boundaries.
+
 | Concern | bum |
 |---------|-----|
 | CLI binary | `bum` |
@@ -35,7 +38,7 @@ it into a private multi-provider product:
 | Telemetry / auto-update | Quiet fork — no stock x.ai phone-home as primary path |
 
 > [!NOTE]
-> This is **not** the stock x.ai `grok` client install path. Prefer building
+> This is **not** the stock x.ai Grok client install path. Prefer building
 > from this tree. Official x.ai CLI docs remain useful for upstream lineage
 > behavior, but are not the primary install channel for bum.
 
@@ -89,8 +92,9 @@ In-tree user guide (pager crate):
 [`crates/codegen/xai-grok-pager/docs/user-guide/`](crates/codegen/xai-grok-pager/docs/user-guide/)
 
 Getting started, keyboard shortcuts, slash commands, configuration, theming,
-MCP, skills, plugins, hooks, headless mode, sandboxing, and more. Product
-paths in docs may still say `~/.grok` in places; runtime home is `~/.bum`.
+MCP, skills, plugins, hooks, headless mode, sandboxing, and more. The
+[provider capability contract](crates/codegen/xai-grok-pager/docs/user-guide/02-authentication.md#provider-capability-contract)
+documents provider-specific behavior without equating bum with a stock CLI.
 
 ## Repository layout
 
