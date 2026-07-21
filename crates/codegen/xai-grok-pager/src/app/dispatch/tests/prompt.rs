@@ -1942,6 +1942,8 @@ fn switch_model_holds_prompt_until_complete() {
             agent_id: id,
             model_id,
             effort: None,
+            effort_clamped: false,
+            effort_supported: Vec::new(),
             result: Ok(()),
             prev_model_id: None,
             persist_default: false,

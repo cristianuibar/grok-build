@@ -2303,6 +2303,12 @@ pub enum TaskResult {
         agent_id: AgentId,
         model_id: acp::ModelId,
         effort: Option<ReasoningEffort>,
+        /// True when the shell clamped the stored preference for a Codex target
+        /// with a non-empty supported menu (display/notice only).
+        effort_clamped: bool,
+        /// Exact supported-effort list the shell used for the clamp decision
+        /// (atomic with the notice text; never re-derived pager-side).
+        effort_supported: Vec<ReasoningEffort>,
         result: Result<(), SwitchModelError>,
         /// Forwarded from `Effect::SwitchModel.prev_model_id` for
         /// rollback on `IncompatibleAgent`.

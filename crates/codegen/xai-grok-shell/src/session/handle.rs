@@ -106,6 +106,11 @@ pub struct SessionHandle {
     /// where `MvpAgent.current_model_id` is shared mutable state.
     pub model_id: acp::ModelId,
     pub reasoning_effort: Option<ReasoningEffort>,
+    /// The RAW sticky preference, written only by explicit user action
+    /// (`/effort`, `/model` chained selection, headless `--effort`); never
+    /// seeded from a catalog default — contrast `reasoning_effort`, the
+    /// resolved/effective value used for display/broadcast.
+    pub reasoning_effort_preference: Option<ReasoningEffort>,
     /// YOLO (auto-approve) mode for this session.
     /// Per-session tracking prevents cross-client contamination in leader mode
     /// where one client enabling YOLO could affect another client's sessions.

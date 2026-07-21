@@ -1130,6 +1130,8 @@ pub(in crate::app::dispatch) fn handle_switch_model_complete(
     agent_id: AgentId,
     model_id: acp::ModelId,
     effort: Option<ReasoningEffort>,
+    effort_clamped: bool,
+    effort_supported: Vec<ReasoningEffort>,
     result: Result<(), SwitchModelError>,
     prev_model_id: Option<acp::ModelId>,
     persist_default: bool,
@@ -1218,8 +1220,26 @@ pub(in crate::app::dispatch) fn handle_switch_model_complete(
                     agent.scrollback.push_block(RenderBlock::system(msg));
                     effects.push(Effect::PersistPreferredModel {
                         model_id: model_id.clone(),
-                        reasoning_effort: resolved_effort,
+                        // M4: skip effort component when clamped so a non-preference
+                        // value never overwrites the user's persisted default.
+                        reasoning_effort: if effort_clamped {
+                            None
+                        } else {
+                            resolved_effort
+                        },
                     });
+                }
+                // Clamp notice: gated solely on effort_clamped; list from the
+                // response payload (M5 atomicity — never re-derive pager-side).
+                if effort_clamped {
+                    if let Some(level) = resolved_effort {
+                        let supported_list: Vec<&str> =
+                            effort_supported.iter().map(|e| e.as_str()).collect();
+                        agent.scrollback.push_block(RenderBlock::system(format!(
+                            "reasoning effort clamped to {level} ({display_name} supports {})",
+                            supported_list.join(", ")
+                        )));
+                    }
                 }
                 effects.extend(maybe_drain_queue(agent));
             }

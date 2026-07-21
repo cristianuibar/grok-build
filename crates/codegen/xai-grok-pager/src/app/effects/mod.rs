@@ -1661,6 +1661,7 @@ pub(crate) fn execute(
             let tx = acp_tx.clone();
             tasks
                 .spawn(async move {
+                    use xai_grok_shell::sampling::types::ReasoningEffort;
                     let meta = effort
                         .map(|eff| {
                             use xai_grok_shell::sampling::types::{
@@ -1678,45 +1679,74 @@ pub(crate) fn execute(
                             model_id.clone(),
                         )
                         .meta(meta);
-                    let result = acp_send(req, &tx)
-                        .await
-                        .map(|_| ())
-                        .map_err(|e| {
-                            use crate::app::actions::parse_provider_wire_id;
-                            use xai_grok_shell::agent::config::{
-                                ModelSwitchIncompatibleAgentError,
-                                ModelSwitchMissingProviderError,
-                            };
-                            // MissingProvider first (D-07), then IncompatibleAgent, else Other.
-                            if let Some(typed) =
-                                ModelSwitchMissingProviderError::from_acp_error(&e)
-                            {
-                                // Reject malformed provider wire ids → Other (review LOW).
-                                if parse_provider_wire_id(&typed.provider).is_none() {
-                                    SwitchModelError::Other(sanitize_user_error(
-                                        &typed.user_message(),
-                                    ))
-                                } else {
-                                    SwitchModelError::MissingProvider {
+                    let send_result = acp_send(req, &tx).await;
+                    let (resolved_effort, effort_clamped, effort_supported, result) =
+                        match send_result {
+                            Ok(resp) => {
+                                let resolved_effort = resolve_switch_model_response_effort(
+                                    resp.meta.as_ref(),
+                                    effort,
+                                );
+                                let effort_clamped = resp
+                                    .meta
+                                    .as_ref()
+                                    .and_then(|m| m.get("reasoning_effort_clamped"))
+                                    .and_then(|v| v.as_bool())
+                                    .unwrap_or(false);
+                                let effort_supported: Vec<ReasoningEffort> = resp
+                                    .meta
+                                    .as_ref()
+                                    .and_then(|m| m.get("reasoning_effort_supported"))
+                                    .and_then(|v| v.as_array())
+                                    .map(|arr| {
+                                        arr.iter()
+                                            .filter_map(|v| v.as_str())
+                                            .filter_map(|s| s.parse().ok())
+                                            .collect()
+                                    })
+                                    .unwrap_or_default();
+                                (resolved_effort, effort_clamped, effort_supported, Ok(()))
+                            }
+                            Err(e) => {
+                                use crate::app::actions::parse_provider_wire_id;
+                                use xai_grok_shell::agent::config::{
+                                    ModelSwitchIncompatibleAgentError,
+                                    ModelSwitchMissingProviderError,
+                                };
+                                // MissingProvider first (D-07), then IncompatibleAgent, else Other.
+                                let err = if let Some(typed) =
+                                    ModelSwitchMissingProviderError::from_acp_error(&e)
+                                {
+                                    // Reject malformed provider wire ids → Other (review LOW).
+                                    if parse_provider_wire_id(&typed.provider).is_none() {
+                                        SwitchModelError::Other(sanitize_user_error(
+                                            &typed.user_message(),
+                                        ))
+                                    } else {
+                                        SwitchModelError::MissingProvider {
+                                            error: typed,
+                                            prev_model_id: prev_model_id.clone(),
+                                        }
+                                    }
+                                } else if let Some(typed) =
+                                    ModelSwitchIncompatibleAgentError::from_acp_error(&e)
+                                {
+                                    SwitchModelError::IncompatibleAgent {
                                         error: typed,
                                         prev_model_id: prev_model_id.clone(),
                                     }
-                                }
-                            } else if let Some(typed) =
-                                ModelSwitchIncompatibleAgentError::from_acp_error(&e)
-                            {
-                                SwitchModelError::IncompatibleAgent {
-                                    error: typed,
-                                    prev_model_id: prev_model_id.clone(),
-                                }
-                            } else {
-                                SwitchModelError::Other(sanitize_user_error(&e.to_string()))
+                                } else {
+                                    SwitchModelError::Other(sanitize_user_error(&e.to_string()))
+                                };
+                                (effort, false, Vec::new(), Err(err))
                             }
-                        });
+                        };
                     TaskResult::SwitchModelComplete {
                         agent_id,
                         model_id,
-                        effort,
+                        effort: resolved_effort,
+                        effort_clamped,
+                        effort_supported,
                         result,
                         prev_model_id,
                         persist_default,
@@ -4346,5 +4376,25 @@ fn build_interject_params(
     }
     params
 }
+
+/// Tri-state parse of `SetSessionModelResponse.meta["reasoning_effort"]`.
+///
+/// - Key absent → legacy-server fallback to `client_requested`
+/// - Key present and JSON `null` → authoritative "no effort applies" (`None`),
+///   never the client-requested fallback (HIGH#4)
+/// - Key present with any other value → parse the string (or `None` on malformed)
+fn resolve_switch_model_response_effort(
+    meta: Option<&serde_json::Map<String, serde_json::Value>>,
+    client_requested: Option<xai_grok_shell::sampling::types::ReasoningEffort>,
+) -> Option<xai_grok_shell::sampling::types::ReasoningEffort> {
+    match meta.and_then(|m| m.get("reasoning_effort")) {
+        None => client_requested,
+        Some(serde_json::Value::Null) => None,
+        Some(v) => v
+            .as_str()
+            .and_then(|s| s.parse::<xai_grok_shell::sampling::types::ReasoningEffort>().ok()),
+    }
+}
+
 #[cfg(test)]
 mod tests;

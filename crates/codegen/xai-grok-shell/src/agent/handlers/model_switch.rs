@@ -14,7 +14,7 @@ use crate::agent::mvp_agent::{
 use crate::session::SessionCommand;
 use agent_client_protocol::{self as acp};
 use tokio::sync::oneshot;
-use xai_grok_sampling_types::parse_reasoning_effort_meta;
+use xai_grok_sampling_types::{clamp_reasoning_effort, parse_reasoning_effort_meta};
 
 /// Whether the OAuth credential slot for `provider` is usable for switch-time
 /// gating (D-02). Thin wrapper over pure
@@ -161,26 +161,56 @@ pub(crate) async fn apply(
     }
     let mut prepared =
         agent.prepare_prepared_sampling_config_for_model(&model, handle.origin_client.clone());
-    if let Some(eff) = effort_override {
-        if agent
+    // Explicit override on THIS switch always wins; otherwise the prior raw
+    // preference (if any was ever explicitly set) carries forward. Never read
+    // handle.reasoning_effort here — that is the resolved/effective display value.
+    let stored_preference = effort_override.or(handle.reasoning_effort_preference);
+    if let Some(pref) = stored_preference {
+        if model.info().provider == config::ModelProvider::Codex {
+            // Codex targets: stamp unconditionally; 11-01 choke point clamps/omits.
+            tracing::info!(
+                session_id = % session_id.0, effort = % pref,
+                "set_session_model: applying reasoning_effort override from meta"
+            );
+            prepared.sampler_config.reasoning_effort = Some(pref);
+        } else if agent
             .models_manager
             .model_supports_reasoning_effort(model_id.0.as_ref())
         {
             tracing::info!(
-                session_id = % session_id.0, effort = % eff,
+                session_id = % session_id.0, effort = % pref,
                 "set_session_model: applying reasoning_effort override from meta"
             );
-            prepared.sampler_config.reasoning_effort = Some(eff);
+            prepared.sampler_config.reasoning_effort = Some(pref);
         } else {
+            // Pre-phase gate for non-Codex (Grok/xAI) — byte-identical drop+warn.
             tracing::warn!(
-                session_id = % session_id.0, model_id = % model_id.0, effort = % eff,
+                session_id = % session_id.0, model_id = % model_id.0, effort = % pref,
                 "set_session_model: ignoring reasoning_effort override — model does not support it"
             );
         }
     }
-    let applied_effort = prepared.sampler_config.reasoning_effort;
+    // RAW pre-clamp request candidate (preference or target catalog default).
+    let applied_request_effort = prepared.sampler_config.reasoning_effort;
+    // Display-only mirror clamp from the same alias-resolved ModelEntry used for
+    // wire-level reasoning_effort_supported (never a second raw map-key lookup).
+    let supported: Vec<_> = model
+        .info()
+        .reasoning_efforts
+        .iter()
+        .map(|o| o.value)
+        .collect();
+    let is_codex = model.info().provider == config::ModelProvider::Codex;
+    let effective_effort = if is_codex {
+        clamp_reasoning_effort(applied_request_effort, &supported, None)
+    } else {
+        applied_request_effort
+    };
+    let effort_clamped =
+        is_codex && !supported.is_empty() && effective_effort != applied_request_effort;
     let prepared_auth_type = prepared.auth_type;
     let prepared_provider = prepared.provider;
+    // model_sampling.reasoning_effort stays RAW for SetSessionModel / wire clamp.
     let model_sampling = prepared.sampler_config;
     let gate_closed = !handle
         .gateway_enabled
@@ -255,7 +285,11 @@ pub(crate) async fn apply(
         .map_err(|_| acp::Error::internal_error().data("failed to set session model"))?;
     if let Some(handle) = agent.sessions.borrow_mut().get_mut(&session_id) {
         handle.model_id = model_id.clone();
-        handle.reasoning_effort = applied_effort;
+        // RAW preference only — never the catalog default that may have flowed
+        // into applied_request_effort when stored_preference was None.
+        handle.reasoning_effort_preference = stored_preference;
+        // Resolved/effective DISPLAY value (post-clamp for Codex).
+        handle.reasoning_effort = effective_effort;
         handle.agent_name =
             agent_name_after_model_switch(did_rebuild, &required_agent_type, &handle.agent_name);
     }
@@ -263,7 +297,7 @@ pub(crate) async fn apply(
         agent,
         &session_id,
         model_id.0.as_ref(),
-        applied_effort.map(|eff| eff.to_string()),
+        effective_effort.map(|eff| eff.to_string()),
     );
     xai_grok_telemetry::session_ctx::log_event(xai_grok_telemetry::events::ModelSwitched {
         session_id: session_id.0.to_string(),
@@ -278,12 +312,17 @@ pub(crate) async fn apply(
         agent.models_manager.set_current_model_id(model_id);
         agent
             .models_manager
-            .set_current_reasoning_effort(applied_effort);
+            .set_current_reasoning_effort(effective_effort);
     }
     Ok(acp::SetSessionModelResponse::new().meta(
-        serde_json::json!({ "model" : updated_model, })
-            .as_object()
-            .cloned(),
+        serde_json::json!({
+            "model": updated_model,
+            "reasoning_effort": effective_effort.map(|e| e.as_str()),
+            "reasoning_effort_clamped": effort_clamped,
+            "reasoning_effort_supported": supported.iter().map(|e| e.as_str()).collect::<Vec<_>>(),
+        })
+        .as_object()
+        .cloned(),
     ))
 }
 /// Broadcast a `ModelChanged` to every client subscribed to this session so
