@@ -688,3 +688,56 @@ plans remain out of scope for the same reasons prior cycles gave.
 
 This cycle was read-only for both reviewers; no source changes, builds, or tests were run —
 expected and correct for a pre-execution plan review.
+
+---
+
+## CYCLE 3 residual verification (post-fix, commit `78b2b56`)
+
+Focused re-check of the two cycle-3 residuals against `78b2b56877a1a9b8f7dc941a3fe90562479bbdeb`
+("close cycle-3 residuals — persistence writer coverage + gate read_first fix") and live source.
+Scope intentionally narrow per this pass's brief — verified directly against source (grep/read,
+no re-run of an external CLI: every citation below was confirmed byte-exact against the live
+tree, a stronger check than a fresh LLM pass would add for a scope already fully diagnosed).
+
+**1. HIGH — persistence-writer coverage: RESOLVED.** `11-02-PLAN.md`'s Task 2 now names and
+threads the field through all three real production writers of `PersistenceMsg::CurrentModel`
+(`agent_ops.rs:3514-3516`, `session/acp_session_impl/model_switch.rs:238-244`,
+`agent/subagent/handle_request.rs:1364-1370` — all three confirmed present at cited lines) and
+the full storage pipeline: `update_current_model_and_agent`'s trait signature (confirmed exact,
+`session/storage/mod.rs:530-535`), `ModelPatch` (confirmed exact, `session/storage/summary_write.rs:44-48`),
+and the on-disk `Summary` struct's `reasoning_effort` field (confirmed exact,
+`session/persistence.rs:892-893`) all now have a documented `reasoning_effort_preference` companion
+field in the plan's action/acceptance-criteria text. `files_modified`, `artifacts_produced`,
+`must_haves`, and threat-register row T-11-12 were all updated consistently (cross-checked, no
+orphaned old wording). Task 3 gained `p11_explicit_effort_preference_survives_persist_resume_round_trip`,
+the positive-path counterpart to the existing no-preference resume test — closing the exact gap
+("no test proves an explicit preference survives restart") this pass's brief named.
+
+Two minor, non-blocking naming/path nits observed while verifying (neither was one of the two named
+residuals; noted for completeness, not counted as blocking):
+- The new Task 2 text calls the storage trait `SessionStorage` throughout (11 occurrences). The
+  actual trait name in source is `StorageAdapter` (`session/storage/mod.rs:490`) — `SessionStorage`
+  does not exist anywhere in the codebase. Every mention is paired with the correct, exact line
+  number (530-535), so an executor opening the file self-corrects immediately; this is a naming
+  label error, not a wrong location or wrong mechanism.
+- `files_modified`/`artifacts_produced` still carry the pre-existing (pre-cycle-3) inaccurate paths
+  `crates/codegen/xai-grok-shell/src/agent/agent_ops.rs` and `crates/codegen/xai-grok-shell/src/acp_agent.rs`
+  (missing the `mvp_agent/` path segment — real paths confirmed
+  `agent/mvp_agent/agent_ops.rs`/`agent/mvp_agent/acp_agent.rs`). This predates cycle 3 (already
+  noted then as self-correcting via the `read_first` section's own `grep -rn` instructions) and was
+  not part of either named residual.
+
+**2. MEDIUM — stale `read_first` gate contradiction: RESOLVED.** `11-02-PLAN.md:210`'s `read_first`
+bullet now reads "CORRECTED (cycle-3 finding, this line previously said 'DELETE the gate entirely,'
+which contradicts the branch-on-provider action below and is stale): RESTORE/KEEP the
+`model_supports_reasoning_effort` gate for non-Codex targets... stamp... UNCONDITIONALLY only for
+Codex targets." Confirmed no other live instruction anywhere in the file still says "DELETE the
+gate entirely" — the only remaining occurrence of that phrase is the objective's own past-tense
+narration of what cycle 3 found (line 150), not an instruction. The `<action>` text (line 227,
+unchanged, already correct) and the corrected `read_first` bullet now agree.
+
+**Verdict: both cycle-3 residuals CLOSED. Phase 11 CONVERGED** — no HIGH concerns remain against
+either plan; the two minor naming/path nits noted above are cosmetic (self-correcting via exact
+line citations) and do not block execution.
+
+This pass was read-only; no source changes, builds, or tests were run.
