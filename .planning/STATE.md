@@ -2,19 +2,19 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-current_phase: 09
-current_phase_name: daily-driver-end-to-end-validation
+current_phase: 12
+current_phase_name: codex-depth-attribution-polish
 status: phase_complete
-stopped_at: Phase 11 UI-SPEC approved
-last_updated: "2026-07-21T04:04:19.609Z"
-last_activity: 2026-07-20
-last_activity_desc: OPS-06 both directions live PASS; Phase 9 closed
+stopped_at: Completed 12-07-PLAN.md
+last_updated: "2026-07-21T22:49:26.347Z"
+last_activity: 2026-07-22
+last_activity_desc: Phase 12 Plan 07 completed; credential-free attribution gate and Nyquist audit green
 progress:
-  total_phases: 11
-  completed_phases: 6
-  total_plans: 57
-  completed_plans: 51
-current_plan: 5
+  total_phases: 12
+  completed_phases: 8
+  total_plans: 66
+  completed_plans: 60
+current_plan: 7
 ---
 
 # Project State
@@ -24,15 +24,15 @@ current_plan: 5
 See: .planning/PROJECT.md (updated 2026-07-17)
 
 **Core value:** One CLI (`bum`) can log into both xAI and Codex and freely switch between Grok and GPT-5.6 models in a real coding session — including cross-provider subagent orchestration.
-**Current focus:** Phase 09 — daily-driver-end-to-end-validation
+**Current focus:** Phase 12 — codex-depth-attribution-polish
 
 ## Current Position
 
-Phase: 09 (daily-driver-end-to-end-validation) — COMPLETE (verified 2026-07-20, 09-VERIFICATION.md passed)
-Next: Phase 11 (Codex effort & catalog fidelity). Queued quick task cleared 2026-07-20 — pager `--lib` now 7142 pass / 0 fail (1b80800). Rebrand sweep done (42aaa61); shell lib tests green (4a78ded). Known unrelated failure: `xai-file-utils` queue::tests::cleanup_orphans_uses_sidecar_age_for_pairs.
-Last activity: 2026-07-20 — OPS-06 both directions live PASS; Phase 9 closed
+Phase: 12 (codex-depth-attribution-polish) — COMPLETE (12-VALIDATION.md: 18/18 green, Nyquist compliant)
+Next: Phase 12 verification and milestone closeout.
+Last activity: 2026-07-22 — Phase 12 Plan 07 completed; credential-free attribution gate and Nyquist audit green
 
-Progress: [██████████] Phases 1-10 complete; remaining: Phase 11, 12 (polish)
+Progress: [█████████░] 91%
 
 ## Performance Metrics
 
@@ -81,13 +81,17 @@ Progress: [██████████] Phases 1-10 complete; remaining: Phas
 | Phase 10 P03 | ~2h | 2 tasks + atomic review follow-up | 16 initially + 5 authorized chat-state files |
 | Phase 10 P04 | ~3h | 2 tasks + trusted-boundary hardening follow-up | 10 files |
 | Phase 10 P05 | ~40min | 2 tasks (auto + live dual-login PASS) | 2 files + SUMMARY |
+| Phase 12 P07 | 20 min | 3 tasks | 3 files |
 
 ## Decisions
+
+- [Phase 12]: Phase 12 closes from credential-free local fixtures; Phase 10 live evidence remains prior context only.
+- [Phase 12]: Existing notice layers remain unchanged because Phase 12 added no substantial derived implementation.
+- [Phase 12]: Workspace rustfmt drift is reported while Phase 12 Rust files require a file-local check-only pass.
 
 ### Phase 11 (Codex effort & catalog fidelity)
 
 - [Phase 11]: Planning: decision-coverage-plan gate override recorded — CONTEXT.md decisions use smart-discuss area-bullet format (no D-NN ids), parser extracted 0; gsd-plan-checker independently verified all locked CONTEXT decisions are implemented in plan task text (2 plans, 1 blocker fixed: 11-02 assumption_delta_decision block added inline). Verify-phase should treat decision coverage as evidenced by the checker report, not the D-NN regex.
-
 
 ### Phase 9 (Daily-driver end-to-end validation)
 
@@ -138,9 +142,9 @@ Progress: [██████████] Phases 1-10 complete; remaining: Phas
 
 ## Session
 
-**Last session:** 2026-07-21T04:04:19.601Z
-**Stopped at:** Phase 11 UI-SPEC approved
-**Resume file:** .planning/phases/11-codex-effort-catalog-fidelity/11-UI-SPEC.md
+**Last session:** 2026-07-21T22:49:26.337Z
+**Stopped at:** Completed 12-07-PLAN.md
+**Resume file:** None
 **Binary preflight:** `target/debug/bum` rebuilt 2026-07-18; operator retested post store=false fix
 **Next:**
 

@@ -23,8 +23,8 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [x] **Phase 8: Quiet fork & rebrand polish** - No auto-update/telemetry; full bum chrome/strings (completed 2026-07-17)
 - [x] **Phase 9: Daily-driver end-to-end validation** - Real sessions both providers, mid-session switch, cross-provider agents (completed 2026-07-20)
 - [x] **Phase 10: Codex Responses wire parity** - Align bum request shape with official Codex CLI (headers, reasoning defaults, continuity) (completed 2026-07-18)
-- [ ] **Phase 11: Codex effort & catalog fidelity** - GPT-5.6 effort levels, soft-clamp UX, catalog capability flags from Codex models.json patterns
-- [ ] **Phase 12: Codex depth & attribution polish** - Optional tool/WS/originator depth; honest product attribution (bum ≠ Codex CLI)
+- [x] **Phase 11: Codex effort & catalog fidelity** - GPT-5.6 effort levels, soft-clamp UX, catalog capability flags from Codex models.json patterns (completed 2026-07-21)
+- [x] **Phase 12: Codex depth & attribution polish** - Optional tool/WS/originator depth; honest product attribution (bum ≠ Codex CLI) (completed 2026-07-21)
 
 ## Phase Details
 
@@ -275,11 +275,11 @@ Plans:
 Plans:
 **Wave 1**
 
-- [ ] 11-01-PLAN.md — Clamp helper + catalog supported-levels threading through SamplerConfig/SamplingConfig/ConversationRequest + choke-point wire emission (effort clamp, summary omit)
+- [x] 11-01-PLAN.md — Clamp helper + catalog supported-levels threading through SamplerConfig/SamplingConfig/ConversationRequest + choke-point wire emission (effort clamp, summary omit)
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
-- [ ] 11-02-PLAN.md — Sticky per-session effort preference in the switch handler + ACP response meta threading + TUI clamp notice + UAT-notes closure
+- [x] 11-02-PLAN.md — Sticky per-session effort preference in the switch handler + ACP response meta threading + TUI clamp notice + UAT-notes closure
 
 ### Phase 12: Codex depth & attribution polish
 
@@ -294,7 +294,25 @@ Plans:
   3. THIRD_PARTY / notices updated if any Codex-derived constants or substantial ports land
   4. Capability gaps vs stock Codex remain honest in docs (D-10)
 
-**Plans**: TBD
+**Plans**: 7/7 plans executed
+
+Plans:
+
+**Wave 1**
+
+- [x] 12-01-PLAN.md — Wave 0 embedded-doc, toolset-identity, and credential-free gate contracts
+
+**Wave 2** *(after Wave 1; plans 02–06 have disjoint file ownership and may run in parallel)*
+
+- [x] 12-02-PLAN.md — Canonical provider capability matrix plus README/guide discoverability
+- [x] 12-03-PLAN.md — Embedded onboarding, TUI, configuration, and theming identity sweep
+- [x] 12-04-PLAN.md — Embedded MCP, skills, plugins, hooks, custom-model, and rules identity sweep
+- [x] 12-05-PLAN.md — Embedded memory, headless, agent, subagent, and session identity sweep
+- [x] 12-06-PLAN.md — Embedded safety/workflow pages plus both reference-doc identity sweeps
+
+**Wave 3** *(after all Wave 2 plans)*
+
+- [x] 12-07-PLAN.md — Focused credential-free phase gate, notice/scope audit, and Nyquist close
 
 ## Progress
 
@@ -315,8 +333,8 @@ Phases 10–12 deepen Codex after Phase 9 daily-driver bar; Phase 9 in-phase fix
 | 8. Quiet fork & rebrand polish | 6/6 | Complete    | 2026-07-17 |
 | 9. Daily-driver end-to-end validation | 3/5 | In Progress|  |
 | 10. Codex Responses wire parity | 7/7 | Complete    | 2026-07-18 |
-| 11. Codex effort & catalog fidelity | 0/2 | Planned |  |
-| 12. Codex depth & attribution polish | 0/TBD | Planned |  |
+| 11. Codex effort & catalog fidelity | 2/2 | Complete    | 2026-07-21 |
+| 12. Codex depth & attribution polish | 7/7 | Complete    | 2026-07-21 |
 
 ## Coverage map
 
