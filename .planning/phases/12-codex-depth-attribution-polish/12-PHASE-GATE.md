@@ -183,6 +183,50 @@ inventory_gate() {
   echo "inventory exact: 22 guides, 2 references, 2 entry points"
 }
 
+markdown_link_gate() {
+  node - "${ENTRYPOINT_FILES[@]}" "${GUIDE_FILES[@]}" "${REFERENCE_FILES[@]}" <<'NODE'
+const fs = require("fs");
+const path = require("path");
+
+const files = process.argv.slice(2);
+let checked = 0;
+const failures = [];
+
+for (const file of files) {
+  const markdown = fs.readFileSync(file, "utf8");
+  const links = markdown.matchAll(/(?<!!)\[[^\]]*\]\(([^)]+)\)/g);
+  for (const match of links) {
+    let destination = match[1].trim();
+    if (destination.startsWith("<") && destination.endsWith(">")) {
+      destination = destination.slice(1, -1);
+    }
+    destination = destination.split(/\s+['\"]/)[0];
+    if (/^(?:https?:|mailto:|data:)/i.test(destination) || destination.startsWith("#")) {
+      continue;
+    }
+
+    const pathname = destination.split("#", 1)[0].split("?", 1)[0];
+    if (!pathname) continue;
+    checked += 1;
+    const resolved = path.resolve(path.dirname(file), decodeURIComponent(pathname));
+    if (!fs.existsSync(resolved)) {
+      failures.push(`${file}: ${destination} -> ${resolved}`);
+    }
+  }
+}
+
+if (checked === 0) {
+  console.error("no local Markdown links were checked");
+  process.exit(1);
+}
+if (failures.length > 0) {
+  console.error(`broken local Markdown links:\n${failures.join("\n")}`);
+  process.exit(1);
+}
+console.log(`local Markdown links resolve: ${checked} checked across ${files.length} files`);
+NODE
+}
+
 # discover_exact LABEL PACKAGE EXPECTED LIST_REGEX TEST_FILTER [CARGO TARGET ARGS...]
 discover_exact() {
   local label="$1" package="$2" expected="$3" list_regex="$4" test_filter="$5"
@@ -357,6 +401,7 @@ format_gate() {
 static_gate() {
   [[ "$NO_LIVE_OAUTH_OR_NETWORK" == true ]] || fail "static gate must remain network-free"
   inventory_gate
+  markdown_link_gate
   docs_files_gate "${ENTRYPOINT_FILES[@]}" "${GUIDE_FILES[@]}" "${REFERENCE_FILES[@]}"
   capability_gate
   notice_and_originator_gate
@@ -538,6 +583,7 @@ verify_scaffold() {
   ((${#EXPECTED_VALIDATION_IDS[@]} == 18)) || fail "expected validation ID inventory drifted"
   [[ "$NO_LIVE_OAUTH_OR_NETWORK" == true ]] || fail "no-network invariant is disabled"
   rg -F -q 'discover_exact()' "$GATE_PATH" || fail "discover_exact helper missing"
+  rg -F -q 'markdown_link_gate()' "$GATE_PATH" || fail "Markdown link gate missing"
   rg -F -q 'Allowed contextual categories are explicit' "$GATE_PATH" ||
     fail "identity allowlist categories missing"
 
