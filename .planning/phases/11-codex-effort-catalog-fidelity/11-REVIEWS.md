@@ -526,3 +526,165 @@ reasons cycle 1 gave.
 
 This cycle was read-only for both reviewers; no source changes, builds, or tests were run —
 expected and correct for a pre-execution plan review.
+
+---
+
+# CYCLE 3 — Convergence Review (final cycle)
+
+```yaml
+cycle: 3
+reviewed_at: 2026-07-21T11:13:52.000Z
+revision_commit: 33cafea7141b4d354cf0fb1a4d1f2ab2d4ec72e6
+plans_reviewed:
+  - .planning/phases/11-codex-effort-catalog-fidelity/11-01-PLAN.md (revised, cycle-2 findings)
+  - .planning/phases/11-codex-effort-catalog-fidelity/11-02-PLAN.md (revised, cycle-2 findings)
+reviewers:
+  codex:
+    model: gpt-5.6-sol
+    reasoning_effort: high
+    service_tier: standard
+    sandbox: read-only
+    cli_version: codex-cli 0.144.5
+    source_grounding: true
+  claude-sonnet-5:
+    role: orchestrator + independent second grounding pass (this session)
+    source_grounding: true
+verdict: NOT CONVERGED
+```
+
+Cycle 2 raised 3 new HIGH findings (NEW-A subagent inheritance, NEW-B session resume/restore,
+NEW-C deleted Grok-path gate) plus 5 actionable MEDIUM/LOW findings (A1 non-regression-sensitive
+test, A2 alias-resolution atomicity gap, A3 incomplete compile-ripple inventory, A4 cross-plan
+contradiction, A5 imprecise wording) against the `c389058` revision. Commit `33cafea` revises both
+plans again to address every cycle-2 finding. This is the **third and final** cycle: it checks (a)
+whether each cycle-2 finding is genuinely resolved, grounded against real source; (b) whether the
+six cycle-1 findings cycle 2 had already confirmed resolved (HIGH#4, M1, M3, M4, L1, L2) survived
+this second round of edits unregressed; and (c) whether `33cafea` itself introduces anything new.
+
+Two independent passes were run and cross-checked, as in cycle 2: Codex CLI (`gpt-5.6-sol`, high
+reasoning effort, standard service tier, `-s read-only`, `--skip-git-repo-check`,
+`--dangerously-bypass-hook-trust`, cwd = repo root) via `codex exec`, and a second, fully
+independent grounding pass done directly in this session (grep/read against the live source and
+the `git diff c389058 33cafea` revision diff, performed *before* reading Codex's output). Both
+passes independently found the same primary blocking gap (**finding 2 / NEW-B redux** below)
+without either seeing the other's work first, and each pass additionally caught one thing the
+other missed (this session found the two extra `PersistenceMsg::CurrentModel` production writers
+by direct grep; Codex additionally traced the gap one layer deeper, into the storage trait /
+`ModelPatch` / `Summary` schema, and independently caught a stale contradictory `read_first`
+instruction under NEW-C that this session's first pass had missed) — cross-checking both passes
+against source resolved every disagreement below in favor of the better-grounded reading.
+
+## Per-finding resolution table (cycle-2 findings vs. this revision)
+
+| # | Cycle-2 finding | Verdict this cycle | Evidence |
+|---|---|---|---|
+| 1 | HIGH NEW-A: subagent-inheritance construction site (`agent/subagent/mod.rs::read_parent_sampling_config`) | **RESOLVED** | The revision's fix is exactly targeted: the `SamplerConfig { ... }` literal opens at `subagent/mod.rs:929` (confirmed exact, function `read_parent_sampling_config` at `mod.rs:903`), already copies `reasoning_effort: cfg.reasoning_effort,` at `mod.rs:942` (confirmed), and 11-01's Task 1 action text (`11-01-PLAN.md:190`) explicitly instructs copying `reasoning_effort_supported`/`reasoning_summary_omit` from the parent's live `cfg` at this exact site, explicitly excluding it from the generic blank-fill sweep. Independently swept both reviewer passes for a fourth uncovered `SamplerConfig`/`SamplingConfig` production construction site (grepped both crates for every literal of either type) — none found; the only other non-plan-listed `SamplerConfig` literal is `tools/config.rs` (a static default baseline with no live model data, correctly left to the generic `None`/`false` sweep). `resolve_subagent_sampling_config`'s caller graph (`mod.rs:789` default inherit path, `handle_request.rs:746` not-found fallback) is unchanged from cycle 2's citation and confirmed accurate. |
+| 2 | HIGH NEW-B: session resume/restore preference persistence (`agent_ops.rs`/`acp_agent.rs`) | **NOT RESOLVED** | The revision's new Task 2 fixes the two sites cycle 2 named — session-creation write (`agent/mvp_agent/agent_ops.rs:3515-3524`, confirmed exact: `let initial_reasoning_effort = chat_history.is_empty().then_some(sampling_config.reasoning_effort);` feeding `PersistenceMsg::CurrentModel { ..., reasoning_effort: initial_reasoning_effort }`) and restore-read (`agent/mvp_agent/acp_agent.rs:1868-1885`, confirmed exact: `restore_meta` built from `summary.reasoning_effort` and fed into `model_switch::apply` via `.meta(restore_meta)`) — and the plan is correct that these two sites, in isolation, are fixable as described. But the fix is incomplete on two independent axes, both confirmed by direct source read: **(a) two more production writers of the exact same `PersistenceMsg::CurrentModel` message are never mentioned by either plan** — `session/acp_session_impl/model_switch.rs:238-244` (`SessionActor::handle_set_session_model`, confirmed: `.send(PersistenceMsg::CurrentModel { model_id, agent_name, reasoning_effort: Some(sampling_config.reasoning_effort) })`, fired on **every** mid-session switch, not just creation — reached via `SessionCommand::SetSessionModel` sent from `agent/handlers/model_switch.rs:243`, the exact command Task 1 of this same plan modifies) and `agent/subagent/handle_request.rs:1364-1370` (subagent launch, confirmed: `reasoning_effort: Some(effective_sampling_config.reasoning_effort)`, writes to the subagent's own `session::persistence::new_with_explicit_dir` storage, so lower blast radius than the switch-path writer but still a real, unlisted production site). Neither plan's `files_modified`/`read_first`/action text mentions `session/acp_session_impl/model_switch.rs` at all (zero hits), and `handle_request.rs` is cited only for its *different* `read_parent_sampling_config` call at line 746, never for its `PersistenceMsg::CurrentModel` send at line ~1368. **(b) even at the one site the plan does cover, the field is not threaded past the enum**: `PersistenceMsg::CurrentModel` dispatches (via the persistence actor's match arm, `persistence.rs:1603-1614`) to the `SessionStorage` trait method `update_current_model_and_agent(&self, info, model_id, agent_name: Option<&str>, reasoning_effort: Option<Option<ReasoningEffort>>) -> io::Result<()>` (confirmed exact signature, `storage/mod.rs:530-535`) — a fixed 4-parameter trait method with no room for a 5th argument without a signature change across all implementors. The concrete implementation builds a `ModelPatch { model_id, agent_name, reasoning_effort }` (confirmed exact, `storage/summary_write.rs:44-48`, no preference field), applied to the on-disk `Summary` struct, which itself carries only `pub reasoning_effort: Option<ReasoningEffort>` (confirmed exact, `persistence.rs:892-893`) — **no `reasoning_effort_preference` field exists anywhere in the storage trait, `ModelPatch`, or `Summary`**. Task 2's action text ("Add a new field to the `PersistenceMsg::CurrentModel` variant/struct... Run `cargo check --workspace --all-targets` and fix mechanically") stops at the enum and never mentions the trait, `ModelPatch`, `Summary`, or JSONL storage (`storage/jsonl/mod.rs`) — and critically, `cargo check` will **not** catch this gap the way it catches a missing struct field, because dropping an unused value at the persistence actor's match arm is a silent no-op (at most an unused-variable warning), not a compile error. This is a materially different (harder) failure mode than a typical compile-ripple miss: the plan's own `<done>` criterion ("a resumed session's raw effort preference reflects only genuine prior explicit user choices") requires the *positive* case (an explicit preference surviving a real restart) to work, but no test in the revised Task 3 exercises that path — `p11_resumed_session_with_no_explicit_preference_does_not_inherit_persisted_catalog_default` only proves the negative/no-preference case. Net effect if executed as written: an explicit effort preference set via `/effort` or a switch mid-session would work correctly in-memory (Task 1 is sound) but would not reliably survive a process restart — either silently dropped (if the compile-ripple sweep at the two uncovered writer sites is filled with `None`, the plan's own precedent for "no signal available" sites) or never reach disk at all (if the persistence-actor/trait/storage plumbing is never touched). Separately, `11-02-PLAN.md`'s `files_modified` (frontmatter, 2 entries), `artifacts` (frontmatter, 2 entries), and Task 2's `<files>` tag (2 entries) all cite non-existent paths `crates/codegen/xai-grok-shell/src/agent/agent_ops.rs` and `crates/codegen/xai-grok-shell/src/acp_agent.rs` — the real files are `crates/codegen/xai-grok-shell/src/agent/mvp_agent/agent_ops.rs` and `crates/codegen/xai-grok-shell/src/agent/mvp_agent/acp_agent.rs` (confirmed via direct filesystem lookup; the wrong paths do not exist). The `<read_first>`/`<action>` text itself is self-correcting (it explicitly says "confirm, do not assume" and gives `grep -rn` commands that resolve to the real paths regardless), so this specific inaccuracy is unlikely to cause a wrong edit on its own — it is folded into this finding rather than counted separately because it is symptomatic of the same "which files does this task actually touch" gap. One partial mitigation worth crediting: `agent/config.rs:1415`'s `Config.reasoning_effort_override: Option<ReasoningEffort>` (`#[serde(skip)]`, populated from a CLI `--effort` flag) is a genuine, already-existing "explicit choice, distinct from a resolved catalog default" signal at the session-creation call site — so Task 2's own fallback question ("does this call site have a way to distinguish explicit choice from catalog default?") has a real, better-than-`None` answer available for the ONE site the plan does cover, even though the harder resume-survival gap above remains open regardless. |
+| 3 | HIGH NEW-C: restored Grok-path support gate (`model_switch.rs`) | **PARTIALLY RESOLVED** | The actual `<action>` fix is correct and complete: it branches on `model.info().provider`, stamping the preference unconditionally for `ModelProvider::Codex` targets and restoring the exact pre-phase `model_supports_reasoning_effort` gate + `tracing::warn!` for `ModelProvider::Xai` targets (`11-02-PLAN.md:206`). Independently confirmed the pre-phase gate this restores matches current (unmodified) source exactly: `agent/handlers/model_switch.rs:161-178` today reads `if let Some(eff) = effort_override { if agent.models_manager.model_supports_reasoning_effort(model_id.0.as_ref()) { ... prepared.sampler_config.reasoning_effort = Some(eff); } else { tracing::warn!(...) } }` — byte-for-byte the shape the revision's restore instruction describes. The new test `p11_grok_path_gate_restored_unsupported_preference_dropped_not_sent` (`11-02-PLAN.md:296`) correctly exercises the exact regression end to end. **However**, the task's own `<read_first>` section still contains a stale, contradictory instruction left over from the cycle-1 revision and untouched by `33cafea` (confirmed via diff: this exact line is unchanged context, not part of the `33cafea` diff): `11-02-PLAN.md:189` — "the exact block to replace (162-181 effort_override gate — **DELETE** the `model_supports_reasoning_effort` silent-drop branch **entirely, do not merely rename it**...)". This is verbatim the instruction that produced cycle-2's NEW-C regression in the first place; it now sits ~15-40 lines above the corrected `<action>` text that properly says to restore (not delete) the gate for non-Codex targets. An executor who anchors on the strong, unambiguous `read_first` imperative before reaching the more nuanced branch-on-provider `<action>` text risks reproducing the exact bug this finding was raised to close. The design and the primary instructions are sound; the supporting orientation text was not updated to match. |
+| 4 | A1: initial-session tests made regression-sensitive | **RESOLVED** | Confirmed the test harness has no existing `new_session(initial_effort)` helper (`new_session_with_model(&self, model_id: &str)`, `model_switch_gate.rs:590-604`, takes only a model id, meta carries only `{"modelId": ...}` — no effort key) — the plan's own `read_first` honestly flags this as new, narrowly-scoped harness work rather than glossing over a pre-existing gap. A generic/non-trusted credential path is buildable: the harness already constructs BYOK/API-key credentials (`agent_config_with_byok_and_custom`, `byok.api_key`/`custom.api_key`) distinct from the OAuth `sample_oidc` path used for the trusted-profile tests, giving the second new test a real, low-risk route to `ResponsesWireProfile::Disabled`. |
+| 5 | A2: alias-resolved supported list (M5 atomicity gap, take 2) | **RESOLVED** | Confirmed `agent/handlers/model_switch.rs::apply` resolves `let model = agent.resolve_model_id(&model_id)?;` at line 53 — BEFORE the effort-override block — via `resolve_model_id` (`agent/mvp_agent/agent_ops.rs:1057-1082`), which matches by catalog map key OR by scanning the `.model` field (confirmed alias/routing-slug-aware, not a raw key lookup), and this same `model` binding is what's passed to `agent.prepare_prepared_sampling_config_for_model(&model, ...)` two lines before the plan's `stored_preference` computation. Deriving `supported` from `model.info().reasoning_efforts` on this already-resolved binding (rather than a second `model_reasoning_efforts(model_id)` raw lookup) is therefore provably the same resolved entry 11-01's wire-populating code uses — not merely asserted to be the same. |
+| 6 | A3: compile-ripple inventory completeness | **PARTIALLY RESOLVED** | The three originally-cited sites are all confirmed accurate in current source: `remote/client.rs:829-895`'s field-by-field `ModelEntryConfig` literal, `agent/config.rs:~5144-5150`'s fallback `ModelInfo` literal (both fixed with `default_reasoning_summary_none: false`), and `agent/mvp_agent/tests.rs:1131`'s `make_test_handle` (confirmed a second, genuinely distinct `SessionHandle` literal, fixed with `reasoning_effort_preference: None`). A handful of additional test-only `SamplerConfig`/`SamplingConfig` literals remain unlisted (`xai-grok-sampler/src/actor/state.rs:83`, `xai-grok-shell/src/test_support/lsp_runtime.rs:39`, `session/helpers/session_compact.rs:1587-1588`, `xai-chat-state/src/commands.rs:372-373`) but all four are confirmed test-support/test-only code and already fall under the plan's own generic "there are more... `cargo check --all-targets` will enumerate exactly" catch-all — not a new gap. The finding is only "partially" resolved because the identical class of problem — a plan asserting a closed inventory when a production writer is missing — has recurred one revision later on the field this same revision introduces (`reasoning_effort_preference` on `PersistenceMsg::CurrentModel`); see finding 2 above for full detail (not re-litigated here to avoid double-counting the same defect under two labels). |
+| 7 | A4: 11-01/11-02 empty-menu picker claim consistency | **RESOLVED** | Confirmed both plans now state the identical corrected claim: an empty/absent `reasoningEfforts` catalog array collapses to `None` via `parse_reasoning_efforts_meta` (`xai-grok-sampling-types/src/types.rs:1003`, confirmed exact: `(!options.is_empty()).then_some(options)`) and the picker falls back to the legacy 4-level menu via `reasoning_effort_options_for` (`xai-grok-pager/src/acp/model_state.rs:204`, confirmed exact fallback call) — `11-01-PLAN.md:27` and `11-02-PLAN.md:43,49` are now textually consistent (both cite the same two lines, same mechanism, same "out of scope to change" framing). |
+| 8 | A5: clamp-notice timing wording | **RESOLVED** | `11-02-PLAN.md:37`'s corrected must-have accurately separates switch-time notice computation (`model_switch.rs::apply`, rendered by `lifecycle.rs::handle_switch_model_complete`) from 11-01's per-request wire-time clamp — confirmed both mechanisms exist as described and are independently triggered as the corrected wording states. |
+
+## Cycle-1 fixes: regression check
+
+Confirmed via direct inspection of the `git diff c389058 33cafea` hunks (not just plan-text
+re-reading) that none of these six previously-resolved cycle-1 items were touched by this
+revision's edits:
+
+- **HIGH#4 (null-vs-absent ACP response parsing):** intact, untouched. The `resolve_switch_model_response_effort` action text (`11-02-PLAN.md:213`, "Tri-state-safe response parsing... fixes HIGH#4") is unchanged context in the `33cafea` diff.
+- **M1 (catalog-driven summary omission):** intact, untouched. 11-01's choke-point `summary:` logic and the `default_reasoning_summary_none` catalog-threading text are unchanged context in the diff.
+- **M3 (picker "soft-skip" claim correction, originally landed in 11-02):** intact, untouched at its original 11-02 location — the `33cafea` diff only *adds* the matching correction to 11-01 (finding A4 above), it does not modify 11-02's own already-correct text.
+- **M4 (clamp-safe persistence, skip-not-clear semantics):** intact, untouched. `11-02-PLAN.md:217`'s "Atomic notice + clamp-safe persistence (fixes M5 and M4)" action text is unchanged context in the diff; `campaigns.rs:390-410`'s underlying skip-not-clear body is unmodified source (no code has changed).
+- **L1 (threat-model invariant wording):** intact, untouched. `11-01-PLAN.md:295`'s corrected T-11-01 threat-register row is unchanged context in the diff.
+- **L2 (GateHarness / response-metadata-only test redirection):** intact, untouched. Task 3's read_first and action text continue to assert exclusively via ACP response metadata / dispatched `TaskResult` fields, never `SessionHandle` internals; `GateHarness::set_model`'s full-response return type is unchanged production source.
+
+No regressions found among the six.
+
+## New concerns introduced by this revision
+
+- **HIGH — see finding 2 above (session resume/restore persistence chain).** Not re-listed
+  separately here since it is fully detailed in the per-finding table; flagged here only so it is
+  not missed as "new since 33cafea" — the two extra `PersistenceMsg::CurrentModel` writers and the
+  storage-trait/`ModelPatch`/`Summary` plumbing gap are defects *in this revision's own new Task 2*,
+  not carried over from any earlier cycle (Task 2 did not exist before `33cafea`).
+
+- **MEDIUM — stale contradictory `read_first` instruction under NEW-C.** See finding 3 above.
+  Concrete fix: rewrite `11-02-PLAN.md:189`'s "DELETE the `model_supports_reasoning_effort`
+  silent-drop branch entirely, do not merely rename it" to match the corrected branch-on-provider
+  instruction that already exists correctly in the task's `<action>` text (restore for `Xai`
+  targets, unconditional stamp for `Codex` targets).
+
+- **MEDIUM — required-field / required-plumbing inventory still incomplete one revision later.**
+  Covered in full under finding 2 (the two extra `PersistenceMsg::CurrentModel` writers) and
+  finding 6 (the harmless remainder of minor test-only literals, already covered generically).
+
+Task ordering and cross-plan consistency were independently re-checked and found clean: no stale
+"Task 2" textual cross-reference anywhere in `11-02-PLAN.md` still means the pre-renumbering task
+(all 8 occurrences checked individually — objective prose, read_first citations, action text, and
+the verification section all correctly track the renumbering); Task 3's resume test correctly
+depends on the new Task 2 executing first; and the shared-name `"reasoning_effort_supported"` ACP
+JSON key vs. 11-01's Rust struct field of the same name remains suffiently distinguished in context
+(re-checked, same conclusion as cycle 2 — not a type-confusion risk).
+
+## Verification coverage (cycle 3 — newly cited symbols only)
+
+Scope per task instructions: every symbol newly cited by the `33cafea` revision, plus every symbol
+this cycle's independent hunt for missed production sites surfaced (the `PersistenceMsg::CurrentModel`
+writer sweep). Cycle 1's ~48-citation table and cycle 2's 34-citation table are not re-verified here
+(unchanged citations, already VERIFIED). Authority: direct `sed`/`grep`/`awk` reads against this
+repo's live working tree, run independently in this session before reading Codex's output, with
+Codex's independent pass corroborating every item below except where noted.
+
+**Result: 0 MISSING, 0 AMBIGUOUS, 29 VERIFIED among newly-cited/newly-surfaced symbols.**
+
+| Symbol / citation | Plan / source | File:Line cited | Verified against |
+|---|---|---|---|
+| `read_parent_sampling_config` fn signature | 11-01 | `subagent/mod.rs:903` | exact |
+| `SamplerConfig {` literal open, `read_parent_sampling_config` | 11-01 | `subagent/mod.rs:929` | exact |
+| `reasoning_effort: cfg.reasoning_effort,` (existing, pre-phase) | 11-01 | `subagent/mod.rs:942` | exact |
+| `resolve_subagent_sampling_config` default-inherit call site | 11-01 | `subagent/mod.rs:789` | exact |
+| not-found fallback call site | 11-01 | `subagent/handle_request.rs:746` | exact |
+| only other non-plan `SamplerConfig` literal (static baseline, no live data) | independent sweep | `tools/config.rs:203` | exact — correctly out of scope |
+| `initial_reasoning_effort` computation + `PersistenceMsg::CurrentModel` send | 11-02 | `agent/mvp_agent/agent_ops.rs:3515-3524` | exact |
+| `restore_meta` construction + `model_switch::apply` call | 11-02 | `agent/mvp_agent/acp_agent.rs:1868-1885` | exact |
+| **2nd uncovered `PersistenceMsg::CurrentModel` writer** — `SessionActor::handle_set_session_model`, fires every switch | independent finding | `session/acp_session_impl/model_switch.rs:97,238-244` | exact — confirmed NOT in either plan's file lists |
+| `SessionCommand::SetSessionModel` send (feeds the writer above) | independent finding | `agent/handlers/model_switch.rs:243` | exact |
+| **3rd uncovered `PersistenceMsg::CurrentModel` writer** — subagent launch | independent finding | `agent/subagent/handle_request.rs:1364-1370` | exact — own storage dir (`new_with_explicit_dir`, line 1016), lower blast radius |
+| `PersistenceMsg::CurrentModel` enum variant definition | independent finding | `session/persistence.rs:313-320` | exact, `reasoning_effort: Option<Option<ReasoningEffort>>` |
+| persistence actor's match arm (dispatch to storage) | independent finding | `session/persistence.rs:1603-1614` | exact |
+| `SessionStorage::update_current_model_and_agent` trait signature | independent finding | `session/storage/mod.rs:530-535` | exact — 4 fixed params, no preference slot |
+| `ModelPatch` struct (no preference field) | independent finding | `session/storage/summary_write.rs:44-48` | exact |
+| `Summary` struct's `reasoning_effort` field (no preference field) | independent finding | `session/persistence.rs:787,892-893` | exact |
+| `Config.reasoning_effort_override` (CLI explicit-choice signal) | independent finding | `agent/config.rs:1415` | exact — `#[serde(skip)]`, genuine explicit-choice signal available at creation |
+| pre-phase `model_supports_reasoning_effort` gate (current, unmodified) | 11-02 | `agent/handlers/model_switch.rs:161-178` | exact, byte-for-byte match to what the revision restores |
+| stale "DELETE... entirely" `read_first` instruction (unchanged since c389058) | independent finding | `11-02-PLAN.md:189` | exact — confirmed unchanged context line in `33cafea` diff |
+| `p11_grok_path_gate_restored_unsupported_preference_dropped_not_sent` | 11-02 | `11-02-PLAN.md:296` | exact |
+| `new_session_with_model` harness fn (no effort param) | 11-01/A1 | `model_switch_gate.rs:590-604` | exact |
+| BYOK/API-key credential path in harness | 11-01/A1 | `model_switch_gate.rs` (`agent_config_with_byok_and_custom`, `byok.api_key`) | exact |
+| `resolve_model_id` (alias/routing-slug-aware resolution) | 11-02/A2 | `agent/mvp_agent/agent_ops.rs:1057-1082` | exact |
+| `let model = agent.resolve_model_id(...)` pre-effort-block binding | 11-02/A2 | `agent/handlers/model_switch.rs:53` | exact |
+| `model.info` field AND `model.info()` method (both exist, coexist in same file) | independent check | `agent/config.rs:4025,4043`; used both ways in `model_switch.rs:56,82` | exact — plan's `model.info().reasoning_efforts` syntax is valid |
+| `remote/client.rs` `ModelEntryConfig` remote-parsing literal | 11-01/A3 | `remote/client.rs:829-895` | exact |
+| fallback/synthetic `ModelInfo` literal | 11-01/A3 | `agent/config.rs:~5144-5150` | exact |
+| `make_test_handle` 2nd test-only `SessionHandle` literal | 11-02/A3 | `agent/mvp_agent/tests.rs:1114-1131` | exact |
+| `parse_reasoning_efforts_meta` collapse mechanism | 11-01+11-02/A4 | `types.rs:1003` | exact |
+| `reasoning_effort_options_for` legacy fallback | 11-01+11-02/A4 | `model_state.rs:204` | exact |
+
+### Explicitly out of scope for this pass (same categories cycles 1-2 excluded, still applicable)
+
+Compile-time verification (no code changes exist yet — this remains a pre-execution plan review),
+the external `acp` crate's own surface, and RESEARCH/CONTEXT-only citations not repeated by the
+plans remain out of scope for the same reasons prior cycles gave.
+
+## Cycle 3 risk assessment
+
+| Scope | Risk | Reason |
+|---|---|---|
+| 11-01 | **LOW-MEDIUM** | Every cycle-2 finding against 11-01 (NEW-A, A1, A3's three original sites, A4) is now resolved and independently re-verified against source. No new issues found in 11-01 this cycle. Residual risk is only the ordinary "cargo check will enumerate a few more test-only compile-ripple sites" class already explicitly anticipated by the plan's own text. |
+| 11-02 | **HIGH** | NEW-C's core mechanism is fixed (branch-on-provider gate restore) but a stale contradictory `read_first` line remains. NEW-B (session resume/restore) is NOT resolved: the new Task 2 covers one of three real production writers of the persisted preference, and even that one writer's fix stops at the enum variant without threading through the storage trait, `ModelPatch`, or the on-disk `Summary` schema — none of which `cargo check` will force to the surface, since the gap is a silently-dropped value, not a missing field. |
+| Phase 11 overall | **HIGH — NOT CONVERGED** | Two consecutive cycles have now found a live defect in the raw-preference/catalog-default identity model on a path outside whatever the immediately-prior fix targeted (cycle 2: resume read-path and the deleted gate; cycle 3: resume write-path and its storage plumbing, plus a documentation-consistency echo of the gate finding). Before execution, `11-02-PLAN.md`'s Task 2 needs a further revision that: (1) enumerates and fixes all three `PersistenceMsg::CurrentModel` production writers, not just the session-creation one; (2) threads the new preference field through `SessionStorage::update_current_model_and_agent`, `ModelPatch`, `Summary`, and JSONL storage, not just the enum variant; (3) adds a test that an explicit preference — not only the no-preference case — survives a real persist/resume round-trip; (4) fixes the file-path inaccuracies in `files_modified`/`artifacts`/Task 2's `<files>` tag; and (5) removes the stale "DELETE... entirely" `read_first` line under Task 1's NEW-C fix. Everything else in both plans — the wire-shape design (11-01, fully converged), the interactive mid-session-switch state model (11-02 Task 1, fully converged), and the alias-resolution/test-design fixes (A1/A2/A4/A5, fully converged) — is sound and does not need to be revisited. |
+
+This cycle was read-only for both reviewers; no source changes, builds, or tests were run —
+expected and correct for a pre-execution plan review.
