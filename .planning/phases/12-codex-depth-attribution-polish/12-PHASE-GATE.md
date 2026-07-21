@@ -16,6 +16,13 @@
 #   --validation-set-wave0    Atomically set wave_0_complete after post-row audit
 #   --validation-set-nyquist  Atomically set nyquist_compliant after wave_0
 #   --validation-final        Read-only final map and flag audit
+#
+# Latest focused Rust evidence (credential-free):
+#   2026-07-21 on buffupmedia — GREEN
+#   pager-p12=2, agent-p12=1, apply-patch=41, trusted-reconstruct=1,
+#   trusted-wire-headers=1, trusted-header-non-leakage=1,
+#   trusted-to-untrusted-switch=1. This is current Phase 12 execution evidence;
+#   prior Phase 10 live dual-login evidence is context only and was not rerun.
 
 set -euo pipefail
 
