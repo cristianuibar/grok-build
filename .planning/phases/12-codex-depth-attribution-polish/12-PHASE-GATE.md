@@ -317,20 +317,26 @@ capability_gate() {
   rg -F -q 'bum -p' crates/codegen/xai-grok-pager/docs/user-guide/README.md ||
     fail "guide index headless bum example missing"
 
-  local marker
-  for marker in \
-    'not the stock OpenAI Codex CLI' \
-    'HTTP' \
-    'SSE' \
-    'WebSocket' \
-    'deferred' \
-    'store: false' \
-    'originator' \
-    'apply_patch' \
-    '{ patch }'; do
-    rg -F -q "$marker" "$AUTH_DOC" || fail "Authentication guide marker missing: $marker"
+  local row
+  for row in \
+    "| Transport | Uses bum's provider-routed HTTP path. | Responses are sent with HTTP POST and streamed with SSE. | Responses WebSocket incremental transport is deferred and non-blocking; the supported daily-driver path remains HTTP/SSE. |" \
+    '| Request identity metadata | xAI routes do not receive reserved Codex identity metadata. | A trusted Codex OAuth route receives bum-owned `originator` and session metadata. | BYOK and custom endpoints do not inherit that metadata; bum never impersonates the stock Codex CLI. |' \
+    "| Patch shape | Uses the edit tools configured for the active bum preset. | \`codex:apply_patch\` provides behavioral patch compatibility through a JSON \`{ patch }\` field. | It is not a promise of exact stock wire format, tool naming, or stronger path containment than bum's existing permission and sandbox checks prove. |" \
+    '| Deferred parity | No change to the supported xAI path. | Broad stock Codex tool-name parity is deferred and non-blocking. | Deferred parity does not block productive shell, read, search, or edit workflows. |'; do
+    rg -F -q "$row" "$AUTH_DOC" || fail "Authentication capability row drifted: $row"
   done
-  echo "capability disclosure complete"
+
+  local forbidden_claim
+  for forbidden_claim in \
+    'Responses WebSocket incremental transport is supported' \
+    'bum is the stock OpenAI Codex CLI' \
+    'uses the stock Codex CLI originator' \
+    'provides exact stock tool parity' \
+    'provides exact stock wire format'; do
+    ! rg -F -q "$forbidden_claim" "$AUTH_DOC" ||
+      fail "Authentication guide contains forbidden capability claim: $forbidden_claim"
+  done
+  echo "capability disclosure rows complete and internally consistent"
 }
 
 notice_and_originator_gate() {

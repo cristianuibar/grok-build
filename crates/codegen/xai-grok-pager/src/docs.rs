@@ -444,21 +444,39 @@ mod tests {
     #[test]
     fn p12_capability_disclosure_is_embedded_and_complete() {
         let auth = get_howto_doc("Authentication").expect("embedded Authentication guide");
-        for required in [
-            "not the stock OpenAI Codex CLI",
-            "HTTP",
-            "SSE",
-            "WebSocket",
-            "deferred",
-            "bum",
-            "originator",
-            "tool",
-            "apply_patch",
-            "{ patch }",
+        let row = |area: &str| {
+            auth.lines()
+                .find(|line| line.starts_with(&format!("| {area} |")))
+                .unwrap_or_else(|| panic!("Authentication capability table is missing {area:?}"))
+        };
+
+        assert_eq!(
+            row("Transport"),
+            "| Transport | Uses bum's provider-routed HTTP path. | Responses are sent with HTTP POST and streamed with SSE. | Responses WebSocket incremental transport is deferred and non-blocking; the supported daily-driver path remains HTTP/SSE. |"
+        );
+        assert_eq!(
+            row("Request identity metadata"),
+            "| Request identity metadata | xAI routes do not receive reserved Codex identity metadata. | A trusted Codex OAuth route receives bum-owned `originator` and session metadata. | BYOK and custom endpoints do not inherit that metadata; bum never impersonates the stock Codex CLI. |"
+        );
+        assert_eq!(
+            row("Patch shape"),
+            "| Patch shape | Uses the edit tools configured for the active bum preset. | `codex:apply_patch` provides behavioral patch compatibility through a JSON `{ patch }` field. | It is not a promise of exact stock wire format, tool naming, or stronger path containment than bum's existing permission and sandbox checks prove. |"
+        );
+        assert_eq!(
+            row("Deferred parity"),
+            "| Deferred parity | No change to the supported xAI path. | Broad stock Codex tool-name parity is deferred and non-blocking. | Deferred parity does not block productive shell, read, search, or edit workflows. |"
+        );
+
+        for forbidden_claim in [
+            "Responses WebSocket incremental transport is supported",
+            "bum is the stock OpenAI Codex CLI",
+            "uses the stock Codex CLI originator",
+            "provides exact stock tool parity",
+            "provides exact stock wire format",
         ] {
             assert!(
-                auth.contains(required),
-                "02-authentication.md is missing capability marker {required:?}"
+                !auth.contains(forbidden_claim),
+                "Authentication guide contains forbidden capability claim {forbidden_claim:?}"
             );
         }
     }
