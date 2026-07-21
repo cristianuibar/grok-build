@@ -14,7 +14,7 @@ GPT-5.6 effort levels work like official Codex: mid-session Grok→Codex switch 
 ## Implementation Decisions
 
 ### Soft-clamp semantics (mid-session switch)
-- Clamp rule: nearest supported level, prefer downgrade (`max`→`xhigh`; unsupported-high→highest supported) — matches official Codex soft-clamp behavior
+- Clamp rule: official Codex semantics — keep the current effort if it is in the model's supported list; otherwise clamp to the **middle entry** of the supported list, falling back to the model default (verified in codex-rs `core/src/session/turn_context.rs:243-263`). *Correction 2026-07-21: discuss originally proposed "nearest-supported downgrade" believing it matched official Codex; Grok research showed official uses middle-of-list. Phase goal is "work like official Codex", so official semantics govern.* `max`→`xhigh` parse alias unchanged
 - User feedback: one-line non-blocking TUI notice when clamp occurs ("effort clamped to X")
 - Preference stickiness: user's chosen effort stays sticky; clamp applies per-request at build time — switching back to Grok restores the original preference
 - Location: single choke point in the request-build/route path (shared function all callers route through), not switch-time UI handlers
