@@ -3515,12 +3515,16 @@ impl MvpAgent {
             let initial_reasoning_effort = chat_history
                 .is_empty()
                 .then_some(sampling_config.reasoning_effort);
+            // Prefer None at creation unless a genuinely explicit session-scoped
+            // effort is distinguishable from catalog/global defaults — it is not
+            // at this site, so never promote sampling_config.reasoning_effort.
             let _ = persistence
                 .tx
                 .send(crate::session::persistence::PersistenceMsg::CurrentModel {
                     model_id: session_model_id.clone(),
                     agent_name: Some(agent_definition.name.clone()),
                     reasoning_effort: initial_reasoning_effort,
+                    reasoning_effort_preference: Some(None),
                 });
             let acp_mcp_servers = crate::session::acp_mcp::parse_acp_mcp_servers(
                 session_meta,

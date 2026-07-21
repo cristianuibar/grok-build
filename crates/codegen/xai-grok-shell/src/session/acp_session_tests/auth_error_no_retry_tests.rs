@@ -1026,6 +1026,7 @@ async fn set_session_model_invalidates_byok_memo_for_same_model_id() {
                     false,
                     true,
                     85,
+                    None,
                 )
                 .await;
 

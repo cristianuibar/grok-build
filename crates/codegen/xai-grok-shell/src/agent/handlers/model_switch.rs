@@ -278,6 +278,7 @@ pub(crate) async fn apply(
         apply_prompt_override,
         skip_prompt_rewrite: did_rebuild || model_unchanged,
         auto_compact_threshold_percent: new_threshold,
+        reasoning_effort_preference: stored_preference,
         responds_to: tx,
     });
     let updated_model = rx

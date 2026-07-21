@@ -184,6 +184,10 @@ pub enum SessionCommand {
         /// `compaction.threshold_percent` (which is `Cell<u8>` so it can
         /// update without `&mut self`).
         auto_compact_threshold_percent: u8,
+        /// RAW sticky effort preference to persist (explicit user choice only;
+        /// never a catalog default). Threaded so the session-actor persistence
+        /// writer can store it distinctly from resolved `sampling_config.reasoning_effort`.
+        reasoning_effort_preference: Option<xai_grok_sampling_types::ReasoningEffort>,
         responds_to: oneshot::Sender<Result<acp::ModelId, acp::Error>>,
     },
     /// Zero-turn harness rebuild: build a brand-new `Agent` from the

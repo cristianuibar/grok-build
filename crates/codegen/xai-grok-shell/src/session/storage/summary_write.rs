@@ -48,6 +48,8 @@ pub(crate) struct ModelPatch {
     pub model_id: acp::ModelId,
     pub agent_name: Option<String>,
     pub reasoning_effort: Option<Option<ReasoningEffort>>,
+    /// RAW sticky preference; outer `None` leaves existing value unchanged.
+    pub reasoning_effort_preference: Option<Option<ReasoningEffort>>,
 }
 
 /// Persisted git HEAD. `commit` and `branch` are last-writer-wins, including
@@ -136,6 +138,9 @@ impl Summary {
             }
             if let Some(reasoning_effort) = &model.reasoning_effort {
                 self.reasoning_effort = *reasoning_effort;
+            }
+            if let Some(reasoning_effort_preference) = &model.reasoning_effort_preference {
+                self.reasoning_effort_preference = *reasoning_effort_preference;
             }
         }
         if let Some(git_head) = &patch.git_head {

@@ -83,11 +83,19 @@ async fn update_current_model_persists_leaves_and_clears_reasoning_effort() {
             &model,
             None,
             Some(Some(ReasoningEffort::High)),
+            Some(Some(ReasoningEffort::High)),
         )
         .await
         .unwrap();
     assert_eq!(
         adapter.read_summary_sync(& info).unwrap().reasoning_effort,
+        Some(ReasoningEffort::High),
+    );
+    assert_eq!(
+        adapter
+            .read_summary_sync(&info)
+            .unwrap()
+            .reasoning_effort_preference,
         Some(ReasoningEffort::High),
     );
     adapter.update_current_model(&info, &model).await.unwrap();
@@ -96,11 +104,26 @@ async fn update_current_model_persists_leaves_and_clears_reasoning_effort() {
         Some(ReasoningEffort::High),
         "model-only update must not wipe the persisted effort",
     );
+    assert_eq!(
+        adapter
+            .read_summary_sync(&info)
+            .unwrap()
+            .reasoning_effort_preference,
+        Some(ReasoningEffort::High),
+        "model-only update must not wipe the persisted preference",
+    );
     adapter
-        .update_current_model_and_agent(&info, &model, None, Some(None))
+        .update_current_model_and_agent(&info, &model, None, Some(None), Some(None))
         .await
         .unwrap();
     assert_eq!(adapter.read_summary_sync(& info).unwrap().reasoning_effort, None,);
+    assert_eq!(
+        adapter
+            .read_summary_sync(&info)
+            .unwrap()
+            .reasoning_effort_preference,
+        None,
+    );
 }
 #[tokio::test]
 async fn test_jsonl_round_trip() {
@@ -1794,6 +1817,7 @@ fn write_test_summary(
         agent_name: None,
         sandbox_profile: None,
         reasoning_effort: None,
+    reasoning_effort_preference: None,
     };
     let json = serde_json::to_vec_pretty(&summary).unwrap();
     std::fs::write(session_dir.join("summary.json"), json).unwrap();

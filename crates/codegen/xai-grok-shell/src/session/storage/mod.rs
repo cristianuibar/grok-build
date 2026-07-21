@@ -518,7 +518,7 @@ pub trait StorageAdapter: Send + Sync {
     /// Update the current model in summary (delegates to
     /// `update_current_model_and_agent` with `agent_name = None`).
     async fn update_current_model(&self, info: &Info, model_id: &acp::ModelId) -> io::Result<()> {
-        self.update_current_model_and_agent(info, model_id, None, None)
+        self.update_current_model_and_agent(info, model_id, None, None, None)
             .await
     }
 
@@ -527,12 +527,15 @@ pub trait StorageAdapter: Send + Sync {
     /// persisted so session resume doesn't depend on the mutable model catalog.
     /// `None` leaves the existing `agent_name` unchanged (used by legacy callers
     /// that only update the model ID).
+    /// `reasoning_effort_preference` is the RAW sticky preference (explicit
+    /// user choice only); outer `None` leaves the existing value unchanged.
     async fn update_current_model_and_agent(
         &self,
         info: &Info,
         model_id: &acp::ModelId,
         agent_name: Option<&str>,
         reasoning_effort: Option<Option<ReasoningEffort>>,
+        reasoning_effort_preference: Option<Option<ReasoningEffort>>,
     ) -> io::Result<()>;
 
     /// Update the collection ID for telemetry tracing

@@ -1878,16 +1878,18 @@ impl acp::Agent for MvpAgent {
         );
         {
             let _timer = crate::instrumentation_timer!("session.restore_model");
-            let restore_meta = summary
-                .reasoning_effort
-                .map(|effort| {
-                    let mut map = acp::Meta::new();
-                    map.insert(
-                        REASONING_EFFORT_META_KEY.to_string(),
-                        reasoning_effort_meta_value(effort),
-                    );
-                    map
-                });
+            // Resume must feed ONLY the RAW preference into effort_override —
+            // never the persisted effective/catalog-default reasoning_effort.
+            // Absent preference → absent meta key (not present-null), so apply()
+            // yields stored_preference == None and the target catalog default.
+            let restore_meta = summary.reasoning_effort_preference.map(|effort| {
+                let mut map = acp::Meta::new();
+                map.insert(
+                    REASONING_EFFORT_META_KEY.to_string(),
+                    reasoning_effort_meta_value(effort),
+                );
+                map
+            });
             let requested = model_id.clone();
             let apply_result = crate::agent::handlers::model_switch::apply(
                     self,

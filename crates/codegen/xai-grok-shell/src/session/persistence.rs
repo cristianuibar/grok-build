@@ -317,6 +317,11 @@ pub enum PersistenceMsg {
         /// on the mutable model catalog.
         agent_name: Option<String>,
         reasoning_effort: Option<Option<ReasoningEffort>>,
+        /// RAW sticky effort preference (explicit user choice only). Outer
+        /// `None` leaves the persisted preference unchanged; `Some(None)`
+        /// clears it; `Some(Some(e))` records an explicit choice. Distinct
+        /// from `reasoning_effort` (resolved/effective display value).
+        reasoning_effort_preference: Option<Option<ReasoningEffort>>,
     },
     PlanState(TodoState),
     /// Plan mode lifecycle state to persist
@@ -890,6 +895,11 @@ pub struct Summary {
     pub sandbox_profile: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub reasoning_effort: Option<ReasoningEffort>,
+    /// RAW sticky effort preference (explicit user choice only). Distinct
+    /// from `reasoning_effort` (resolved/effective). Absent on pre-field
+    /// summaries deserializes as `None`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reasoning_effort_preference: Option<ReasoningEffort>,
 }
 
 /// Current `grok_home` as a UTF-8 string, or `None` if the path isn't valid UTF-8.
@@ -942,6 +952,7 @@ impl Summary {
             agent_name: None,
             sandbox_profile: None,
             reasoning_effort: None,
+            reasoning_effort_preference: None,
         })
     }
 
@@ -1604,6 +1615,7 @@ impl SessionPersistence {
                     model_id,
                     agent_name,
                     reasoning_effort,
+                    reasoning_effort_preference,
                 } => {
                     if let Err(e) = self
                         .storage
@@ -1612,6 +1624,7 @@ impl SessionPersistence {
                             &model_id,
                             agent_name.as_deref(),
                             reasoning_effort,
+                            reasoning_effort_preference,
                         )
                         .await
                     {

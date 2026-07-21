@@ -103,6 +103,7 @@ impl SessionActor {
         apply_prompt_override: bool,
         skip_prompt_rewrite: bool,
         auto_compact_threshold_percent: u8,
+        reasoning_effort_preference: Option<xai_grok_sampling_types::ReasoningEffort>,
     ) -> Result<acp::ModelId, acp::Error> {
         let model_id = acp::ModelId::new(sampling_config.model.clone());
         // Resolve the previous provider and publish the target route before
@@ -244,6 +245,8 @@ impl SessionActor {
                 model_id: model_id.clone(),
                 agent_name: Some(agent_name),
                 reasoning_effort: Some(sampling_config.reasoning_effort),
+                // RAW preference only — never the effective/clamped display value.
+                reasoning_effort_preference: Some(reasoning_effort_preference),
             });
         Ok(model_id)
     }
