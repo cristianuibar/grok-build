@@ -319,6 +319,75 @@ mod tests {
     }
 
     #[test]
+    fn p12_embedded_docs_use_bum_product_identity() {
+        // These are semantic categories, not a blanket ban on provider words.
+        // Provider/model brands (Grok, xAI, Codex, OpenAI), fork lineage, legal
+        // notices, internal GROK_*/xai-grok-* identifiers, hosted domains such
+        // as grok.com, and project-local .grok/ compatibility paths are valid.
+        const STOCK_PRODUCT_SUBJECT_CLAIMS: &[&str] = &[
+            "grok build is",
+            "grok build supports",
+            "grok build uses",
+            "grok is",
+            "grok supports",
+            "grok uses",
+            "grok stores",
+            "grok opens",
+            "grok automatically",
+            "grok prompts",
+        ];
+        const STOCK_EXECUTABLE_CLAIMS: &[&str] =
+            &["`grok ", "$ grok ", "run `grok", "invoke `grok"];
+        const STOCK_GLOBAL_HOME_CLAIMS: &[&str] = &["~/.grok/", "~/.grok`"];
+
+        assert_eq!(USER_GUIDE.len(), 22, "registered user-guide inventory drift");
+        assert_eq!(REFERENCE_DOCS.len(), 2, "registered reference inventory drift");
+
+        for doc in USER_GUIDE.iter().chain(REFERENCE_DOCS.iter()) {
+            let lower = doc.content.to_ascii_lowercase();
+            assert!(
+                lower.contains("bum"),
+                "{} must identify the bum product or executable",
+                doc.filename
+            );
+
+            for forbidden in STOCK_PRODUCT_SUBJECT_CLAIMS
+                .iter()
+                .chain(STOCK_EXECUTABLE_CLAIMS)
+                .chain(STOCK_GLOBAL_HOME_CLAIMS)
+            {
+                assert!(
+                    !lower.contains(forbidden),
+                    "{} contains stale stock-product identity claim {forbidden:?}",
+                    doc.filename
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn p12_capability_disclosure_is_embedded_and_complete() {
+        let auth = get_howto_doc("Authentication").expect("embedded Authentication guide");
+        for required in [
+            "not the stock OpenAI Codex CLI",
+            "HTTP",
+            "SSE",
+            "WebSocket",
+            "deferred",
+            "bum",
+            "originator",
+            "tool",
+            "apply_patch",
+            "{ patch }",
+        ] {
+            assert!(
+                auth.contains(required),
+                "02-authentication.md is missing capability marker {required:?}"
+            );
+        }
+    }
+
+    #[test]
     fn list_howto_titles_returns_all() {
         let titles = list_howto_titles();
         assert_eq!(titles.len(), USER_GUIDE.len() + REFERENCE_DOCS.len());
