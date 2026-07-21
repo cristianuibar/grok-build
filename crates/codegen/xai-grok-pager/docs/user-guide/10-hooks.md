@@ -1,12 +1,12 @@
 # Hooks
 
-Hooks let you run a script or send an HTTP request at key moments in a Grok session. Use them to automate tasks, enforce safety checks, log activity, send notifications, and integrate your own tools.
+Hooks let you run a script or send an HTTP request at key moments in a bum session. Use them to automate tasks, enforce safety checks, log activity, send notifications, and integrate your own tools.
 
 ---
 
 ## What Are Hooks?
 
-A hook is a shell command or HTTP endpoint that Grok calls when a specific lifecycle event occurs. Hooks can:
+A hook is a shell command or HTTP endpoint that bum calls when a specific lifecycle event occurs. Hooks can:
 
 - **Block actions** -- A `PreToolUse` hook can deny a dangerous command before it runs.
 - **React to events** -- A `PostToolUse` hook can log every tool execution to a file.
@@ -30,10 +30,10 @@ A hook is a shell command or HTTP endpoint that Grok calls when a specific lifec
 1. Create the hooks directory:
 
    ```sh
-   mkdir -p ~/.grok/hooks
+   mkdir -p ~/.bum/hooks
    ```
 
-2. Create a hook file, e.g. `~/.grok/hooks/session-start.json`:
+2. Create a hook file, e.g. `~/.bum/hooks/session-start.json` (or `$BUM_HOME/hooks/session-start.json`):
 
    ```json
    {
@@ -41,7 +41,7 @@ A hook is a shell command or HTTP endpoint that Grok calls when a specific lifec
        "SessionStart": [
          {
            "hooks": [
-             { "type": "command", "command": "echo 'Grok session started in '$(pwd)" }
+             { "type": "command", "command": "echo 'bum session started in '$(pwd)" }
            ]
          }
        ]
@@ -49,7 +49,7 @@ A hook is a shell command or HTTP endpoint that Grok calls when a specific lifec
    }
    ```
 
-3. Start (or restart) a Grok session. The hook runs automatically on `SessionStart`.
+3. Start (or restart) a bum session. The hook runs automatically on `SessionStart`.
 
 4. Press `Ctrl+L` on non–VS Code family terminals (or run `/hooks` anywhere — preferred on VS Code family) and check the Hooks tab to confirm it loaded.
 
@@ -61,19 +61,19 @@ Hooks are discovered from several places (all are merged):
 
 | Scope | Path | Trusted? | Notes |
 |-------|------|----------|-------|
-| Global | `~/.grok/hooks/*.json` | Always | Personal hooks |
+| Global | `~/.bum/hooks/*.json` (or `$BUM_HOME/hooks/*.json`) | Always | Personal hooks |
 | Global | `~/.claude/settings.json` (and `settings.local.json`) | Always | Claude Code compatibility (configurable) |
 | Global | `~/.cursor/hooks.json` | Always | Cursor compatibility (configurable) |
-| Project | `<project>/.grok/hooks/*.json` | Requires trust | Per-repo automation |
+| Project | `<project>/.grok/hooks/*.json` | Requires trust | Per-repo automation through the project compatibility path |
 | Project | `<project>/.claude/settings.json` (and `settings.local.json`) | Requires trust | Claude compatibility (configurable) |
 | Project | `<project>/.cursor/hooks.json` | Requires trust | Cursor compatibility (configurable) |
 | Plugin | Bundled inside installed plugins | Per-plugin | Shared team hooks |
 
-The Claude and Cursor hook sources are scanned by default. To disable scanning for a specific vendor, set `[compat.<vendor>] hooks = false` in `~/.grok/config.toml` or the corresponding environment variable. See [Configuration](05-configuration.md#harness-compatibility) for details.
+The Claude and Cursor hook sources are scanned by default. To disable scanning for a specific vendor, set `[compat.<vendor>] hooks = false` in `~/.bum/config.toml` (or `$BUM_HOME/config.toml`) or use the corresponding compatibility environment variable. See [Configuration](05-configuration.md#harness-compatibility) for details.
 
-**Trusting a project**: The first time you open a project with hooks, you must trust it before its project hooks will run -- until then they are silently skipped. Grant trust by running `/hooks-trust` (or launching with `--trust`); the decision is recorded in the unified folder-trust store (`~/.grok/trusted_folders.toml`), the same gate that governs repo-local MCP/LSP servers. Global hooks in `~/.grok/hooks/` are always trusted and need no entry. This prevents untrusted repos from running arbitrary code.
+**Trusting a project**: The first time you open a project with hooks, you must trust it before its project hooks will run -- until then they are silently skipped. Grant trust by running `/hooks-trust` (or launching with `--trust`); the decision is recorded in the unified folder-trust store (`~/.bum/trusted_folders.toml` or `$BUM_HOME/trusted_folders.toml`), the same gate that governs repo-local MCP/LSP servers. Global hooks in the bum home are always trusted and need no entry. This prevents untrusted repos from running arbitrary code.
 
-Because hooks are unified under folder-trust, a `--trust` / `/hooks-trust` grant trusts the whole folder for **MCP, LSP, and hooks** together, and cascades to subdirectories. Conversely, disabling folder-trust (`GROK_FOLDER_TRUST=0` or `[folder_trust] enabled = false`) ungates project hooks along with MCP/LSP.
+Because hooks are unified under folder-trust, a `--trust` / `/hooks-trust` grant trusts the whole folder for **MCP, LSP, and hooks** together, and cascades to subdirectories. Conversely, disabling folder-trust with the legacy compatibility knob `GROK_FOLDER_TRUST=0` or `[folder_trust] enabled = false` ungates project hooks along with MCP/LSP.
 
 ---
 
@@ -100,7 +100,7 @@ Because hooks are unified under folder-trust, a `--trust` / `/hooks-trust` grant
 
 ### Cursor Hook Compatibility
 
-Grok accepts Cursor's camelCase hook event names, so `~/.cursor/hooks.json` loads unchanged:
+bum accepts Cursor's camelCase hook event names, so `~/.cursor/hooks.json` loads unchanged:
 
 | Cursor event | Maps to |
 |---|---|
@@ -145,7 +145,7 @@ Each `.json` file can define hooks for multiple events:
 
 ### Key Fields
 
-- **Event name** (top-level key): any event listed in [Hook Events](#hook-events). Grok skips unrecognized event names so a shared Claude or Cursor settings file still loads.
+- **Event name** (top-level key): any event listed in [Hook Events](#hook-events). bum skips unrecognized event names so a shared Claude or Cursor settings file still loads.
 - **matcher** (optional): A regular expression that selects which invocations trigger the hook. It applies to the tool events — `PreToolUse`, `PostToolUse`, `PostToolUseFailure`, and `PermissionDenied` — where it tests the tool name, and to `Notification`, where it tests the notification type. The lifecycle events (`SessionStart`, `SessionEnd`, `Stop`, `UserPromptSubmit`) reject a matcher; other events ignore it. An empty or omitted matcher matches everything. The matcher tests the real tool name; MCP calls routed through the internal `use_tool` dispatcher appear as the qualified `server__tool` name (e.g. `linear__save_issue`), so match on that, not the dispatcher name.
 - **type**: `"command"` (run a script or shell one-liner) or `"http"` (POST the event to a URL).
 - **command**: Path to executable (relative to the JSON file) or inline shell command.
@@ -153,7 +153,7 @@ Each `.json` file can define hooks for multiple events:
 
 ### Tool Name Aliases
 
-In a `matcher`, Grok maps Claude-style tool names to its own so hooks migrated from Claude fire correctly. Common aliases include:
+In a `matcher`, bum maps Claude-style tool names to its own so hooks migrated from Claude fire correctly. Common aliases include:
 
 - `Bash` → `run_terminal_command`
 - `Read` → `read_file`
@@ -206,7 +206,7 @@ For events like `SessionStart` or `PostToolUse`, stdout is ignored. Just exit 0 
 
 ### Environment Variables
 
-Grok sets several environment variables on every hook process. These are useful when writing context-aware or plugin-aware hook scripts.
+bum sets several environment variables on every hook process. These are useful when writing context-aware or plugin-aware hook scripts. The retained `GROK_*` names below are internal compatibility contracts, not product-home names.
 
 #### Runner-injected variables (always available)
 
@@ -216,7 +216,7 @@ These variables are set by the hook runner for **every** hook:
 |-----------------------|-------------|
 | `GROK_HOOK_EVENT`     | The name of the event that triggered the hook (e.g. `pre_tool_use`, `session_start`, `post_tool_use`, `session_end`, `stop`, `notification`). |
 | `GROK_HOOK_NAME`      | The configured name of this specific hook (includes the plugin prefix for plugin-provided hooks). |
-| `GROK_SESSION_ID`     | The unique identifier of the current Grok session. |
+| `GROK_SESSION_ID`     | The unique identifier of the current bum session. |
 | `GROK_WORKSPACE_ROOT` | Absolute path to the root of the current workspace. |
 | `CLAUDE_PROJECT_DIR`  | Absolute path to the workspace root. A Claude Code-compatible alias for `GROK_WORKSPACE_ROOT`, set for every hook. |
 
@@ -224,7 +224,7 @@ These variables are **reserved**. Any values you attempt to set for them via the
 
 #### Plugin hook variables
 
-When a hook originates from a plugin, Grok additionally injects the following variables:
+When a hook originates from a plugin, bum additionally injects the following compatibility variables:
 
 | Variable             | Description |
 |----------------------|-------------|
@@ -261,7 +261,7 @@ Both `command` and `url` support `${VAR}` and `$VAR` expansion. See the custom-h
 Instead of a local script, call a remote endpoint:
 
 ```json
-{ "type": "http", "url": "https://hooks.example.com/grok-event", "timeout": 15 }
+{ "type": "http", "url": "https://hooks.example.com/bum-event", "timeout": 15 }
 ```
 
 The full event envelope is POSTed as JSON.
@@ -308,7 +308,7 @@ Enable or disable an individual hook at runtime by pressing `Space` in the Hooks
 
 ### Mid-Session Reload
 
-Press `r` in the Hooks tab to reload all hooks from disk. Grok re-reads every hook source, so this picks up changes you made to hook files during the session.
+Press `r` in the Hooks tab to reload all hooks from disk. bum re-reads every hook source, so this picks up changes you made to hook files during the session.
 
 ---
 
@@ -357,7 +357,7 @@ echo '{"decision": "allow"}'
 
 ## Security Notes
 
-- Global hooks (`~/.grok/hooks/`) run with your user permissions -- treat them like shell scripts.
+- Global hooks (`~/.bum/hooks/` or `$BUM_HOME/hooks/`) run with your user permissions -- treat them like shell scripts.
 - Project hooks require folder trust (`/hooks-trust` or `--trust`, the same gate as repo-local MCP/LSP) to prevent supply-chain attacks from malicious repos.
 - HTTP hooks send session data -- only use trusted endpoints.
 
@@ -369,7 +369,7 @@ echo '{"decision": "allow"}'
 2. **Use explicit `deny` to block** -- hooks fail-open on any error, so a hook that crashes will not block the tool. To enforce policy, your hook must run to completion and emit `{"decision":"deny","reason":"..."}` on stdout. Always handle errors inside your script so it can return an explicit decision.
 3. **Use absolute paths or relative to hook file** -- scripts in `bin/` next to the JSON file are portable.
 4. **Test with the modal** -- press `Ctrl+L` (non–VS Code family) or run `/hooks` to verify hooks are loaded and matching before relying on them.
-5. **Version control project hooks** -- commit `.grok/hooks/` (but never secrets).
+5. **Version control project hooks** -- commit the project-local `.grok/hooks/` compatibility directory (but never secrets).
 
 ---
 
@@ -378,4 +378,4 @@ echo '{"decision": "allow"}'
 - **Hook not running?** Press `Ctrl+L` on non–VS Code family (or run `/hooks` anywhere) to see if it is loaded and matched.
 - **Project hooks ignored?** The folder may be untrusted. Run `/hooks-trust` (or relaunch with `--trust`).
 - **Script not found?** Check the path is relative to the `.json` file and executable (`chmod +x`).
-- **See errors?** Capture logs by launching with `RUST_LOG=debug GROK_LOG_FILE=/tmp/grok.log grok`, then check `/tmp/grok.log`.
+- **See errors?** Capture logs by launching with `RUST_LOG=debug GROK_LOG_FILE=/tmp/bum.log bum`, then check `/tmp/bum.log`. `GROK_LOG_FILE` is the retained internal compatibility knob.

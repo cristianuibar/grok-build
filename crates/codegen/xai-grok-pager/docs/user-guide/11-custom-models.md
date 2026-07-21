@@ -1,17 +1,17 @@
 # Custom Models
 
-Grok connects to custom model endpoints for alternative providers, self-hosted models, and overriding built-in settings. This guide explains how to select models, configure endpoints, and integrate third-party providers.
+bum connects to custom model endpoints for alternative providers, self-hosted models, and overriding built-in settings. This guide explains how to select models, configure endpoints, and integrate third-party providers.
 
 ---
 
 ## Default Models
 
-By default, Grok uses models hosted by SpaceXAI, and new sessions start with `grok-build`. Default models require no configuration. Authenticate with `grok login` or an API key, then start a session.
+bum's built-in catalog includes models from xAI's Grok family, such as `grok-build`, alongside provider-routed models. Default models require no custom endpoint configuration. Authenticate the required provider with `bum login` or an API key, then start a session.
 
 List all available models:
 
 ```bash
-grok models
+bum models
 ```
 
 ---
@@ -21,7 +21,7 @@ grok models
 ### CLI Flag
 
 ```bash
-grok -p "Hello" -m grok-build
+bum -p "Hello" -m grok-build
 ```
 
 ### Slash Command
@@ -44,7 +44,7 @@ Press `Ctrl+M` from the scrollback pane to open the model picker. It lists all a
 
 ### Config Default
 
-Set a persistent default in `~/.grok/config.toml`:
+Set a persistent default in `~/.bum/config.toml` (or `$BUM_HOME/config.toml`):
 
 ```toml
 [models]
@@ -55,7 +55,7 @@ default = "grok-build"
 
 ## Supported API Backends
 
-Grok supports three API backends. Set `api_backend` in your `[model.*]` config to choose which protocol the model uses:
+bum supports three API backends. Set `api_backend` in your `[model.*]` config to choose which protocol the model uses:
 
 | Value | API | Default |
 |-------|-----|---------|
@@ -63,15 +63,15 @@ Grok supports three API backends. Set `api_backend` in your `[model.*]` config t
 | `"responses"` | OpenAI Responses (`/v1/responses`) | |
 | `"messages"` | Anthropic Messages (`/v1/messages`) | |
 
-When you omit `api_backend`, Grok uses `chat_completions`.
+When you omit `api_backend`, bum uses `chat_completions`.
 
-To send provider-specific authentication or version headers -- for example, Anthropic's `x-api-key` -- use the `extra_headers` field described below. Grok sends those headers verbatim with every request to the endpoint.
+To send provider-specific authentication or version headers -- for example, Anthropic's `x-api-key` -- use the `extra_headers` field described below. bum sends those headers verbatim with every request to the endpoint.
 
 ---
 
 ## Configuring Custom Models
 
-Add custom model endpoints in `~/.grok/config.toml` under `[model.<name>]` sections:
+Add custom model endpoints in `~/.bum/config.toml` (or `$BUM_HOME/config.toml`) under `[model.<name>]` sections:
 
 ```toml
 [model.my-model]
@@ -91,16 +91,16 @@ extra_headers = { "x-api-key" = "sk-..." } # Extra request headers, sent verbati
 
 ### Credential Resolution
 
-Grok resolves the API key in this order:
+bum resolves the API key in this order:
 
 1. The `api_key` field in the model config
 2. The environment variable(s) named by `env_key` — a single string or an array of names. The first set, non-empty value wins (for example `env_key = ["ANTHROPIC_AUTH_TOKEN", "LC_ANTHROPIC_AUTH_TOKEN"]` for SSH `LC_*` forwarding)
-3. Your signed-in session token (from `grok login`), for a model with no `api_key`/`env_key` of its own
-4. The `XAI_API_KEY` environment variable (global fallback; Grok also accepts `GROK_CODE_XAI_API_KEY` for backward compatibility)
+3. Your signed-in session token (from `bum login`), for a model with no `api_key`/`env_key` of its own
+4. The `XAI_API_KEY` environment variable (global fallback; bum also accepts the legacy compatibility name `GROK_CODE_XAI_API_KEY`)
 
 ### Context Window
 
-The `context_window` value tells Grok when to trigger auto-compaction. When you override a known model, Grok inherits that model's context window. When you define a new model and omit `context_window`, Grok defaults to 200,000 tokens, so set it explicitly to match your provider.
+The `context_window` value tells bum when to trigger auto-compaction. When you override a known model, bum inherits that model's context window. When you define a new model and omit `context_window`, bum defaults to 200,000 tokens, so set it explicitly to match your provider.
 
 ### Global Default Headers
 
@@ -148,7 +148,7 @@ temperature = 0.5
 api_key = "sk-custom"
 ```
 
-When you override a built-in model, Grok starts with the default configuration (including the correct `base_url`), then applies only the fields you specify. Unspecified fields inherit from the default.
+When you override a built-in model, bum starts with the default configuration (including the correct `base_url`), then applies only the fields you specify. Unspecified fields inherit from the default.
 
 ### Priority Order
 
@@ -174,7 +174,7 @@ context_window = 200000
 extra_headers = { "x-api-key" = "sk-ant-...", "anthropic-version" = "2023-06-01" }
 ```
 
-The `messages` backend uses the Anthropic Messages protocol. Anthropic authenticates with an `x-api-key` header rather than `Authorization: Bearer`, so pass your key through `extra_headers`, which Grok sends verbatim.
+The `messages` backend uses the Anthropic Messages protocol. Anthropic authenticates with an `x-api-key` header rather than `Authorization: Bearer`, so pass your key through `extra_headers`, which bum sends verbatim.
 
 ### OpenAI (Chat Completions)
 
@@ -240,14 +240,14 @@ temperature = 0.8
 
 ## Custom Models Endpoint
 
-Point Grok at a custom OpenAI-compatible `/v1/models` endpoint instead of the default. Use this when your models sit behind a corporate gateway or a self-hosted inference service.
+Point bum at a custom OpenAI-compatible `/v1/models` endpoint instead of the default. Use this when your models sit behind a corporate gateway or a self-hosted inference service.
 
 ### Environment Variables
 
 | Variable | Required | Description |
 |----------|----------|-------------|
-| `GROK_MODELS_BASE_URL` | Yes | Base URL for inference. Grok fetches the model list from `{base_url}/models`. |
-| `XAI_API_KEY` | Yes | API key sent as `Authorization: Bearer`. Grok also accepts `GROK_CODE_XAI_API_KEY`. |
+| `GROK_MODELS_BASE_URL` | Yes | Legacy compatibility knob for the inference base URL. bum fetches the model list from `{base_url}/models`. |
+| `XAI_API_KEY` | Yes | API key sent as `Authorization: Bearer`. bum also accepts the legacy compatibility name `GROK_CODE_XAI_API_KEY`. |
 | `GROK_MODELS_LIST_URL` | No | Override the model-list URL when it differs from `{base_url}/models`. |
 
 ### Setup
@@ -255,7 +255,7 @@ Point Grok at a custom OpenAI-compatible `/v1/models` endpoint instead of the de
 ```bash
 export GROK_MODELS_BASE_URL="https://api.acme.com/v1"
 export XAI_API_KEY="xai-..."
-grok
+bum
 ```
 
 ### Config File Alternative
@@ -269,11 +269,11 @@ models_base_url = "https://api.acme.com/v1"
 api_key = "my-api-key"
 ```
 
-When you use `[endpoints]` with partial model overrides, Grok inherits the `base_url` from the endpoints config, so you do not need to specify it in each `[model.*]` section.
+When you use `[endpoints]` with partial model overrides, bum inherits the `base_url` from the endpoints config, so you do not need to specify it in each `[model.*]` section.
 
 ### Auth Behavior
 
-When you set `models_base_url`, Grok uses API key auth (`Authorization: Bearer`) instead of session auth. You do not need `grok login` -- the API key is enough.
+When you set `models_base_url`, bum uses API key auth (`Authorization: Bearer`) instead of session auth. You do not need `bum login` -- the API key is enough.
 
 ---
 
@@ -292,7 +292,7 @@ Or via environment variable:
 export GROK_WEB_SEARCH_MODEL="grok-4.20-multi-agent"
 ```
 
-If you point web search at a custom model, you also need a `[model.*]` entry so Grok can reach it. Server-side ("backend") web search runs only when the model sets `supports_backend_search = true` (and the build enables backend search); it does not depend on `api_backend`:
+If you point web search at a custom model, you also need a `[model.*]` entry so bum can reach it. Server-side ("backend") web search runs only when the model sets `supports_backend_search = true` (and the build enables backend search); it does not depend on `api_backend`:
 
 ```toml
 [models]
@@ -309,13 +309,13 @@ supports_backend_search = true
 
 ```bash
 # List available models (including custom)
-grok models
+bum models
 
 # Use in the TUI via slash command
 /model my-model
 
 # Use in headless mode
-grok -p "Hello" -m my-model
+bum -p "Hello" -m my-model
 
 # Set as default in config.toml:
 [models]
@@ -358,7 +358,7 @@ telemetry = false
 
 ```bash
 # List available models
-grok models
+bum models
 
 # Check config.toml for typos in [model.*] sections
 ```
@@ -375,8 +375,8 @@ curl -s https://api.example.com/v1/models \
 ### Debug Logging
 
 ```bash
-RUST_LOG=debug GROK_LOG_FILE=/tmp/grok.log grok
-tail -f /tmp/grok.log
+RUST_LOG=debug GROK_LOG_FILE=/tmp/bum.log bum
+tail -f /tmp/bum.log
 ```
 
 Look for log entries containing `model` or `sampling` to trace model selection and API calls.
