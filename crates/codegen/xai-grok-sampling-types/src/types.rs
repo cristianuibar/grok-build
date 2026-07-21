@@ -1232,6 +1232,59 @@ mod tests {
     use serde_json::json;
 
     #[test]
+    fn clamp_reasoning_effort_keeps_supported_preference() {
+        let supported = [
+            ReasoningEffort::Low,
+            ReasoningEffort::Medium,
+            ReasoningEffort::High,
+            ReasoningEffort::Xhigh,
+        ];
+        assert_eq!(
+            clamp_reasoning_effort(Some(ReasoningEffort::High), &supported, None),
+            Some(ReasoningEffort::High)
+        );
+    }
+
+    #[test]
+    fn clamp_reasoning_effort_picks_middle_of_list_when_unsupported() {
+        // Even-length list: index (2-1)/2 = 0 → Low (lower-biased middle).
+        let two = [ReasoningEffort::Low, ReasoningEffort::Medium];
+        assert_eq!(
+            clamp_reasoning_effort(Some(ReasoningEffort::Xhigh), &two, None),
+            Some(ReasoningEffort::Low)
+        );
+        // Sol/Terra/Luna 4-entry menu: index (4-1)/2 = 1 → Medium.
+        let four = [
+            ReasoningEffort::Low,
+            ReasoningEffort::Medium,
+            ReasoningEffort::High,
+            ReasoningEffort::Xhigh,
+        ];
+        assert_eq!(
+            clamp_reasoning_effort(None, &four, Some(ReasoningEffort::Low)),
+            Some(ReasoningEffort::Medium)
+        );
+        assert_eq!(
+            clamp_reasoning_effort(Some(ReasoningEffort::Minimal), &four, None),
+            Some(ReasoningEffort::Medium)
+        );
+    }
+
+    #[test]
+    fn clamp_reasoning_effort_falls_back_to_catalog_default_when_list_empty() {
+        assert_eq!(
+            clamp_reasoning_effort(Some(ReasoningEffort::High), &[], Some(ReasoningEffort::Low)),
+            Some(ReasoningEffort::Low)
+        );
+    }
+
+    #[test]
+    fn clamp_reasoning_effort_returns_none_when_list_and_default_both_empty() {
+        assert_eq!(clamp_reasoning_effort(Some(ReasoningEffort::High), &[], None), None);
+        assert_eq!(clamp_reasoning_effort(None, &[], None), None);
+    }
+
+    #[test]
     fn reasoning_effort_serde_lowercase_round_trip() {
         for v in [
             ReasoningEffort::None,

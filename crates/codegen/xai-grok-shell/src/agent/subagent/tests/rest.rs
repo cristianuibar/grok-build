@@ -2478,6 +2478,61 @@ async fn read_parent_sampling_config_keeps_auto_catalog_id_with_routing_slug() {
     assert_eq!(config.model, "grok-4.5");
     assert_eq!(model_id.0.as_ref(), "auto");
 }
+
+/// Phase 11: inherit_parent must copy catalog effort/summary fields from the
+/// parent's live SamplingConfig — never blank-fill None/false (HIGH#1/NEW-A).
+#[tokio::test]
+async fn subagent_inherits_parent_reasoning_effort_supported_and_summary_omit() {
+    use xai_grok_sampling_types::ReasoningEffort;
+    use xai_chat_state::MockChatPersistence;
+
+    let mut models = indexmap::IndexMap::new();
+    models.insert("gpt-5.6-sol".to_string(), test_model_entry("gpt-5.6-sol"));
+
+    let mut sampling = super::test_sampling_config("gpt-5.6-sol");
+    sampling.reasoning_effort_supported = Some(vec![
+        ReasoningEffort::Low,
+        ReasoningEffort::Medium,
+        ReasoningEffort::High,
+        ReasoningEffort::Xhigh,
+    ]);
+    sampling.reasoning_summary_omit = true;
+
+    let (mock, _persistence_rx) = MockChatPersistence::new();
+    let (event_tx, _event_rx) = tokio::sync::mpsc::unbounded_channel();
+    let token = tokio_util::sync::CancellationToken::new();
+    let parent_chat = xai_chat_state::ChatStateActor::spawn(
+        vec![],
+        sampling,
+        Box::new(mock),
+        event_tx,
+        token,
+    );
+
+    let mut ctx = ctx_with_parent_chat_state(
+        "gpt-5.6-sol",
+        "gpt-5.6-sol",
+        "gpt-5.6-sol",
+        models,
+    );
+    ctx.parent_chat_state = Some(parent_chat);
+
+    let (config, _) = read_parent_sampling_config(&ctx).await;
+    assert_eq!(
+        config.reasoning_effort_supported,
+        Some(vec![
+            ReasoningEffort::Low,
+            ReasoningEffort::Medium,
+            ReasoningEffort::High,
+            ReasoningEffort::Xhigh,
+        ]),
+        "parent catalog-supported effort list must be copied forward"
+    );
+    assert!(
+        config.reasoning_summary_omit,
+        "parent reasoning_summary_omit must be copied forward"
+    );
+}
 #[tokio::test]
 async fn read_parent_sampling_config_keeps_auto_when_catalog_has_slug_key_only() {
     let mut models = indexmap::IndexMap::new();

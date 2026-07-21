@@ -6439,6 +6439,105 @@ reasoning_effort = "low"
         assert!(!effective_classifier_supports_re(None, "missing", &models));
     }
     #[test]
+    fn sampling_config_for_model_threads_codex_reasoning_effort_supported_list() {
+        use xai_grok_sampling_types::{ReasoningEffort, ReasoningEffortOption};
+        let mut model = test_model_entry("gpt-5.6-sol", "https://chatgpt.com/backend-api", None, None, None);
+        model.info.provider = ModelProvider::Codex;
+        model.info.reasoning_efforts = vec![
+            ReasoningEffortOption {
+                id: "low".into(),
+                value: ReasoningEffort::Low,
+                label: "Low".into(),
+                description: None,
+                default: true,
+            },
+            ReasoningEffortOption {
+                id: "medium".into(),
+                value: ReasoningEffort::Medium,
+                label: "Medium".into(),
+                description: None,
+                default: false,
+            },
+            ReasoningEffortOption {
+                id: "high".into(),
+                value: ReasoningEffort::High,
+                label: "High".into(),
+                description: None,
+                default: false,
+            },
+            ReasoningEffortOption {
+                id: "xhigh".into(),
+                value: ReasoningEffort::Xhigh,
+                label: "XHigh".into(),
+                description: None,
+                default: false,
+            },
+        ];
+        let result = sampling_config_for_model(
+            &model,
+            resolve_credentials(&model, None),
+            None,
+            None,
+            None,
+            None,
+        );
+        assert_eq!(
+            result.reasoning_effort_supported,
+            Some(vec![
+                ReasoningEffort::Low,
+                ReasoningEffort::Medium,
+                ReasoningEffort::High,
+                ReasoningEffort::Xhigh,
+            ])
+        );
+    }
+
+    #[test]
+    fn sampling_config_for_model_leaves_grok_reasoning_effort_supported_none() {
+        let mut model = test_model_entry("grok-build", "https://api.x.ai/v1", None, None, None);
+        model.info.provider = ModelProvider::Xai;
+        model.info.reasoning_efforts = vec![];
+        let result = sampling_config_for_model(
+            &model,
+            resolve_credentials(&model, None),
+            None,
+            None,
+            None,
+            None,
+        );
+        assert!(result.reasoning_effort_supported.is_none());
+    }
+
+    #[test]
+    fn sampling_config_for_model_threads_reasoning_summary_omit_flag() {
+        let mut flagged = test_model_entry("gpt-5.6-sol", "https://chatgpt.com/backend-api", None, None, None);
+        flagged.info.provider = ModelProvider::Codex;
+        flagged.info.default_reasoning_summary_none = true;
+        let result = sampling_config_for_model(
+            &flagged,
+            resolve_credentials(&flagged, None),
+            None,
+            None,
+            None,
+            None,
+        );
+        assert!(result.reasoning_summary_omit);
+
+        let mut unflagged = test_model_entry("grok-build", "https://api.x.ai/v1", None, None, None);
+        unflagged.info.provider = ModelProvider::Xai;
+        unflagged.info.default_reasoning_summary_none = false;
+        let result = sampling_config_for_model(
+            &unflagged,
+            resolve_credentials(&unflagged, None),
+            None,
+            None,
+            None,
+            None,
+        );
+        assert!(!result.reasoning_summary_omit);
+    }
+
+    #[test]
     fn sampling_config_uses_model_api_key_over_fallback() {
         let model = test_model_entry(
             "test-model",

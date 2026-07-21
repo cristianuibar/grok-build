@@ -218,7 +218,21 @@ fn write_auth_document(home: &Path, xai: Option<GrokAuth>, codex: Option<GrokAut
     .expect("write auth.json");
 }
 
-fn agent_config_with_byok_and_custom(custom_base_url: &str) -> AgentConfig {
+#[derive(Clone, Copy, Default)]
+struct HarnessModelOpts {
+    /// Pin an API key onto Sol → generic (non-trusted) Responses profile.
+    sol_api_key: bool,
+    /// Force Sol's catalog default effort to Minimal (absent from Sol's menu)
+    /// so the initial-session spawn path must soft-clamp on the first turn.
+    sol_unsupported_effort_default: bool,
+}
+
+fn agent_config_with_byok_and_custom_opts(
+    custom_base_url: &str,
+    opts: HarnessModelOpts,
+) -> AgentConfig {
+    use xai_grok_sampling_types::ReasoningEffort;
+
     let mut cfg = AgentConfig::default();
     let mut byok = ConfigModelOverride::default();
     byok.model = Some(BYOK_MODEL.to_owned());
@@ -242,6 +256,18 @@ fn agent_config_with_byok_and_custom(custom_base_url: &str) -> AgentConfig {
     custom.supported_in_api = Some(true);
     custom.hidden = Some(false);
     cfg.config_models.insert(CUSTOM_MODEL.to_owned(), custom);
+
+    if opts.sol_api_key || opts.sol_unsupported_effort_default {
+        let mut sol = ConfigModelOverride::default();
+        if opts.sol_api_key {
+            sol.api_key = Some("p11-sol-generic-api-key".to_owned());
+        }
+        if opts.sol_unsupported_effort_default {
+            // Minimal is a valid ReasoningEffort but absent from Sol's menu.
+            sol.reasoning_effort = Some(ReasoningEffort::Minimal);
+        }
+        cfg.config_models.insert(CODEX_MODEL.to_owned(), sol);
+    }
     cfg
 }
 
@@ -470,6 +496,46 @@ struct GateHarness {
 
 impl GateHarness {
     async fn start(xai: Option<GrokAuth>, codex: Option<GrokAuth>) -> Self {
+        Self::start_with_opts(xai, codex, HarnessModelOpts::default()).await
+    }
+
+    /// Like [`start`], but pins an API key on Sol so the first turn uses the
+    /// generic (non-trusted) Responses wire profile while keeping Sol catalog
+    /// summary/effort fields (Phase 11 generic-path summary-omit proof).
+    async fn start_sol_generic(xai: Option<GrokAuth>, codex: Option<GrokAuth>) -> Self {
+        Self::start_with_opts(
+            xai,
+            codex,
+            HarnessModelOpts {
+                sol_api_key: true,
+                ..Default::default()
+            },
+        )
+        .await
+    }
+
+    /// Sol catalog default effort forced to Minimal (unsupported by Sol's menu)
+    /// so the initial-session spawn path must soft-clamp on the first turn.
+    async fn start_sol_unsupported_effort_default(
+        xai: Option<GrokAuth>,
+        codex: Option<GrokAuth>,
+    ) -> Self {
+        Self::start_with_opts(
+            xai,
+            codex,
+            HarnessModelOpts {
+                sol_unsupported_effort_default: true,
+                ..Default::default()
+            },
+        )
+        .await
+    }
+
+    async fn start_with_opts(
+        xai: Option<GrokAuth>,
+        codex: Option<GrokAuth>,
+        model_opts: HarnessModelOpts,
+    ) -> Self {
         let _ = rustls::crypto::ring::default_provider().install_default();
         let home = ensure_sandbox().to_path_buf();
         write_auth_document(&home, xai, codex);
@@ -496,7 +562,8 @@ impl GateHarness {
             .current_dir(workdir.path())
             .output();
 
-        let agent_config = agent_config_with_byok_and_custom(&custom_server.url());
+        let agent_config =
+            agent_config_with_byok_and_custom_opts(&custom_server.url(), model_opts);
         let auth_manager = Arc::new(agent_config.create_auth_manager());
         let (gw_tx, gw_rx) = tokio::sync::mpsc::unbounded_channel();
         let gateway = GatewaySender::new(gw_tx);
@@ -588,14 +655,26 @@ impl GateHarness {
     }
 
     async fn new_session_with_model(&self, model_id: &str) -> acp::SessionId {
+        self.new_session_with_model_and_effort(model_id, None).await
+    }
+
+    /// Start a session on `model_id` with an optional sticky `reasoningEffort`
+    /// preference (ACP session/new meta). Used by Phase 11 initial-session
+    /// clamp tests to force an unsupported preference through the spawn path.
+    async fn new_session_with_model_and_effort(
+        &self,
+        model_id: &str,
+        reasoning_effort: Option<&str>,
+    ) -> acp::SessionId {
+        let mut meta = serde_json::json!({ "modelId": model_id });
+        if let Some(effort) = reasoning_effort {
+            meta["reasoningEffort"] = serde_json::json!(effort);
+        }
         let session = tokio::time::timeout(
             Duration::from_secs(60),
             self.client.new_session(
-                acp::NewSessionRequest::new(self.workdir.path().to_path_buf()).meta(
-                    serde_json::json!({ "modelId": model_id })
-                        .as_object()
-                        .cloned(),
-                ),
+                acp::NewSessionRequest::new(self.workdir.path().to_path_buf())
+                    .meta(meta.as_object().cloned()),
             ),
         )
         .await
@@ -1230,6 +1309,94 @@ async fn encrypted_content_400_is_terminal_before_compaction_or_resubmit() {
                 requests[0]
             );
             assert_eq!(requests[0].path, "/v1/responses");
+        })
+        .await;
+}
+
+// ───────────────────────── Phase 11 initial-session wire (MOD-01 / OPS-04) ─────────
+
+/// Initial-session spawn path threads `reasoning_effort_supported` so an
+/// unsupported sticky preference is soft-clamped to the middle of Sol's menu
+/// (index (4-1)/2 → medium) on the first wire request.
+#[tokio::test(flavor = "current_thread")]
+#[serial]
+async fn p11_initial_codex_session_first_turn_wire_clamps_unsupported_effort() {
+    let local = tokio::task::LocalSet::new();
+    local
+        .run_until(async {
+            let (_, codex) = dual_usable_auth();
+            // Catalog default for Sol forced to Minimal (not in Sol's menu).
+            // Spawn threads reasoning_effort_supported; choke point clamps to medium.
+            let h = GateHarness::start_sol_unsupported_effort_default(None, Some(codex)).await;
+            let sid = h.new_session_with_model(CODEX_MODEL).await;
+
+            let before = h.server.request_count();
+            h.server.set_response("p11 clamp first turn reply");
+            let response = h
+                .prompt(&sid, "p11 initial session unsupported effort")
+                .await
+                .expect("first Sol turn must complete");
+            assert!(matches!(response.stop_reason, acp::StopReason::EndTurn));
+
+            let entries = h.agent_turn_inference_requests_after(before);
+            assert!(
+                !entries.is_empty(),
+                "initial Codex session must send at least one inference request"
+            );
+            let body = entries[0]
+                .body
+                .as_ref()
+                .expect("inference request must carry a JSON body");
+            assert_eq!(
+                body.pointer("/reasoning/effort").and_then(|v| v.as_str()),
+                Some("medium"),
+                "unsupported sticky preference must clamp to middle of Sol menu, not pass-through minimal/low; body={body}"
+            );
+            assert_ne!(
+                body.pointer("/reasoning/effort").and_then(|v| v.as_str()),
+                Some("minimal"),
+                "unsupported preference must not pass through unclamped"
+            );
+            assert_ne!(
+                body.pointer("/reasoning/effort").and_then(|v| v.as_str()),
+                Some("low"),
+                "clamp target is middle-of-list medium, not Sol's stock catalog default low"
+            );
+        })
+        .await;
+}
+
+/// Generic (non-trusted) Responses path on Sol: summary omission is driven only
+/// by the catalog `default_reasoning_summary_none` flag threaded through spawn.
+#[tokio::test(flavor = "current_thread")]
+#[serial]
+async fn p11_initial_codex_session_first_turn_wire_omits_summary_via_catalog_flag_on_generic_path() {
+    let local = tokio::task::LocalSet::new();
+    local
+        .run_until(async {
+            // No Codex OAuth — Sol uses the API-key override → Disabled profile.
+            // Catalog still sets default_reasoning_summary_none for Sol.
+            let h = GateHarness::start_sol_generic(None, None).await;
+            let sid = h.new_session_with_model(CODEX_MODEL).await;
+
+            let before = h.server.request_count();
+            h.server.set_response("p11 generic summary-omit reply");
+            let response = h
+                .prompt(&sid, "p11 initial generic path summary omit")
+                .await
+                .expect("first generic Sol turn must complete");
+            assert!(matches!(response.stop_reason, acp::StopReason::EndTurn));
+
+            let entries = h.agent_turn_inference_requests_after(before);
+            assert!(!entries.is_empty(), "generic Sol session must send a request");
+            let body = entries[0]
+                .body
+                .as_ref()
+                .expect("inference request must carry a JSON body");
+            assert!(
+                body.pointer("/reasoning/summary").is_none(),
+                "catalog default_reasoning_summary_none must omit reasoning.summary on generic path; body={body}"
+            );
         })
         .await;
 }

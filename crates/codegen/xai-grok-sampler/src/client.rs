@@ -2510,6 +2510,23 @@ mod tests {
     }
 
     #[test]
+    fn generic_codex_responses_profile_omits_summary_when_catalog_flag_set() {
+        let mut request = responses_history_with_tools();
+        request.reasoning_summary_omit = true;
+        // Effort-supported axis is intentionally independent of summary omit.
+        request.reasoning_effort_supported = None;
+        let value = serialized_response_stream_request(
+            ResponsesWireProfile::Disabled,
+            request,
+            None,
+        );
+        assert!(
+            value["reasoning"].get("summary").is_none(),
+            "catalog flag must omit summary on the generic path: {value}"
+        );
+    }
+
+    #[test]
     fn new_applies_extra_headers() {
         let mut cfg = minimal_config();
         cfg.extra_headers

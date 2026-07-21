@@ -965,6 +965,17 @@ impl acp::Agent for MvpAgent {
         {
             session_sampling.reasoning_effort = Some(effort);
         }
+        // Sticky effort from session/new meta. Accept any parseable preference
+        // onto the sampler config; request-build clamp soft-clamps values that
+        // are outside the model's catalog-supported list (Phase 11). Do not
+        // gate on model_supports_reasoning_effort here — that boolean is true
+        // when the model has a menu, but lookup by routing slug can miss, and
+        // unsupported-but-sticky preferences are the whole point of clamp.
+        if let Some(effort) =
+            xai_grok_sampling_types::parse_reasoning_effort_meta(arguments.meta.as_ref())
+        {
+            session_sampling.reasoning_effort = Some(effort);
+        }
         let (summary_client, summary_model) = self
             .build_summary_client(&session_sampling)?;
         let relay_sync = if let Some(sync) = self

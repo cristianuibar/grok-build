@@ -5330,6 +5330,110 @@ mod tests {
         );
     }
 
+    #[test]
+    fn responses_conversion_omits_effort_when_supported_list_empty() {
+        let req = ConversationRequest {
+            reasoning_effort: Some(crate::ReasoningEffort::High),
+            reasoning_effort_supported: Some(vec![]),
+            ..ConversationRequest::from_items(vec![ConversationItem::user("hi")])
+                .with_model("test")
+        };
+        let resp: crate::rs::CreateResponse = (&req).into();
+        assert!(
+            resp.reasoning.as_ref().unwrap().effort.is_none(),
+            "empty supported list must omit effort"
+        );
+    }
+
+    #[test]
+    fn responses_conversion_clamps_unsupported_effort_to_middle_of_list() {
+        let req = ConversationRequest {
+            reasoning_effort: Some(crate::ReasoningEffort::Xhigh),
+            reasoning_effort_supported: Some(vec![
+                crate::ReasoningEffort::Low,
+                crate::ReasoningEffort::Medium,
+            ]),
+            ..ConversationRequest::from_items(vec![ConversationItem::user("hi")])
+                .with_model("test")
+        };
+        let resp: crate::rs::CreateResponse = (&req).into();
+        assert_eq!(
+            resp.reasoning.as_ref().unwrap().effort,
+            Some(crate::rs::ReasoningEffort::Low)
+        );
+    }
+
+    #[test]
+    fn responses_conversion_keeps_supported_effort_unchanged() {
+        let req = ConversationRequest {
+            reasoning_effort: Some(crate::ReasoningEffort::High),
+            reasoning_effort_supported: Some(vec![
+                crate::ReasoningEffort::Low,
+                crate::ReasoningEffort::Medium,
+                crate::ReasoningEffort::High,
+                crate::ReasoningEffort::Xhigh,
+            ]),
+            ..ConversationRequest::from_items(vec![ConversationItem::user("hi")])
+                .with_model("test")
+        };
+        let resp: crate::rs::CreateResponse = (&req).into();
+        assert_eq!(
+            resp.reasoning.as_ref().unwrap().effort,
+            Some(crate::rs::ReasoningEffort::High)
+        );
+    }
+
+    #[test]
+    fn responses_conversion_grok_path_unchanged_when_supported_field_none() {
+        let req = ConversationRequest {
+            reasoning_effort: Some(crate::ReasoningEffort::Medium),
+            reasoning_effort_supported: None,
+            reasoning_summary_omit: false,
+            ..ConversationRequest::from_items(vec![ConversationItem::user("hi")])
+                .with_model("test")
+        };
+        let resp: crate::rs::CreateResponse = (&req).into();
+        let reasoning = resp.reasoning.as_ref().unwrap();
+        assert_eq!(reasoning.effort, Some(crate::rs::ReasoningEffort::Medium));
+        assert_eq!(
+            reasoning.summary,
+            Some(crate::rs::ReasoningSummary::Concise)
+        );
+    }
+
+    #[test]
+    fn responses_conversion_omits_summary_when_catalog_flag_set() {
+        let req = ConversationRequest {
+            reasoning_effort_supported: None,
+            reasoning_summary_omit: true,
+            ..ConversationRequest::from_items(vec![ConversationItem::user("hi")])
+                .with_model("test")
+        };
+        let resp: crate::rs::CreateResponse = (&req).into();
+        assert!(resp.reasoning.as_ref().unwrap().summary.is_none());
+    }
+
+    #[test]
+    fn responses_conversion_keeps_summary_when_catalog_flag_unset_even_with_supported_effort_list()
+    {
+        let req = ConversationRequest {
+            reasoning_effort_supported: Some(vec![
+                crate::ReasoningEffort::Low,
+                crate::ReasoningEffort::Medium,
+                crate::ReasoningEffort::High,
+                crate::ReasoningEffort::Xhigh,
+            ]),
+            reasoning_summary_omit: false,
+            ..ConversationRequest::from_items(vec![ConversationItem::user("hi")])
+                .with_model("test")
+        };
+        let resp: crate::rs::CreateResponse = (&req).into();
+        assert_eq!(
+            resp.reasoning.as_ref().unwrap().summary,
+            Some(crate::rs::ReasoningSummary::Concise)
+        );
+    }
+
     /// Some Messages API backends omit thinking content unless
     /// `display: "summarized"` is set. `build_messages_request` must include
     /// the field whenever reasoning_effort is set.
