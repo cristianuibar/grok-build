@@ -384,4 +384,25 @@ UI-SPEC locked copy:
 
 ---
 
+## Validation Architecture
+
+**Framework:** `cargo test` (Rust workspace, edition 2024). No new test infrastructure needed — all seams exist (§B8).
+
+**Tiers:**
+
+| Tier | What | Command | Seam |
+|------|------|---------|------|
+| unit | Clamp-rule matrix (supported→keep, unsupported→middle-of-list, empty→default/omit), `max`→`xhigh` alias | `cargo test -p xai-grok-sampling-types --lib` | `types.rs` ReasoningEffort + new clamp helper |
+| wire | `reasoning.effort` emission (supported-only), `reasoning.summary` omit-on-`none`, trusted profile serialization | `cargo test -p xai-grok-sampler --lib` | `client.rs` `trusted_codex_responses_profile_on_off_serializes_exactly` pattern + `conversation.rs` conversion tests |
+| behavior | Mid-session Grok→Codex switch: sticky preference, per-request clamp, no hard-fail | `cargo test -p xai-grok-shell --test model_switch_gate` | `p6_`/`p9_` switch-gate suite |
+| TUI | Clamp notice single-line render via `RenderBlock::system`; silence on no-clamp | `cargo test -p xai-grok-pager --lib` | `dispatch/tests/task_result.rs` scrollback assertions |
+
+**Quick run:** `cargo test -p xai-grok-sampling-types --lib` (~seconds). **Full phase suite:** the four commands above; workspace pager `--lib` baseline is 7142 pass / 0 fail (2026-07-20, commit 1b80800) — must stay green.
+
+**Backstop tests (from UI-SPEC UI Considerations):** one-line clamp notice at max ladder length (overflow/long-text backstop).
+
+**Manual-only:** optional live effort-menu spot-check under dual login (explicitly NOT a phase gate — CONTEXT decision; D-16 untriggered).
+
+---
+
 Context received: p11-research
