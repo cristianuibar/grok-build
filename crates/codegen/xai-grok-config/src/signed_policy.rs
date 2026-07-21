@@ -52,8 +52,43 @@ const fn const_str_eq(a: &str, b: &str) -> bool {
 }
 /// Run `f` over the trusted key set — the compiled-in [`EMBEDDED_DEPLOYMENT_CONFIG_PUBKEYS`],
 /// unless the compile-time-excluded test seam overrides it.
+#[cfg(not(feature = "test-support"))]
 fn with_embedded_keys<R>(f: impl FnOnce(&[(&str, &[u8])]) -> R) -> R {
     f(EMBEDDED_DEPLOYMENT_CONFIG_PUBKEYS)
+}
+/// Test-support variant: uses the [`test_seam`] override when set, else falls back to
+/// the compiled-in keys. Compiled only under `test-support` — production builds keep
+/// the zero-cost path above.
+#[cfg(feature = "test-support")]
+fn with_embedded_keys<R>(f: impl FnOnce(&[(&str, &[u8])]) -> R) -> R {
+    match test_seam::overridden_keys() {
+        Some(keys) => f(&keys.iter().map(|(id, k)| (id.as_str(), k.as_slice())).collect::<Vec<_>>()),
+        None => f(EMBEDDED_DEPLOYMENT_CONFIG_PUBKEYS),
+    }
+}
+/// Test-only seam letting integration tests inject a throwaway trusted key set,
+/// bypassing the compiled-in (empty) [`EMBEDDED_DEPLOYMENT_CONFIG_PUBKEYS`]. Compiled
+/// out entirely unless `test-support` is enabled — production builds never see it.
+#[cfg(feature = "test-support")]
+pub mod test_seam {
+    use std::sync::{Mutex, OnceLock};
+    #[allow(clippy::type_complexity)]
+    static OVERRIDE: OnceLock<Mutex<Option<Vec<(String, Vec<u8>)>>>> = OnceLock::new();
+    /// Install `keys` as the trusted set for the remainder of the process.
+    /// ponytail: no clear/reset — only one call site (one key, once per serial test).
+    pub fn set_embedded_keys(keys: &[(&str, &[u8])]) {
+        let owned = keys
+            .iter()
+            .map(|(id, k)| (id.to_string(), k.to_vec()))
+            .collect();
+        *OVERRIDE
+            .get_or_init(|| Mutex::new(None))
+            .lock()
+            .unwrap() = Some(owned);
+    }
+    pub(super) fn overridden_keys() -> Option<Vec<(String, Vec<u8>)>> {
+        OVERRIDE.get()?.lock().unwrap().clone()
+    }
 }
 /// Sidecar persisted next to the policy so the load-time gate can re-verify it offline.
 pub const SIGNATURE_SIDECAR_FILE: &str = "managed_config.sig.json";
