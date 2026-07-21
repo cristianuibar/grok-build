@@ -1663,6 +1663,25 @@ mod tests {
         assert!(explore.tools.len() < plan.tools.len());
         assert!(plan.tools.len() < gb.tools.len());
     }
+
+    #[test]
+    fn p12_codex_toolset_identity() {
+        let codex = toolset_for_preset("codex").expect("codex preset");
+        let bum = toolset_for_preset("grok-build").expect("bum default preset");
+        let codex_ids: std::collections::HashSet<&str> =
+            codex.tools.iter().map(|tool| tool.id.as_str()).collect();
+        let bum_ids: std::collections::HashSet<&str> =
+            bum.tools.iter().map(|tool| tool.id.as_str()).collect();
+
+        let apply_patch_id = ToolConfig::from(&codex::ApplyPatchTool).id;
+        let search_replace_id = ToolConfig::from(&grok_build::SearchReplaceTool).id;
+
+        assert_eq!(apply_patch_id, "Codex:apply_patch");
+        assert!(codex_ids.contains(apply_patch_id.as_str()));
+        assert!(bum_ids.contains(search_replace_id.as_str()));
+        assert!(!bum_ids.contains(apply_patch_id.as_str()));
+    }
+
     fn grok_computer_exclusive_ids() -> Vec<String> {
         #[allow(unused_mut)]
         let mut ids: Vec<String> = vec![
