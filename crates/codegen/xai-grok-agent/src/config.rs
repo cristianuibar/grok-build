@@ -1668,18 +1668,71 @@ mod tests {
     fn p12_codex_toolset_identity() {
         let codex = toolset_for_preset("codex").expect("codex preset");
         let bum = toolset_for_preset("grok-build").expect("bum default preset");
-        let codex_ids: std::collections::HashSet<&str> =
-            codex.tools.iter().map(|tool| tool.id.as_str()).collect();
         let bum_ids: std::collections::HashSet<&str> =
             bum.tools.iter().map(|tool| tool.id.as_str()).collect();
 
-        let apply_patch_id = ToolConfig::from(&codex::ApplyPatchTool).id;
-        let search_replace_id = ToolConfig::from(&grok_build::SearchReplaceTool).id;
+        let expected_codex_ids = vec![
+            bash_tool_config().id,
+            ToolConfig::from(&codex::CodexReadFileTool).id,
+            ToolConfig::from(&codex::ApplyPatchTool).id,
+            ToolConfig::from(&codex::CodexListDirTool).id,
+            ToolConfig::from(&codex::CodexGrepFilesTool).id,
+            kill_task_tool_config().id,
+            ToolConfig::from(&grok_build::TodoWriteTool).id,
+            task_output_tool_config().id,
+            ToolConfig::from(&search_tool::SearchTool).id,
+            ToolConfig::from(&use_tool::UseTool).id,
+        ];
+        let actual_codex_ids: Vec<&str> = codex.tools.iter().map(|tool| tool.id.as_str()).collect();
+        assert_eq!(
+            actual_codex_ids,
+            expected_codex_ids
+                .iter()
+                .map(String::as_str)
+                .collect::<Vec<_>>(),
+            "Codex preset must remain the exact curated toolset"
+        );
 
-        assert_eq!(apply_patch_id, "Codex:apply_patch");
-        assert!(codex_ids.contains(apply_patch_id.as_str()));
+        let apply_patch = codex
+            .tools
+            .iter()
+            .find(|tool| tool.id == ToolConfig::from(&codex::ApplyPatchTool).id)
+            .expect("Codex preset includes apply_patch");
+        assert_eq!(apply_patch.id, "Codex:apply_patch");
+        assert_eq!(
+            apply_patch.name_override, None,
+            "apply_patch must keep its native model-facing name"
+        );
+        assert_eq!(
+            apply_patch.params_name_overrides, None,
+            "apply_patch must keep its native JSON parameter name"
+        );
+        assert_eq!(
+            serde_json::to_value(codex::apply_patch::ApplyPatchInput {
+                patch: "*** Begin Patch\n*** End Patch".to_string(),
+            })
+            .expect("ApplyPatchInput serializes"),
+            serde_json::json!({ "patch": "*** Begin Patch\n*** End Patch" }),
+            "apply_patch input must remain a JSON object with the `patch` field"
+        );
+
+        let search_replace_id = ToolConfig::from(&grok_build::SearchReplaceTool).id;
         assert!(bum_ids.contains(search_replace_id.as_str()));
-        assert!(!bum_ids.contains(apply_patch_id.as_str()));
+        assert!(
+            !actual_codex_ids.contains(&search_replace_id.as_str()),
+            "Codex preset must not add a competing search_replace edit tool"
+        );
+        assert!(!bum_ids.contains(apply_patch.id.as_str()));
+
+        for deferred_stock_name in ["exec_command", "write_stdin"] {
+            assert!(
+                codex.tools.iter().all(|tool| {
+                    tool.name_override.as_deref() != Some(deferred_stock_name)
+                        && tool.id.rsplit_once(':').map(|(_, id)| id) != Some(deferred_stock_name)
+                }),
+                "Codex preset must not expose deferred stock tool name {deferred_stock_name:?}"
+            );
+        }
     }
 
     fn grok_computer_exclusive_ids() -> Vec<String> {
