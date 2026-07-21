@@ -270,7 +270,12 @@ Plans:
   4. UAT notes no longer list effort as a product blocker when levels are supported
   5. (Optional) Align `reasoning.summary` omit/default with GPT-5.6 catalog (`none`)
 
-**Plans**: TBD (remaining soft-clamp / ultra / summary; re-verify in Phase 9 UAT)
+**Plans**: 2 plans
+
+Plans:
+
+- [ ] 11-01-PLAN.md — Clamp helper + catalog supported-levels threading through SamplerConfig/SamplingConfig/ConversationRequest + choke-point wire emission (effort clamp, summary omit)
+- [ ] 11-02-PLAN.md — Sticky per-session effort preference in the switch handler + ACP response meta threading + TUI clamp notice + UAT-notes closure
 
 ### Phase 12: Codex depth & attribution polish
 
@@ -306,7 +311,7 @@ Phases 10–12 deepen Codex after Phase 9 daily-driver bar; Phase 9 in-phase fix
 | 8. Quiet fork & rebrand polish | 6/6 | Complete    | 2026-07-17 |
 | 9. Daily-driver end-to-end validation | 3/5 | In Progress|  |
 | 10. Codex Responses wire parity | 7/7 | Complete    | 2026-07-18 |
-| 11. Codex effort & catalog fidelity | 0/TBD | Planned |  |
+| 11. Codex effort & catalog fidelity | 0/2 | Planned |  |
 | 12. Codex depth & attribution polish | 0/TBD | Planned |  |
 
 ## Coverage map
