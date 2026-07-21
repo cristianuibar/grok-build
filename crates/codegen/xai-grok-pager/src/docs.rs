@@ -340,8 +340,16 @@ mod tests {
             &["`grok ", "$ grok ", "run `grok", "invoke `grok"];
         const STOCK_GLOBAL_HOME_CLAIMS: &[&str] = &["~/.grok/", "~/.grok`"];
 
-        assert_eq!(USER_GUIDE.len(), 22, "registered user-guide inventory drift");
-        assert_eq!(REFERENCE_DOCS.len(), 2, "registered reference inventory drift");
+        assert_eq!(
+            USER_GUIDE.len(),
+            22,
+            "registered user-guide inventory drift"
+        );
+        assert_eq!(
+            REFERENCE_DOCS.len(),
+            2,
+            "registered reference inventory drift"
+        );
 
         for doc in USER_GUIDE.iter().chain(REFERENCE_DOCS.iter()) {
             let lower = doc.content.to_ascii_lowercase();
