@@ -292,6 +292,45 @@ mod tests {
             return Some("stock Codex CLI impersonation claim");
         }
 
+        let occurrence_has_context =
+            |line: &str, occurrence: regex::Match<'_>, patterns: &[&str]| {
+                patterns.iter().any(|pattern| {
+                    regex::Regex::new(pattern)
+                        .expect("valid allowed-context regex")
+                        .captures_iter(line)
+                        .any(|captures| {
+                            let Some(context) = captures.get(0) else {
+                                return false;
+                            };
+                            let Some(contextual_stock_name) = captures.name("stock") else {
+                                return false;
+                            };
+                            let Some(context_marker) = captures.name("context") else {
+                                return false;
+                            };
+                            let distance_to_context = |stock: regex::Match<'_>| {
+                                if stock.end() <= context_marker.start() {
+                                    context_marker.start() - stock.end()
+                                } else if context_marker.end() <= stock.start() {
+                                    stock.start() - context_marker.end()
+                                } else {
+                                    0
+                                }
+                            };
+                            let current_distance = distance_to_context(occurrence);
+                            let closest_count = stock_name
+                                .find_iter(line)
+                                .map(distance_to_context)
+                                .filter(|distance| *distance <= current_distance)
+                                .count();
+                            contextual_stock_name.start() == occurrence.start()
+                                && contextual_stock_name.end() == occurrence.end()
+                                && stock_name.find_iter(context.as_str()).count() == 1
+                                && closest_count == 1
+                        })
+                })
+            };
+
         for line in markdown.lines() {
             for occurrence in stock_name.find_iter(line) {
                 let bytes = line.as_bytes();
@@ -327,31 +366,36 @@ mod tests {
                             .is_match(line));
                 let model_id = lower_token == "grok-build"
                     || lower_token.starts_with("grok-")
-                    || lower_token.ends_with("-grok");
-                let explicit_model_or_provider = [
-                    r"(?i)(?:xai|x\.ai).{0,40}\bgrok(?: build)?\b",
-                    r"(?i)\bgrok(?: build)?\b.{0,40}(?:xai|x\.ai)",
-                    r"(?i)\b(?:model|models|provider|service|family)\b.{0,30}\bgrok(?: build)?\b",
-                    r"(?i)\bgrok(?: build)?\s+(?:model|models|family)\b",
-                    r"(?i)^\s*/m(?:odel)?\s+grok(?: build)?\b",
-                    r#"(?i)^\s*name\s*=\s*"grok(?: build)?\b"#,
-                ]
-                .iter()
-                .any(|pattern| {
-                    regex::Regex::new(pattern)
-                        .expect("valid allowed provider/model regex")
-                        .is_match(line)
-                });
-                let lineage_or_legal = regex::Regex::new(
-                    r"(?i)\b(?:fork|forked|lineage|ancestry|upstream|derived|legal|notice|harness)\b",
-                )
-                .expect("valid lineage/legal regex")
-                .is_match(line);
-                let named_internal = regex::Regex::new(
-                    r#"(?i)(?:\b(?:internal|identifier|item name)\b.{0,30}\bgrok\b|\bitems\s*=\s*\[[^]]*"grok")"#,
-                )
-                .expect("valid named-internal regex")
-                .is_match(line);
+                    || lower_token.ends_with("-grok")
+                    || lower_token.contains(".grok-");
+                let explicit_model_or_provider = occurrence_has_context(
+                    line,
+                    occurrence,
+                    &[
+                        r"(?i)(?P<context>xai|x\.ai)[^;.!?—]{0,40}(?P<stock>\bgrok(?: build)?\b)",
+                        r"(?i)(?P<stock>\bgrok(?: build)?\b)[^;.!?—]{0,40}(?P<context>xai|x\.ai)",
+                        r"(?i)(?P<context>\b(?:model|models|provider|service|family)\b)[^;.!?—]{0,30}(?P<stock>\bgrok(?: build)?\b)",
+                        r"(?i)(?P<stock>\bgrok(?: build)?\b)\s+(?P<context>model|models|family)\b",
+                        r"(?i)^\s*(?P<context>/m(?:odel)?)\s+(?P<stock>grok(?: build)?\b)",
+                        r#"(?i)^\s*(?P<context>name)\s*=\s*"(?P<stock>grok(?: build)?\b)"#,
+                    ],
+                );
+                let lineage_or_legal = occurrence_has_context(
+                    line,
+                    occurrence,
+                    &[
+                        r"(?i)(?P<context>\b(?:fork|forked|lineage|ancestry|upstream|derived|legal|notice|harness)\b)[^;.!?—]{0,40}(?P<stock>\bgrok(?: build)?\b)",
+                        r"(?i)(?P<stock>\bgrok(?: build)?\b)[^;.!?—]{0,40}(?P<context>\b(?:fork|forked|lineage|ancestry|upstream|derived|legal|notice|harness)\b)",
+                    ],
+                );
+                let named_internal = occurrence_has_context(
+                    line,
+                    occurrence,
+                    &[
+                        r"(?i)(?P<context>\b(?:internal|identifier|item name)\b)[^;.!?—]{0,30}(?P<stock>\bgrok\b)",
+                        r#"(?i)(?P<context>\bitems)\s*=\s*\[[^]]*"(?P<stock>grok\b)"#,
+                    ],
+                );
 
                 if !(hosted_domain
                     || internal_identifier
@@ -495,6 +539,15 @@ mod tests {
             "```bash\n./grok login\n```",
             "Credentials are stored in ~/.grok.",
             "bum is the stock OpenAI Codex CLI.",
+            "bum supports xAI Grok models; launch Grok to begin.",
+            "## xAI/Grok provider support; Grok delivers a terminal coding workflow.",
+            "Select [Grok models](models.md); Grok offers fast edits.",
+            "Use `/model grok-build`; Grok powers the terminal.",
+            "bum is built from the Grok Build harness lineage; Grok helps with refactors.",
+            "Authenticate through https://grok.com; Grok works everywhere.",
+            "The internal identifier `GROK_HOME` remains; launch Grok to begin.",
+            "A project-local `.grok/config.toml` remains; use the Grok CLI for this task.",
+            "The legal notice records Grok Build ancestry; run `grok` now.",
         ];
 
         for fixture in allowed {

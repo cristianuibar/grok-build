@@ -115,6 +115,31 @@ identity_classifier_node() {
   node - "$@" <<'NODE'
 const fs = require("fs");
 
+function occurrenceHasContext(line, occurrence, patterns) {
+  const occurrenceStart = occurrence.index;
+  const occurrenceEnd = occurrenceStart + occurrence[0].length;
+  return patterns.some((pattern) => [...line.matchAll(pattern)].some((match) => {
+    const [contextualStart, contextualEnd] = match.indices.groups.stock;
+    const [contextStart, contextEnd] = match.indices.groups.context;
+    const distanceToContext = (stock) => {
+      const stockStart = stock.index;
+      const stockEnd = stockStart + stock[0].length;
+      if (stockEnd <= contextStart) return contextStart - stockEnd;
+      if (contextEnd <= stockStart) return stockStart - contextEnd;
+      return 0;
+    };
+    const currentDistance = distanceToContext(occurrence);
+    const closestCount = [...line.matchAll(/\bgrok(?: build)?\b/giu)]
+      .map(distanceToContext)
+      .filter((distance) => distance <= currentDistance).length;
+    const stockNamesInContext = [...match[0].matchAll(/\bgrok(?: build)?\b/giu)].length;
+    return contextualStart === occurrenceStart
+      && contextualEnd === occurrenceEnd
+      && stockNamesInContext === 1
+      && closestCount === 1;
+  }));
+}
+
 function classify(markdown) {
   const lines = markdown.split(/\r?\n/);
   for (let index = 0; index < lines.length; index += 1) {
@@ -145,17 +170,26 @@ function classify(markdown) {
       const compatibilityPath = lower.includes(".grok/")
         || lower.startsWith("/etc/grok/")
         || (lower === ".grok" && /\b(?:project|compatibility)\b/i.test(line));
-      const modelId = lower === "grok-build" || lower.startsWith("grok-") || lower.endsWith("-grok");
-      const explicitModelOrProvider = [
-        /(?:xai|x\.ai).{0,40}\bgrok(?: build)?\b/i,
-        /\bgrok(?: build)?\b.{0,40}(?:xai|x\.ai)/i,
-        /\b(?:model|models|provider|service|family)\b.{0,30}\bgrok(?: build)?\b/i,
-        /\bgrok(?: build)?\s+(?:model|models|family)\b/i,
-        /^\s*\/m(?:odel)?\s+grok(?: build)?\b/i,
-        /^\s*name\s*=\s*"grok(?: build)?\b/i,
-      ].some((pattern) => pattern.test(line));
-      const lineageOrLegal = /\b(?:fork|forked|lineage|ancestry|upstream|derived|legal|notice|harness)\b/i.test(line);
-      const namedInternal = /(?:\b(?:internal|identifier|item name)\b.{0,30}\bgrok\b|\bitems\s*=\s*\[[^\]]*"grok")/i.test(line);
+      const modelId = lower === "grok-build"
+        || lower.startsWith("grok-")
+        || lower.endsWith("-grok")
+        || lower.includes(".grok-");
+      const explicitModelOrProvider = occurrenceHasContext(line, occurrence, [
+        /(?<context>xai|x\.ai)[^;.!?—]{0,40}(?<stock>\bgrok(?: build)?\b)/dgiu,
+        /(?<stock>\bgrok(?: build)?\b)[^;.!?—]{0,40}(?<context>xai|x\.ai)/dgiu,
+        /(?<context>\b(?:model|models|provider|service|family)\b)[^;.!?—]{0,30}(?<stock>\bgrok(?: build)?\b)/dgiu,
+        /(?<stock>\bgrok(?: build)?\b)\s+(?<context>model|models|family)\b/dgiu,
+        /^\s*(?<context>\/m(?:odel)?)\s+(?<stock>grok(?: build)?\b)/dgiu,
+        /^\s*(?<context>name)\s*=\s*"(?<stock>grok(?: build)?\b)/dgiu,
+      ]);
+      const lineageOrLegal = occurrenceHasContext(line, occurrence, [
+        /(?<context>\b(?:fork|forked|lineage|ancestry|upstream|derived|legal|notice|harness)\b)[^;.!?—]{0,40}(?<stock>\bgrok(?: build)?\b)/dgiu,
+        /(?<stock>\bgrok(?: build)?\b)[^;.!?—]{0,40}(?<context>\b(?:fork|forked|lineage|ancestry|upstream|derived|legal|notice|harness)\b)/dgiu,
+      ]);
+      const namedInternal = occurrenceHasContext(line, occurrence, [
+        /(?<context>\b(?:internal|identifier|item name)\b)[^;.!?—]{0,30}(?<stock>\bgrok\b)/dgiu,
+        /(?<context>\bitems)\s*=\s*\[[^\]]*"(?<stock>grok\b)/dgiu,
+      ]);
 
       if (!(hostedDomain || internalIdentifier || compatibilityPath || modelId
           || explicitModelOrProvider || lineageOrLegal || namedInternal)) {
@@ -210,6 +244,15 @@ if (mode === "fixtures") {
     "```bash\n./grok login\n```",
     "Credentials are stored in ~/.grok.",
     "bum is the stock OpenAI Codex CLI.",
+    "bum supports xAI Grok models; launch Grok to begin.",
+    "## xAI/Grok provider support; Grok delivers a terminal coding workflow.",
+    "Select [Grok models](models.md); Grok offers fast edits.",
+    "Use `/model grok-build`; Grok powers the terminal.",
+    "bum is built from the Grok Build harness lineage; Grok helps with refactors.",
+    "Authenticate through https://grok.com; Grok works everywhere.",
+    "The internal identifier `GROK_HOME` remains; launch Grok to begin.",
+    "A project-local `.grok/config.toml` remains; use the Grok CLI for this task.",
+    "The legal notice records Grok Build ancestry; run `grok` now.",
   ];
   for (const fixture of allowed) {
     if (classify(fixture)) throw new Error(`allowed identity category was rejected: ${JSON.stringify(fixture)}`);
