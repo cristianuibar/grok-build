@@ -18,14 +18,15 @@
 #   --validation-final        Read-only final map and flag audit
 #
 # Latest focused Rust evidence (credential-free):
-#   2026-07-21 on buffupmedia — GREEN
+#   2026-07-22 at 873298d7605290ea14c1800a8730381dcd5d319a — GREEN
 #   pager-p12=4, agent-p12=1, apply-patch=41, trusted-reconstruct=1,
 #   trusted-wire-headers=1, trusted-header-non-leakage=1,
 #   trusted-to-untrusted-switch=1. This is current Phase 12 execution evidence;
 #   prior Phase 10 live dual-login evidence is context only and was not rerun.
 # Latest static evidence (credential-free):
-#   2026-07-21 on buffupmedia — GREEN; exact inventory 22 guides,
-#   2 references, and 2 entry points; 35 committed Phase 12 paths allowed;
+#   2026-07-22 at 873298d7605290ea14c1800a8730381dcd5d319a — GREEN;
+#   exact inventory 22 guides, 2 references, and 2 entry points; 41 committed
+#   Phase 12 paths allowed; allowlist fixtures 4 allowed and 8 rejected;
 #   both OpenAI/Codex apply-patch notices verified unchanged; originator=bum;
 #   no sampler transport, broad tool rename, competing patch tool, or derived-code
 #   notice trigger. Known unrelated workspace rustfmt drift remains explicit;
