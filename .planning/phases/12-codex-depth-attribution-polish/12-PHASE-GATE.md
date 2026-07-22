@@ -41,6 +41,10 @@ readonly DOCS_RS=crates/codegen/xai-grok-pager/src/docs.rs
 readonly AUTH_DOC=crates/codegen/xai-grok-pager/docs/user-guide/02-authentication.md
 readonly CODEX_AUTH=crates/codegen/xai-grok-shell/src/auth/codex/mod.rs
 readonly NO_LIVE_OAUTH_OR_NETWORK=true
+readonly -a COMMITTED_DIFF_PATHS=(
+  .
+  ":(exclude)$GATE_PATH"
+)
 readonly -a GUIDE_FILES=(
   crates/codegen/xai-grok-pager/docs/user-guide/01-getting-started.md
   crates/codegen/xai-grok-pager/docs/user-guide/02-authentication.md
@@ -489,6 +493,60 @@ is_allowed_phase_diff_file() {
   esac
 }
 
+phase_diff_allowlist_fixture_gate() {
+  local -a expected_allowed=(
+    "$PHASE_DIR/12-REVIEW.md"
+    "$PHASE_DIR/12-REVIEW-FIX.md"
+    "$PHASE_DIR/12-08-PLAN.md"
+    "$PHASE_DIR/12-08-SUMMARY.md"
+  )
+  local -a expected_rejected=(
+    "$PHASE_DIR/12-REVIEW-DRAFT.md"
+    "$PHASE_DIR/12-REVIEW-NOTES.md"
+    "$PHASE_DIR/12-REVIEW-FIX-2.md"
+    "$PHASE_DIR/12-09-PLAN.md"
+    "$PHASE_DIR/12-09-SUMMARY.md"
+    .planning/phases/11-codex-effort-catalog-fidelity/12-REVIEW.md
+    "$PHASE_DIR/12-08-PLAN.txt"
+    "$PHASE_DIR/12-08-SUMMARY.txt"
+  )
+
+  ((${#expected_allowed[@]} == 4)) || fail "allowlist fixture must pin four allowed paths"
+  ((${#expected_rejected[@]} == 8)) || fail "allowlist fixture must pin eight rejected paths"
+
+  local file
+  for file in "${expected_allowed[@]}"; do
+    is_allowed_phase_diff_file "$file" || fail "allowlist fixture rejected expected path: $file"
+  done
+  for file in "${expected_rejected[@]}"; do
+    ! is_allowed_phase_diff_file "$file" || fail "allowlist fixture accepted rejected path: $file"
+  done
+
+  echo "phase diff allowlist fixtures: ${#expected_allowed[@]} allowed, ${#expected_rejected[@]} rejected"
+}
+
+committed_diff_pathspec_fixture_gate() {
+  local -a positive_pathspecs=() exclusion_pathspecs=()
+  local pathspec
+  for pathspec in "${COMMITTED_DIFF_PATHS[@]}"; do
+    case "$pathspec" in
+      :\(exclude\)*) exclusion_pathspecs+=("$pathspec") ;;
+      *) positive_pathspecs+=("$pathspec") ;;
+    esac
+  done
+
+  ((${#positive_pathspecs[@]} == 1)) || fail "content scan must have exactly one positive pathspec"
+  [[ "${positive_pathspecs[0]}" == . ]] || fail "content scan positive pathspec must be ."
+  ((${#exclusion_pathspecs[@]} == 1)) || fail "content scan must have exactly one exclusion pathspec"
+  [[ "${exclusion_pathspecs[0]}" == ":(exclude)$GATE_PATH" ]] ||
+    fail "content scan may exclude only $GATE_PATH"
+  for pathspec in "${exclusion_pathspecs[@]}"; do
+    [[ "$pathspec" != *12-REVIEW* ]] || fail "review path or wildcard excluded from content scan: $pathspec"
+  done
+
+  echo "committed diff pathspec fixtures: 1 positive, 1 gate-only exclusion"
+}
+
 committed_diff_gate() {
   git cat-file -e "$PHASE12_BASE_REF^{commit}" 2>/dev/null || fail "pinned Phase 12 base is missing"
   git merge-base --is-ancestor "$PHASE12_BASE_REF" HEAD || fail "pinned Phase 12 base is not an ancestor of HEAD"
@@ -505,7 +563,7 @@ committed_diff_gate() {
   local committed_diff
   # The gate contains the forbidden-pattern expressions as data, so exclude only
   # this script from content scanning after its path has passed the allowlist.
-  committed_diff=$(git diff --unified=0 "$PHASE12_BASE_REF"..HEAD -- . ":(exclude)$GATE_PATH")
+  committed_diff=$(git diff --unified=0 "$PHASE12_BASE_REF"..HEAD -- "${COMMITTED_DIFF_PATHS[@]}")
   if rg -n '^\+.*(tokio[_-]tungstenite|responses[_-]websocket|supports[_-]websockets?|OpenAI-Beta)' <<< "$committed_diff"; then
     fail "deferred WebSocket implementation or capability flag found in phase diff"
   fi
@@ -726,6 +784,8 @@ verify_scaffold() {
   test -x "$GATE_PATH" || fail "gate is not executable"
   bash -n "$GATE_PATH"
   inventory_gate
+  phase_diff_allowlist_fixture_gate
+  committed_diff_pathspec_fixture_gate
   ((${#EXPECTED_VALIDATION_IDS[@]} == 18)) || fail "expected validation ID inventory drifted"
   [[ "$NO_LIVE_OAUTH_OR_NETWORK" == true ]] || fail "no-network invariant is disabled"
   rg -F -q 'discover_exact()' "$GATE_PATH" || fail "discover_exact helper missing"
@@ -751,7 +811,7 @@ verify_scaffold() {
   if rg -n '^[[:space:]]*(curl|wget|gh|glab)[[:space:]]' "$GATE_PATH"; then
     fail "network-capable command found in gate"
   fi
-  echo "PHASE 12 GATE SCAFFOLD: VERIFIED (exact inventories; no network)"
+  echo "PHASE 12 GATE SCAFFOLD: VERIFIED (exact inventories, allowlist/pathspec fixtures; no network)"
 }
 
 main() {
