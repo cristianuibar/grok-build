@@ -1639,11 +1639,11 @@ async fn async_main() -> Result<()> {
                     println!("{}", serde_json::to_string(&payload)?);
                 } else {
                     println!(
-                        "grok {}",
-                        xai_grok_version::display_version_with_commit(
+                        "{}",
+                        format_version_cmd_line(&xai_grok_version::display_version_with_commit(
                             env!("VERSION_WITH_COMMIT"),
                             xai_grok_update::channel_label(),
-                        )
+                        ))
                     );
                 }
                 return Ok(());
