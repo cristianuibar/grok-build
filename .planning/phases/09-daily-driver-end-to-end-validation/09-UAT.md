@@ -1,3 +1,11 @@
+---
+status: complete
+phase: 09-daily-driver-end-to-end-validation
+source: [09-01-SUMMARY.md, 09-02-SUMMARY.md, 09-03-SUMMARY.md, 10-VALIDATION.md]
+started: 2026-07-18T00:00:00Z
+updated: 2026-07-22T00:00:00Z
+---
+
 # Phase 9 — Live Dual-Login UAT Checklist
 
 **Status:** **REQUIRED gate** (not advisory). Plan 04 fills rows; Plan 05 promotes signed PASS into `09-VERIFICATION.md`.
@@ -151,7 +159,7 @@ Operator confirmed 2026-07-18: Grok/xAI works fine for productive session.
 | 1 | Switch or start on GPT-5.6 catalog entry (default `gpt-5.6-sol`) | Model/provider routes Codex path | ☑ PASS | GPT-5.6 / Codex path; operator live 2026-07-18 (Phase 10 re-verify) |
 | 2 | **Read** a real file in disposable workspace | Tool succeeds on real backend | ☑ PASS | Daily-driver tools usable after wire fixes |
 | 3 | **Edit** or **shell** productive change as supported | Daily-driver tools work | ☑ PASS | Productive turn + tool path OK |
-| 4 | Capability gaps (D-10) | Document honestly if Codex/OpenAI cannot support a Grok-only tool; remaining tools still clear daily-driver bar | ☑ noted | Effort menus present (low…xhigh); ultra/soft-clamp polish → Phase 11. Codex thinking UI often none (expected) |
+| 4 | Capability gaps (D-10) | Document honestly if Codex/OpenAI cannot support a Grok-only tool; remaining tools still clear daily-driver bar | ☑ noted | Effort menus present (low…xhigh); soft-clamp now matches official Codex semantics (middle-of-list, never hard-fails, raw preference never conflated with catalog default, null-vs-absent response handling pinned) per 11-01/11-02 (`p11_*` tests). Ultra-ladder UI remains out of scope (CONTEXT Deferred Ideas — deliberate boundary, not a blocker). Codex thinking UI often none (expected) |
 
 **OPS-04 overall (C1-L5):** ☑ PASS · ⬜ PRODUCT BLOCKER · ⬜ AUTH/ACCOUNT BLOCKED · ⬜ PROVIDER OUTAGE/LIMIT
 
@@ -160,7 +168,7 @@ Operator confirmed 2026-07-18: Grok/xAI works fine for productive session.
 **Historical blockers (resolved — kept for audit, not current status):**
 - System-messages 400 → fixed (system → top-level `instructions`); no longer active.
 - Post-success retry storm → fixed Phase 10 (delta-only terminal / empty retry).
-- Effort catalog gaps → quick catalog fix 2026-07-18; residual ultra polish → Phase 11.
+- Effort catalog gaps → quick catalog fix 2026-07-18; soft-clamp closed in Phase 11 (11-01/11-02, `p11_*`); ultra-ladder UI remains deferred (not a blocker).
 
 ---
 
@@ -267,7 +275,7 @@ Deferred (non-blocking, recorded): with a Codex parent, the Task allow-list reje
 - **OPS-03:** PASS (this file).
 - **OPS-04 / OPS-05:** Promoted to PASS from Phase 10 live operator evidence (cross-ref above) per operator request “fast path.”
 - **OPS-06:** **still operator-only** — both spawn directions not yet run. Do not mark overall hybrid GREEN until OPS-06 PASS + sign-off.
-- **Thinking UI / effort ultra:** capability notes only; not OPS gate failures.
+- **Thinking UI / effort ultra:** thinking UI capability note only; soft-clamp closed in Phase 11 (`p11_*`); ultra-ladder UI deferred (CONTEXT) — not OPS gate failures.
 - Dual OAuth under `~/.bum`: both slots usable at resume (redacted).
 
 ---
@@ -280,7 +288,7 @@ Deferred (non-blocking, recorded): with a Codex parent, the Task allow-list reje
 | Date (UTC) | 2026-07-18 (OPS-03..05); OPS-06: **2026-07-20** |
 | Binary version / commit | OPS-06: `bum 0.1.220-alpha.4 (5b68602)` + uncommitted in-phase fixes (committed immediately after this sign-off; see Run 2 fix list) |
 | Models under test | xAI: `grok-build` / `grok-4.5` / Codex: GPT-5.6 (incl. **gpt-5.6-luna** on OPS-05, **gpt-5.6-sol** on OPS-06 both dirs) |
-| Capability gaps documented | Codex thinking often none; effort ultra polish → Phase 11 |
+| Capability gaps documented | Codex thinking often none; soft-clamp closed Phase 11 (`p11_*`); ultra-ladder UI deferred (not a blocker) |
 | Secrets committed? | **No** (must remain No) |
 | Disposable workspace path | `/tmp/bum-uat-fixture-Fu3LE3` (throwaway fixture file, Option B; cleanup after session close) |
 | Chrome preflight outcome | ☑ PASS (cosmetic) — residual `Usage: grok` / `~/.grok` in `--help` accepted as non-blocking; product line is `bum TUI`; full residual-string rebrand sweep is the immediately following task |
@@ -323,3 +331,40 @@ cargo build -p xai-grok-pager-bin
 # Optional headless single turn (fallback only):
 # ./target/debug/bum -p "read UAT_FIXTURE.txt and summarize" -m grok-build --always-approve
 ```
+
+---
+
+## Current Test
+
+[testing complete]
+
+## Tests
+
+### 1. OPS-03 — xAI productive session
+expected: A live xAI-backed bum session can read a real file and complete an edit or shell action in a disposable workspace.
+result: pass
+
+### 2. OPS-04 — Codex / GPT-5.6 productive session
+expected: A live Codex-backed GPT-5.6 bum session routes through Codex OAuth and completes daily-driver read/edit/tool work.
+result: pass
+
+### 3. OPS-05 — Mid-session provider switch
+expected: The same bum process switches from xAI to a GPT-5.6 model and completes a productive Codex turn without losing ordinary context.
+result: pass
+
+### 4. OPS-06 — Cross-provider spawn in both directions
+expected: Grok parent to Codex child and Codex parent to Grok child both return results while each parent model remains unchanged.
+result: pass
+
+## Summary
+
+total: 4
+passed: 4
+issues: 0
+pending: 0
+skipped: 0
+blocked: 0
+
+## Gaps
+
+[none]

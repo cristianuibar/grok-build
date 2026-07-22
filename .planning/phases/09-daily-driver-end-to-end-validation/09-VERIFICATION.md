@@ -1,12 +1,13 @@
-# Phase 9 Verification — Daily-driver end-to-end validation
-
 ---
 status: passed
+phase: 09-daily-driver-end-to-end-validation
 verified: 2026-07-20
 mode: hybrid (automated residual + live operator UAT)
 operator: Cristian
 nyquist_compliant: true
 ---
+
+# Phase 9 Verification — Daily-driver end-to-end validation
 
 ## Goal-backward check
 
