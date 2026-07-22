@@ -1,7 +1,9 @@
 ---
 status: passed
 phase: 09-daily-driver-end-to-end-validation
-verified: 2026-07-20
+verified: 2026-07-22
+original_live_verification: 2026-07-20
+reverified_against_summaries: 2026-07-22
 mode: hybrid (automated residual + live operator UAT)
 operator: Cristian
 nyquist_compliant: true
@@ -43,3 +45,5 @@ Regression coverage: `xai-grok-sampler` lib tests (165, incl. new unknown-frame 
 ## Verdict
 
 Phase 9 **passed**. OPS-03..06 all live-PASS with operator sign-off (`09-UAT.md` §Sign-off).
+
+The canonical report was refreshed on 2026-07-22 after reconstructing the missing Plan 04/05 summaries and re-running the complete automated phase gate; the underlying live operator evidence remains dated 2026-07-18 and 2026-07-20.

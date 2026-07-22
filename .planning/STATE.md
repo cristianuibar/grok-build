@@ -38,12 +38,12 @@ Progress: [█████████░] 91%
 
 **Velocity:**
 
-- Total plans completed: 51 SUMMARY files (phases 1–8 + 09-01 + 09-02 + 09-03 + 10-01..10-07 complete)
+- Phase 9 now has 5/5 SUMMARY files; the missing Plan 04/05 closeout summaries were reconstructed from signed evidence and fresh gates on 2026-07-22.
 - Phase 5: 6 plans
 - Phase 6: 6 plans
 - Phase 7: 6 plans
 - Phase 8: 6 plans (harness → chrome → residual → auto-update → telemetry/feedback → phase gate) + review-fix
-- Phase 9: 3/5 plans with SUMMARY (09-01 inventory + 09-02 PHASE-GATE auto + 09-03 UAT runbook); live UAT + hybrid close pending
+- Phase 9: 5/5 plans complete; OPS-03..06 live PASS and hybrid gate GREEN
 
 **By Phase:**
 
@@ -57,7 +57,7 @@ Progress: [█████████░] 91%
 | 06 | 6/6 | complete — MOD-03, MOD-06 |
 | 07 | 6/6 | complete — AGENT-01..06 |
 | 08 | 6/6 | complete — ID-02, OPS-01, OPS-02 |
-| 09 | 3/5 SUMMARY | 09-01 + 09-02 + 09-03; OPS-03..06 live still pending |
+| 09 | 5/5 | complete — OPS-03..06 live PASS; hybrid gate GREEN |
 | 10 | 7/7 | complete — wire parity + live OPS-04/OPS-05 PASS; 10-VERIFICATION.md passed 2026-07-18 |
 
 ---
@@ -100,7 +100,7 @@ Progress: [█████████░] 91%
 ### Phase 9 (Daily-driver end-to-end validation)
 
 - [Phase 9]: Plan 02: PHASE-GATE sole SoT full P0/P1/p9_; isolation list dirs then aggregate once; human_uat required unsigned
-- [Phase 9]: Plan 02: automated half GREEN 2026-07-17; live OPS still pending (D-02/D-16); nyquist stays false
+- [Phase 9]: Full automated residual re-run GREEN 2026-07-22; signed live OPS-03..06 PASS; nyquist true
 - [Phase 9]: Plan 03: UAT is a required gate document; fixture green never substitutes live OPS PASS (D-16)
 - [Phase 9]: Plan 03: Preflight script prints steps and fails closed on secrets; never auto-marks PASS (D-15)
 - [Phase 9]: Plan 03: Credential path guards use scoped basenames only — not bare *token* (C3-L1)
@@ -110,7 +110,7 @@ Progress: [█████████░] 91%
 - [Phase 9]: Codex system-role in input → 400 fixed: lift System → `instructions` (match codex-rs)
 - [Phase 9]: Remaining P0 Codex: (1) TUI retries after successful Codex reply — empty/terminal classification; (2) Grok→Codex history replays foreign `encrypted_content` → 400 decrypt; fix in Phase 10
 - [Phase 9]: Thinking UI Codex-only missing — Phase 10/11 (summary often none; encrypted not rendered)
-- [Phase 9]: Hybrid GREEN blocked until OPS-04..06 live PASS after Phase 10; do not fixture-waive (D-16)
+- [Phase 9]: Hybrid GREEN closed — OPS-03..06 live PASS, including both cross-provider spawn directions; fixture evidence was not substituted (D-16)
 - [Milestone]: Phases 10–12 added: wire parity, effort polish, attribution depth — research in `.planning/research/CODEX-RESPONSES-WIRE.md`
 
 ### Phase 10 planning and review protocol
@@ -152,9 +152,9 @@ Progress: [█████████░] 91%
 **Binary preflight:** `target/debug/bum` rebuilt 2026-07-18; operator retested post store=false fix
 **Next:**
 
-1. **Route 0 preferred:** resume Phase 9 remaining plans (09-04 live UAT / 09-05 hybrid close) — do not skip incomplete Phase 9 for Phase 11
-2. Optional: `/gsd-plan-phase 11` only after Phase 9 hybrid green (or explicit skip)
-3. Workspace `cargo fmt` hygiene chore remains deferred (does not block Phase 10 goal)
+1. Phase 9 UAT debt is closed: 5/5 summaries, canonical UAT/verification, hybrid GREEN.
+2. Continue Phase 12 verification and milestone closeout.
+3. Workspace `cargo fmt` hygiene chore remains deferred (does not block the milestone goal).
 
 ## Quick Tasks Completed
 

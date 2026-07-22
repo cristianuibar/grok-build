@@ -335,7 +335,7 @@ Phases 10–12 deepen Codex after Phase 9 daily-driver bar; Phase 9 in-phase fix
 | 6. Mid-session switch & missing-provider gate | 6/6 | Complete    | 2026-07-17 |
 | 7. Cross-provider multi-agent orchestration | 6/6 | Complete    | 2026-07-17 |
 | 8. Quiet fork & rebrand polish | 6/6 | Complete    | 2026-07-17 |
-| 9. Daily-driver end-to-end validation | 3/5 | In Progress|  |
+| 9. Daily-driver end-to-end validation | 5/5 | Complete    | 2026-07-20 |
 | 10. Codex Responses wire parity | 7/7 | Complete    | 2026-07-18 |
 | 11. Codex effort & catalog fidelity | 2/2 | Complete    | 2026-07-21 |
 | 12. Codex depth & attribution polish | 8/8 | Complete    | 2026-07-22 |

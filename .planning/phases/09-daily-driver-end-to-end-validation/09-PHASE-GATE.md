@@ -2,14 +2,17 @@
 phase: 9
 slug: daily-driver-end-to-end-validation
 plan: 02
-status: automated-half-green
+status: green
 gate_started: 2026-07-17T15:14:46Z
 gate_passed_automated: 2026-07-17T15:21:09Z
 requirements: [OPS-03, OPS-04, OPS-05, OPS-06]
 fixture_only: true
 green_only: true
 human_uat_required: true
-nyquist_compliant: false
+human_uat_passed: true
+gate_passed_hybrid: 2026-07-20
+gate_reverified: 2026-07-22
+nyquist_compliant: true
 ---
 
 # Phase 9 — Phase Gate Runbook
@@ -206,10 +209,10 @@ each OPS row before phase gate GREEN. Evidence lives in `09-UAT.md` (Plan 03) an
 
 | Req | Live proof | Signed PASS |
 |-----|------------|-------------|
-| **OPS-03** | Productive xAI tool turn after login (`09-UAT.md` §OPS-03) | ⬜ pending |
-| **OPS-04** | Productive GPT-5.6 tool turn after Codex login (`09-UAT.md` §OPS-04) | ⬜ pending |
-| **OPS-05** | Same-session switch without restart (`09-UAT.md` §OPS-05) | ⬜ pending |
-| **OPS-06** | Cross-provider spawn both dirs live (`09-UAT.md` §OPS-06) | ⬜ pending |
+| **OPS-03** | Productive xAI tool turn after login (`09-UAT.md` §OPS-03) | ✅ PASS |
+| **OPS-04** | Productive GPT-5.6 tool turn after Codex login (`09-UAT.md` §OPS-04) | ✅ PASS |
+| **OPS-05** | Same-session switch without restart (`09-UAT.md` §OPS-05) | ✅ PASS |
+| **OPS-06** | Cross-provider spawn both dirs live (`09-UAT.md` §OPS-06) | ✅ PASS |
 
 ### Human gate fail conditions
 
@@ -229,9 +232,11 @@ each OPS row before phase gate GREEN. Evidence lives in `09-UAT.md` (Plan 03) an
 ## Gate results (filled by Plan 02 Task 2)
 
 **Automated half status:** GREEN  
-**Full gate status:** pending human_uat (D-02 / D-16 — automated GREEN ≠ full gate GREEN)  
+**Full gate status:** GREEN (automated residual + signed live OPS-03..06)
 **Started:** `2026-07-17T15:14:46Z`  
 **Passed (automated):** `2026-07-17T15:21:09Z`  
+**Passed (hybrid):** `2026-07-20`
+**Fresh automated re-verification:** `2026-07-22` — all documented subgroups GREEN
 **Host:** local cargo (debug test profile)  
 **Protocol:** per-subgroup discover ≥1 then execute; list_only both isolation dirs then aggregate once; home_isolation discover-before-execute; `&&` chains only; no intentional-red; no live OAuth
 
@@ -272,6 +277,6 @@ each OPS row before phase gate GREEN. Evidence lives in `09-UAT.md` (Plan 03) an
 
 ## Footer (D-02)
 
-**Automated half GREEN still requires human UAT for full gate GREEN.**  
-`human_uat_required: true` · live OPS rows remain pending until Plans 03–05 ·  
-`nyquist_compliant` stays `false` until hybrid close.
+**Full hybrid gate GREEN.**
+`human_uat_required: true` · `human_uat_passed: true` · OPS-03..06 live PASS ·
+`nyquist_compliant: true`.

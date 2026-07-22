@@ -27,15 +27,14 @@ Capabilities already present in this Grok Build fork (baseline the product build
 - ✓ GPT-5.6 family in mixed model catalog with explicit `provider` binding — Phase 3
 - ✓ Provider-aware request routing (model → backend + credential slot) — Phase 4
 - ✓ Codex / ChatGPT OAuth login, selective logout, dual status, independent refresh (AUTH-02..05) — Phase 5
+- ✓ Multi-provider session UX with fail-closed missing-provider prompts — Phase 6
+- ✓ Quiet local fork with stock auto-update and product telemetry disabled — Phase 8
+- ✓ Daily-driver bar on live xAI and Codex sessions, same-process switching, and cross-provider child tasks — Phase 9 (OPS-03..06)
+- ✓ Cross-provider multi-agent orchestration, including live dual-login proof in both directions — Phases 7 and 9
 
 ### Active
 
 - [ ] **Product rename polish** — Full rebrand of UI chrome, help strings, and remaining “Grok Build” product surface (binary/`BUM_HOME` already ship in Phases 1+)
-- [ ] **Multi-provider session UX** — Switching models anytime continues productively mid-session (catalog + routing + dual auth exist; switch gate is Phase 6)
-- [ ] **Missing-provider gate** — Selecting a model for a provider without valid credentials blocks and prompts that provider’s OAuth login (no silent failure mid-turn)
-- [ ] **Quiet local fork** — Disable xAI auto-update channel and product telemetry so bum does not phone home to x.ai as a stock client
-- [ ] **Daily-driver bar** — After v1, bum is usable as the default coding agent for real work: auth, model switch, tools, and sessions work for both providers
-- ✓ **Cross-provider multi-agent orchestration** — Parent/child can use different providers with correct model, effort, credentials, and backend routing; same-provider spawn/resume/roles/personas preserved — Phase 7 (AGENT-01..06; live dual-login NL E2E → Phase 9)
 
 ### Out of Scope
 
@@ -76,11 +75,11 @@ Capabilities already present in this Grok Build fork (baseline the product build
 | GPT traffic → OpenAI/Codex API with Codex credentials | Real GPT-5.6, not pretending via xAI proxy | Phase 4 — route resolver + dual-key sampling |
 | Grok traffic → existing xAI OAuth + proxy path | Preserve working Grok Build path | Phase 2 auth + Phase 4 routing |
 | Mixed model picker; switch anytime | One session, best model per task | Phase 3 catalog; mid-session gate → Phase 6 |
-| Missing provider → block + prompt login | Fail closed and fixable, not mid-request surprise | — Pending (Phase 6) |
-| Disable xAI auto-update + telemetry | Private daily-driver fork must not phone home as stock client | — Pending |
+| Missing provider → block + prompt login | Fail closed and fixable, not mid-request surprise | Phase 6 — validated |
+| Disable xAI auto-update + telemetry | Private daily-driver fork must not phone home as stock client | Phase 8 — validated |
 | Custom agentic workflows deferred | Keep v1 shippable: identity + models + cross-provider subagents + rebrand | — Pending |
-| Cross-provider subagents in v1 | Parent model/provider must not limit child; NL + tool spawn with model + effort | Phase 7 — automated AGENT-01..06 green; live dual-login E2E Phase 9 |
-| v1 success = feature-complete daily driver | Not a prototype — usable as default coding CLI | — Pending |
+| Cross-provider subagents in v1 | Parent model/provider must not limit child; NL + tool spawn with model + effort | Phase 7 automated + Phase 9 live both-direction PASS |
+| v1 success = feature-complete daily driver | Not a prototype — usable as default coding CLI | Phase 9 — OPS-03..06 live PASS |
 
 ## Evolution
 
@@ -101,4 +100,4 @@ This document evolves at phase transitions and milestone boundaries.
 5. Promote next milestone (e.g. custom agentic workflows) into Active when ready
 
 ---
-*Last updated: 2026-07-17 after Phase 7*
+*Last updated: 2026-07-22 after Phase 9 closeout reconciliation*

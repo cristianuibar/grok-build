@@ -1,15 +1,17 @@
 ---
 phase: 9
 slug: daily-driver-end-to-end-validation
-status: automated-half-green
-nyquist_compliant: false
-wave_0_complete: false
+status: green
+nyquist_compliant: true
+wave_0_complete: true
 wave_0_inventory_ready: true
 created: 2026-07-17
-updated: 2026-07-17
+updated: 2026-07-22
 plan_01_complete: true
 plan_02_complete: true
 plan_03_complete: true
+plan_04_complete: true
+plan_05_complete: true
 ---
 
 # Phase 9 — Validation Strategy
@@ -19,10 +21,11 @@ plan_03_complete: true
 > GREEN ⇔ both halves. Never fixture-only for live OPS rows. No CI live OAuth secrets.
 
 **Plan 01 (inventory):** dual auto/human map finalized + greened `p9_` residual.  
-**Plan 02 (PHASE-GATE):** `09-PHASE-GATE.md` full P0/P1/p9_ automated half GREEN; human UAT still required.  
-**Plan 03 (UAT runbook):** `09-UAT.md` + `scripts/uat-preflight.sh` ready; human rows point at UAT sections.  
-**Still pending:** live execute (Plan 04) / VERIFICATION (Plan 05) / full Wave 0 close.  
-**nyquist_compliant** stays `false` until hybrid gate closes in Plan 05.
+**Plan 02 (PHASE-GATE):** `09-PHASE-GATE.md` full P0/P1/p9_ automated half GREEN.
+**Plan 03 (UAT runbook):** `09-UAT.md` + `scripts/uat-preflight.sh` prepared the live matrix.
+**Plan 04 (live execute):** OPS-03..06 signed PASS, including both OPS-06 directions.
+**Plan 05 (hybrid close):** full automated inventory re-run GREEN on 2026-07-22; canonical verification passed.
+**nyquist_compliant:** `true` — both automated and live halves are GREEN.
 
 ---
 
@@ -82,10 +85,10 @@ Live UAT is **Required** (not advisory). Fixture-green alone never marks live OP
 
 | Req ID | Behavior | Automated residual command(s) | Live UAT proof | D-NN | Status |
 |--------|----------|-------------------------------|----------------|------|--------|
-| **OPS-03** | Productive xAI tool turn after login | Routing/auth residual: prior `provider_routing` / auth store; identity `home_isolation` (`cargo test -p xai-grok-pager-bin --test home_isolation -- --nocapture`); thin `p9_` dual-slot fixture (below) — **auto residual greened Plan 02** via `09-PHASE-GATE.md` | **live UAT required** — `09-UAT.md` §OPS-03 (Plan 03); signed row in `09-VERIFICATION.md` (Plan 05) | D-01, D-02, D-05, D-08, D-09, D-16 | ⬜ pending live (auto residual ✅) |
-| **OPS-04** | Productive GPT-5.6 tool turn after Codex login | Dual-slot residual via `p9_` + prior codex route / `p6_missing_provider`; re-run dual-login fixtures — **auto residual greened Plan 02** | **live UAT required** — `09-UAT.md` §OPS-04 | D-01, D-02, D-05, D-08, D-09, D-16 | ⬜ pending live (auto residual ✅) |
-| **OPS-05** | Same-session switch productive | `discover … p6_dual_login`; `p6_missing_provider`; `switch_changes_next_sample_route` — **auto residual greened Plan 02** (`09-PHASE-GATE.md`) | **live UAT required** — same CLI process xAI ↔ GPT-5.6 without restart (`09-UAT.md` §OPS-05) | D-01, D-02, D-06, D-08, D-09, D-16 | ⬜ pending live (auto residual ✅) |
-| **OPS-06** | Cross-provider spawn both dirs live | Bearer isolation: list both `p7_isolation_*` dirs + aggregate `p7_isolation` once; `p7_eager`; `p7_spawn_missing_provider`; `p7_parent_model` — **auto residual greened Plan 02** | **live UAT required** — both spawn dirs Grok→Codex and Codex→Grok (`09-UAT.md` §OPS-06) | D-01, D-02, D-07, D-08, D-09, D-16 | ⬜ pending live (auto residual ✅) |
+| **OPS-03** | Productive xAI tool turn after login | Routing/auth residual + `home_isolation` + `p9_`; full residual re-run GREEN 2026-07-22 | `09-UAT.md` §OPS-03; operator live PASS 2026-07-18 | D-01, D-02, D-05, D-08, D-09, D-16 | ✅ PASS |
+| **OPS-04** | Productive GPT-5.6 tool turn after Codex login | `p9_`, dual-login, missing-provider and Codex regression coverage GREEN | `09-UAT.md` §OPS-04; operator live PASS 2026-07-18 | D-01, D-02, D-05, D-08, D-09, D-16 | ✅ PASS |
+| **OPS-05** | Same-session switch productive | `p6_dual_login`, `p6_missing_provider`, and `switch_changes_next_sample_route` GREEN 2026-07-22 | `09-UAT.md` §OPS-05; same-process live PASS 2026-07-18 | D-01, D-02, D-06, D-08, D-09, D-16 | ✅ PASS |
+| **OPS-06** | Cross-provider spawn both dirs live | Both direction names present; `p7_isolation`, eager, missing-provider, parent-model and same-provider residuals GREEN 2026-07-22 | `09-UAT.md` §OPS-06; both directions live PASS 2026-07-20 | D-01, D-02, D-07, D-08, D-09, D-16 | ✅ PASS |
 | ALL | Quiet fork still holds | `p8_telemetry` (shell `--lib`); `p8_no_auto_update` + `p8_sentry` (pager-bin); `home_isolation` | n/a (auto residual; chrome checked in UAT preflight) | D-11, D-14 | ✅ greened Plan 02 re-run |
 | ALL | Thin phase discovery smoke | **`p9_daily_driver_dual_slot_readable_and_empty_codex_login_hint`** via `cargo test -p xai-grok-shell --test cross_provider_subagent p9_ -- --nocapture` | n/a (fixture-only; never substitutes live OPS) | D-11, D-12 | ✅ greened Plan 01 (+ re-run Plan 02) |
 
@@ -181,7 +184,7 @@ Cross-link: run from repo root the copy-paste block in **`09-PHASE-GATE.md`** (s
 | D-13 | Validation-first | Plan 01 docs + fixture residual only |
 | D-14 | Deferred PROJECT outs | See Exclusions |
 | D-15 | Cristian runs live UAT | Human path later plans |
-| D-16 | Live OAuth required for green OPS | Live column Required; status pending until Plan 05 |
+| D-16 | Live OAuth required for green OPS | All four signed live rows PASS; no fixture substitution |
 
 ---
 
@@ -192,13 +195,13 @@ Cross-link: run from repo root the copy-paste block in **`09-PHASE-GATE.md`** (s
 - [x] `09-UAT.md` — required live dual-login checklist (not advisory) — **Plan 03**
 - [x] Thin `p9_*` green smoke (0–3 tests) — fixture dual residual / discovery — **Plan 01** (`p9_daily_driver_dual_slot_readable_and_empty_codex_login_hint`)
 - [x] `scripts/uat-preflight.sh` — non-secret helper (path + phase-diff secret gates) — **Plan 03**
-- [ ] After execute: `09-VERIFICATION.md` with OPS rows + model IDs + operator sign-off — **Plan 05**
+- [x] After execute: `09-VERIFICATION.md` with OPS rows + model IDs + operator sign-off — **Plan 05**
 
 **Wave 0 inventory readiness (Plan 01):** VALIDATION + `p9_` complete.  
-**PHASE-GATE automated half (Plan 02):** full P0/P1/p9_ inventory GREEN — live OPS still pending.  
-**UAT runbook + preflight (Plan 03):** ready for operator execute (Plan 04).  
-**Full Wave 0 close** still needs live signed UAT (Plan 04) + VERIFICATION (Plan 05).  
-Frontmatter: `wave_0_inventory_ready: true`; `wave_0_complete: false`; `nyquist_compliant: false` until Plan 05 hybrid close.
+**PHASE-GATE automated half:** full P0/P1/p9_ inventory GREEN, freshly re-run 2026-07-22.
+**UAT:** OPS-03..06 signed live PASS.
+**Full Wave 0 close:** complete through Plan 05.
+Frontmatter: `wave_0_inventory_ready: true`; `wave_0_complete: true`; `nyquist_compliant: true`.
 
 ---
 
@@ -223,10 +226,10 @@ Frontmatter: `wave_0_inventory_ready: true`; `wave_0_complete: false`; `nyquist_
 - [x] Wave 0 inventory for VALIDATION + `p9_` closed
 - [x] PHASE-GATE automated half discover+execute full P0/P1/p9_ inventory — **Plan 02**
 - [x] UAT runbook + non-secret preflight (Plan 03)
-- [ ] Full Wave 0 (signed live UAT + VERIFICATION) — Plans 04/05
-- [ ] No watch-mode flags
-- [ ] Hybrid gate: automated green **and** signed UAT — Plan 05
-- [ ] `nyquist_compliant: true` set in frontmatter when gate closes
+- [x] Full Wave 0 (signed live UAT + VERIFICATION) — Plans 04/05
+- [x] No watch-mode flags
+- [x] Hybrid gate: automated green **and** signed UAT — Plan 05
+- [x] `nyquist_compliant: true` set in frontmatter when gate closes
 
-**Approval:** inventory ready (Plan 01); automated half GREEN (Plan 02); UAT checklist ready (Plan 03); live execute pending
+**Approval:** GREEN — automated residual and signed live UAT halves both pass; canonical verification passed.
 )
