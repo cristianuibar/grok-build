@@ -90,6 +90,14 @@ fn format_pager_banner(version: &str) -> String {
     format!("bum (pager) - v{version}")
 }
 
+/// Product token for `bum version` human-readable output (ID-02 / Phase 12.1).
+const VERSION_CMD_PRODUCT_NAME: &str = "bum";
+
+/// Pure formatter for `Command::Version` non-JSON text (same shape as stock `grok {version}`).
+fn format_version_cmd_line(version_with_channel: &str) -> String {
+    format!("{VERSION_CMD_PRODUCT_NAME} {version_with_channel}")
+}
+
 /// Serve-mode startup product identity line (C1-H1 residual).
 fn agent_server_startup_line() -> &'static str {
     "   bum agent server starting..."
@@ -2229,6 +2237,15 @@ mod tests {
             !banner.contains("Grok Build"),
             "banner must not use stock product name: {banner}"
         );
+    }
+
+    #[test]
+    fn p8_bin_version_cmd_product_is_bum() {
+        let line = format_version_cmd_line("0.1.220-alpha.4 (f3eccc6)");
+        assert_eq!(line, "bum 0.1.220-alpha.4 (f3eccc6)");
+        assert!(line.starts_with("bum "));
+        assert!(!line.starts_with("grok "));
+        assert_eq!(VERSION_CMD_PRODUCT_NAME, "bum");
     }
 
     #[test]
