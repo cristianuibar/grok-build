@@ -10,6 +10,17 @@
 
 You can run one CLI (`bum`), log into both xAI and Codex, and freely switch between Grok and GPT-5.6 models in a real coding session without leaving the tool.
 
+## Current Milestone: v1.1 Upstream Grok Build parity
+
+**Goal:** Bring `bum` up to parity with the latest official `xai-org/grok-build` revision through a controlled, fully researched integration while preserving bum's product contracts.
+
+**Target features:**
+- Pin a reproducible upstream baseline and inventory all divergence despite the repositories currently having no shared Git ancestry.
+- Integrate every applicable upstream feature, fix, test, dependency, documentation, and architecture change.
+- Preserve `bum`, `~/.bum`, dual xAI + Codex OAuth, mixed per-model routing, cross-provider subagents, and quiet/no-phone-home behavior when adapting overlaps.
+- Record every intentionally excluded, superseded, or modified upstream change with rationale and source-revision traceability.
+- Establish repeatable future upstream synchronization and validate CLI/TUI, dual-provider, privacy, and regression contracts.
+
 ## Current State
 
 **Shipped:** v1.0 Multi-provider daily driver (2026-07-22)  
@@ -37,7 +48,9 @@ Baseline fork + v1.0 multi-provider daily driver:
 
 ### Active
 
-- [ ] **Custom agentic workflows** — workflow engine / multi-agent pipelines on the same harness (next milestone)
+- [ ] **Upstream Grok Build parity** — research and integrate all applicable official changes through a pinned upstream revision while preserving bum-specific contracts (v1.1)
+- [ ] **Repeatable upstream synchronization** — retain source-revision traceability, conflict policy, exclusions, and verification gates for future updates (v1.1)
+- [ ] **Custom agentic workflows** — workflow engine / multi-agent pipelines on the same harness (deferred until after the parity milestone)
 
 ### Out of Scope
 
@@ -56,7 +69,8 @@ Baseline fork + v1.0 multi-provider daily driver:
 - **Models:** Mixed catalog — Grok (xAI) + GPT-5.6 Sol/Terra/Luna (Codex) with provider-aware sampling and mid-session switch.
 - **Why this exists:** Single harness that is *our* product surface — not stock `grok` or `codex` — both ecosystems under OAuth, then custom agentic workflows without two CLIs.
 - **Audience:** Cristian / Buff Up Media internal daily driver.
-- **Next vision:** Custom agentic workflows integrated into the same harness (next milestone).
+- **Current vision:** Restore parity with the public official Grok Build history first, without regressing bum's identity, providers, orchestration, or privacy contracts; custom agentic workflows follow afterward.
+- **Upstream topology:** GitHub records this repository as a fork of `xai-org/grok-build`, but current `main` and `upstream/main` have no shared Git ancestor. Integration therefore requires content/history archaeology rather than a blind merge.
 
 ## Constraints
 
@@ -80,7 +94,10 @@ Baseline fork + v1.0 multi-provider daily driver:
 | Mixed model picker; switch anytime | One session, best model per task | Phase 3 catalog; mid-session gate → Phase 6 |
 | Missing provider → block + prompt login | Fail closed and fixable, not mid-request surprise | Phase 6 — validated |
 | Disable xAI auto-update + telemetry | Private daily-driver fork must not phone home as stock client | Phase 8 — validated |
-| Custom agentic workflows deferred | Keep v1 shippable: identity + models + cross-provider subagents + rebrand | — Pending |
+| Custom agentic workflows deferred | Keep v1 shippable: identity + models + cross-provider subagents + rebrand | — Deferred until after v1.1 parity |
+| v1.1 targets full applicable upstream parity | Avoid silently missing upstream fixes/features while retaining explicit exclusions for incompatible stock-product behavior | Approved milestone scope |
+| Preserve bum contracts over conflicting upstream defaults | Product identity, isolated storage, dual providers, cross-provider agents, and privacy are non-negotiable | Approved milestone invariant |
+| Treat upstream as content lineage without a merge base | Current Git histories have no shared ancestor; blind merge/rebase is unsafe | Research must reconstruct baseline and integration method |
 | Cross-provider subagents in v1 | Parent model/provider must not limit child; NL + tool spawn with model + effort | ✓ Phase 7 + Phase 9 live both-direction PASS |
 | v1 success = feature-complete daily driver | Not a prototype — usable as default coding CLI | ✓ Phase 9 OPS-03..06 + Phase 12.1 ID-02 close |
 | Version path product token local const + pure formatter | Match Phase 8 product-name pattern; unit + hermetic + static gates | ✓ Phase 12.1 |
@@ -105,4 +122,4 @@ This document evolves at phase transitions and milestone boundaries.
 5. Promote next milestone (e.g. custom agentic workflows) into Active when ready
 
 ---
-*Last updated: 2026-07-22 after v1.0 milestone*
+*Last updated: 2026-07-22 for v1.1 Upstream Grok Build parity milestone*
