@@ -294,7 +294,7 @@ Plans:
   3. THIRD_PARTY / notices updated if any Codex-derived constants or substantial ports land
   4. Capability gaps vs stock Codex remain honest in docs (D-10)
 
-**Plans**: 7/7 plans executed
+**Plans**: 8/8 plans executed
 
 Plans:
 
@@ -313,6 +313,10 @@ Plans:
 **Wave 3** *(after all Wave 2 plans)*
 
 - [x] 12-07-PLAN.md — Focused credential-free phase gate, notice/scope audit, and Nyquist close
+
+**Wave 4** *(verification gap closure)*
+
+- [x] 12-08-PLAN.md — Exact review-artifact allowlist fixtures and current-HEAD credential-free re-verification
 
 ## Progress
 
@@ -334,7 +338,7 @@ Phases 10–12 deepen Codex after Phase 9 daily-driver bar; Phase 9 in-phase fix
 | 9. Daily-driver end-to-end validation | 3/5 | In Progress|  |
 | 10. Codex Responses wire parity | 7/7 | Complete    | 2026-07-18 |
 | 11. Codex effort & catalog fidelity | 2/2 | Complete    | 2026-07-21 |
-| 12. Codex depth & attribution polish | 7/7 | Complete    | 2026-07-21 |
+| 12. Codex depth & attribution polish | 8/8 | Complete    | 2026-07-22 |
 
 ## Coverage map
 

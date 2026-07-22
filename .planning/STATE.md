@@ -5,16 +5,16 @@ milestone_name: milestone
 current_phase: 12
 current_phase_name: codex-depth-attribution-polish
 status: phase_complete
-stopped_at: Completed 12-07-PLAN.md
-last_updated: "2026-07-21T22:49:26.347Z"
+stopped_at: Completed 12-08-PLAN.md
+last_updated: "2026-07-22T04:29:39.809Z"
 last_activity: 2026-07-22
-last_activity_desc: Phase 12 Plan 07 completed; credential-free attribution gate and Nyquist audit green
+last_activity_desc: Phase 12 Plan 08 completed; fail-closed review artifact gap closed with credential-free evidence
 progress:
   total_phases: 12
   completed_phases: 8
-  total_plans: 66
-  completed_plans: 60
-current_plan: 7
+  total_plans: 67
+  completed_plans: 61
+current_plan: 8
 ---
 
 # Project State
@@ -30,7 +30,7 @@ See: .planning/PROJECT.md (updated 2026-07-17)
 
 Phase: 12 (codex-depth-attribution-polish) — COMPLETE (12-VALIDATION.md: 18/18 green, Nyquist compliant)
 Next: Phase 12 verification and milestone closeout.
-Last activity: 2026-07-22 — Phase 12 Plan 07 completed; credential-free attribution gate and Nyquist audit green
+Last activity: 2026-07-22 — Phase 12 Plan 08 completed; fail-closed review artifact gap closed with credential-free evidence
 
 Progress: [█████████░] 91%
 
@@ -82,12 +82,16 @@ Progress: [█████████░] 91%
 | Phase 10 P04 | ~3h | 2 tasks + trusted-boundary hardening follow-up | 10 files |
 | Phase 10 P05 | ~40min | 2 tasks (auto + live dual-login PASS) | 2 files + SUMMARY |
 | Phase 12 P07 | 20 min | 3 tasks | 3 files |
+| Phase 12 P08 | 12 min | 3 tasks | 3 files |
 
 ## Decisions
 
 - [Phase 12]: Phase 12 closes from credential-free local fixtures; Phase 10 live evidence remains prior context only.
 - [Phase 12]: Existing notice layers remain unchanged because Phase 12 added no substantial derived implementation.
 - [Phase 12]: Workspace rustfmt drift is reported while Phase 12 Rust files require a file-local check-only pass.
+- [Phase 12]: Admit only the two committed Phase 12 review reports and exact Plan 08 artifacts; adjacent planning-like names remain fail-closed.
+- [Phase 12]: Use one shared committed-diff pathspec array for production scanning and its executable gate-only-exclusion invariant.
+- [Phase 12]: Tie closure evidence to the committed Task 1 SHA and observed credential-free counts.
 
 ### Phase 11 (Codex effort & catalog fidelity)
 
@@ -142,8 +146,8 @@ Progress: [█████████░] 91%
 
 ## Session
 
-**Last session:** 2026-07-21T22:49:26.337Z
-**Stopped at:** Completed 12-07-PLAN.md
+**Last session:** 2026-07-22T04:29:39.797Z
+**Stopped at:** Completed 12-08-PLAN.md
 **Resume file:** None
 **Binary preflight:** `target/debug/bum` rebuilt 2026-07-18; operator retested post store=false fix
 **Next:**
