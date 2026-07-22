@@ -2,19 +2,20 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-current_phase: 12
-status: phase_complete
-stopped_at: Completed 12-08-PLAN.md
-last_updated: "2026-07-22T04:39:38.334Z"
+current_phase: 12.1
+status: executing
+stopped_at: Completed 12.1-01-PLAN.md
+last_updated: "2026-07-22T06:04:13.765Z"
 last_activity: 2026-07-22
-last_activity_desc: Phase 12 complete
+last_activity_desc: "Completed 12.1-01 version cmd product formatter + wire-up"
 progress:
-  total_phases: 12
+  total_phases: 13
   completed_phases: 8
-  total_plans: 67
-  completed_plans: 61
-current_phase_name: codex-depth-attribution-polish
-current_plan: 8
+  total_plans: 70
+  completed_plans: 64
+current_phase_name: close-gap-id-02-fix-bum-version-branding
+current_plan: 2
+total_plans_in_phase: 2
 ---
 
 # Project State
@@ -24,13 +25,17 @@ current_plan: 8
 See: .planning/PROJECT.md (updated 2026-07-17)
 
 **Core value:** One CLI (`bum`) can log into both xAI and Codex and freely switch between Grok and GPT-5.6 models in a real coding session — including cross-provider subagent orchestration.
-**Current focus:** Phase 12 — codex-depth-attribution-polish
+**Current focus:** Phase 12.1 — Close gap: ID-02 — fix bum version branding
 
 ## Current Position
 
-Phase: 12
-Next: Phase 12 verification and milestone closeout.
-Last activity: 2026-07-22 — Phase 12 complete
+Phase: 12.1
+Plan: 2 of 2
+Status: executing
+Current Plan: 2
+Total Plans in Phase: 2
+Next: Execute 12.1-02-PLAN.md (hermetic probe + static gate)
+Last activity: 2026-07-22 — Completed 12.1-01 version cmd product formatter + wire-up
 
 Progress: [█████████░] 91%
 
@@ -59,6 +64,7 @@ Progress: [█████████░] 91%
 | 08 | 6/6 | complete — ID-02, OPS-01, OPS-02 |
 | 09 | 5/5 | complete — OPS-03..06 live PASS; hybrid gate GREEN |
 | 10 | 7/7 | complete — wire parity + live OPS-04/OPS-05 PASS; 10-VERIFICATION.md passed 2026-07-18 |
+| 12.1 | 1/2 | in progress — plan 01 version formatter + Command::Version wire-up complete |
 
 ---
 **Per-Plan Metrics:**
@@ -83,6 +89,7 @@ Progress: [█████████░] 91%
 | Phase 10 P05 | ~40min | 2 tasks (auto + live dual-login PASS) | 2 files + SUMMARY |
 | Phase 12 P07 | 20 min | 3 tasks | 3 files |
 | Phase 12 P08 | 12 min | 3 tasks | 3 files |
+| Phase 12.1 P01 | 4min | 2 tasks | 1 files |
 
 ## Decisions
 
@@ -92,6 +99,8 @@ Progress: [█████████░] 91%
 - [Phase 12]: Admit only the two committed Phase 12 review reports and exact Plan 08 artifacts; adjacent planning-like names remain fail-closed.
 - [Phase 12]: Use one shared committed-diff pathspec array for production scanning and its executable gate-only-exclusion invariant.
 - [Phase 12]: Tie closure evidence to the committed Task 1 SHA and observed credential-free counts.
+- [Phase 12.1]: Product label for bum version is bum only; text shape bum {version} via VERSION_CMD_PRODUCT_NAME + format_version_cmd_line
+- [Phase 12.1]: Keep display_version_with_commit + channel_label; JSON version payload stays currentVersion + channel only
 
 ### Phase 11 (Codex effort & catalog fidelity)
 
@@ -146,14 +155,14 @@ Progress: [█████████░] 91%
 
 ## Session
 
-**Last session:** 2026-07-22T04:29:39.797Z
-**Stopped at:** Completed 12-08-PLAN.md
+**Last session:** 2026-07-22T06:04:13.730Z
+**Stopped at:** Completed 12.1-01-PLAN.md
 **Resume file:** None
-**Binary preflight:** `target/debug/bum` rebuilt 2026-07-18; operator retested post store=false fix
+**Binary preflight:** `target/debug/bum` rebuilt 2026-07-22 after version branding wire-up
 **Next:**
 
-1. Phase 9 UAT debt is closed: 5/5 summaries, canonical UAT/verification, hybrid GREEN.
-2. Continue Phase 12 verification and milestone closeout.
+1. Execute 12.1-02-PLAN.md (hermetic product-token probe + static residual gate + VALIDATION).
+2. After 12.1 complete: continue milestone closeout / archive path.
 3. Workspace `cargo fmt` hygiene chore remains deferred (does not block the milestone goal).
 
 ## Quick Tasks Completed
@@ -161,3 +170,9 @@ Progress: [█████████░] 91%
 | Date | Slug | Result |
 |------|------|--------|
 | 2026-07-20 | pager-lib-test-failures | 21 `xai-grok-pager --lib` failures fixed → 7142 pass / 0 fail (1b80800) |
+
+## Accumulated Context
+
+### Roadmap Evolution
+
+- Phase 12.1 inserted after Phase 12: Close gap: ID-02 — fix bum version branding (URGENT)

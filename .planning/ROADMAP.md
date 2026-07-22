@@ -331,11 +331,11 @@ Plans:
   2. Grep/static gates show no remaining hard-coded `grok {version}` / product-label regressions on the version path
   3. Live or hermetic probe reconfirms ID-02 for the version command after the fix
 
-**Plans:** 2 plans
+**Plans:** 1/2 plans executed
 
 Plans:
 
-- [ ] 12.1-01-PLAN.md — Product const + format_version_cmd_line + wire Command::Version + p8_bin unit test
+- [x] 12.1-01-PLAN.md — Product const + format_version_cmd_line + wire Command::Version + p8_bin unit test
 - [ ] 12.1-02-PLAN.md — Hermetic bum version product-token probe + scoped static residual gate + VALIDATION
 
 ## Progress
@@ -360,7 +360,7 @@ Phase 12.1 (INSERTED) closes the residual ID-02 version branding gap before v1.0
 | 10. Codex Responses wire parity | 7/7 | Complete    | 2026-07-18 |
 | 11. Codex effort & catalog fidelity | 2/2 | Complete    | 2026-07-21 |
 | 12. Codex depth & attribution polish | 8/8 | Complete    | 2026-07-22 |
-| 12.1 Close gap: ID-02 version branding | 0/2 | Planned     | — |
+| 12.1 Close gap: ID-02 version branding | 1/2 | In Progress|  |
 
 ## Coverage map
 
