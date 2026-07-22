@@ -1,449 +1,608 @@
-# Architecture Research
+# Architecture Research: Upstream Synchronization for bum v1.1
 
-**Domain:** Multi-provider AI coding-agent CLI (bum on Grok Build fork)
-**Researched:** 2026-07-16
-**Confidence:** HIGH
+**Domain:** Controlled synchronization of a heavily customized Rust application fork
+**Researched:** 2026-07-22
+**Recommendation:** Rebase the *product architecture*, not the existing Git branch: build the integrated tree from the pinned upstream target, port bum's explicit contract overlay onto it, validate by component and invariant, then create one intentional ancestry-bridge commit after the tree is proven.
+**Overall confidence:** HIGH for repository topology and component mapping; MEDIUM for feature-level intent because public upstream history consists of monorepo snapshots rather than feature commits.
 
-## Standard Architecture
+## Executive Decision
 
-### System Overview
+Do **not** run a normal `git merge main upstream/main`, and do not treat `--allow-unrelated-histories` as a conflict-resolution strategy. The two branches have no merge base. Git reports independent roots:
 
-v1 does **not** rewrite the harness. It inserts a thin **provider plane** between the existing session/sampler path and external IdPs/APIs. Agent tools, workspace, ACP, and the Action→Effect TUI loop stay as today.
+- bum root: `c1b5909ec707c069f1d21a93917af044e71da0d7`
+- upstream root: `c68e39f60462f28d9be5e683d9cbe2c57b1a5027`
+- pinned upstream target inspected: `3af4d5d39897855bdcc74f23e690024a5dc05573`
+- upstream monorepo source recorded by `SOURCE_REV`: `0f4d7c91b8b2b408333f6de1e8a76cb8eaa71899`
+- `git merge-base main upstream/main` returns no commit.
 
-```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│  Composition root: `xai-grok-pager-bin` → binary `bum`                        │
-│  Home: `~/.bum` (BUM_HOME / rebranded GROK_HOME default)                      │
-└───────────────────────────────┬─────────────────────────────────────────────┘
-                                │
-          ┌─────────────────────┼─────────────────────┐
-          ▼                     ▼                     ▼
-┌──────────────────┐  ┌────────────────────┐  ┌────────────────────┐
-│ TUI (Pager)      │  │ Agent runtimes     │  │ Leader process     │
-│ model picker +   │  │ stdio/headless/ACP │  │ Unix-socket IPC    │
-│ login UX         │  │                    │  │                    │
-└────────┬─────────┘  └─────────┬──────────┘  └─────────┬──────────┘
-         │                      │                        │
-         └──────────────────────┼────────────────────────┘
-                                ▼
-┌─────────────────────────────────────────────────────────────────────────────┐
-│  Agent runtime (`xai-grok-shell`)                                            │
-│  MvpAgent · session · tools · MCP · hooks                                    │
-│                                                                              │
-│  ┌──────────────────── PROVIDER PLANE (v1 addition) ─────────────────────┐  │
-│  │ ProviderRegistry │ CredentialHub │ ModelCatalog │ RequestRouter        │  │
-│  │  xai | openai    │ multi-slot    │ model→prov.  │ model→SamplerConfig  │  │
-│  │  (+ future)      │ auth managers │ + static GPT │ + bearer per provid. │  │
-│  └────────┬─────────────────┬───────────────┬───────────────┬────────────┘  │
-│           │                 │               │               │               │
-│  ┌────────▼──────┐  ┌───────▼──────┐  ┌─────▼─────┐  ┌──────▼──────────┐  │
-│  │ ModelsManager │  │ Auth (shell) │  │ chat-state│  │ sampler turn    │  │
-│  │ + provider    │  │ multi-scope  │  │ sampling  │  │ reconstruct_    │  │
-│  │ field         │  │ store        │  │ config    │  │ full_config     │  │
-│  └───────────────┘  └──────┬───────┘  └───────────┘  └──────┬──────────┘  │
-└────────────────────────────┼────────────────────────────────┼─────────────┘
-                             │                                │
-              ┌──────────────┴──────────────┐    ┌────────────▼────────────┐
-              ▼                             ▼    ▼                         │
-     ~/.bum/auth.json              xai-grok-sampler                        │
-     (scoped credentials)          SamplingClient + BearerResolver         │
-              │                             │                              │
-     ┌────────┴────────┐           ┌────────┴────────┐                     │
-     ▼                 ▼           ▼                 ▼                     │
- auth.x.ai      ChatGPT/Codex   cli-chat-proxy    OpenAI/Codex API         │
- (xAI OAuth)    OAuth (PKCE)    + xAI tokens      + Codex tokens           │
+The similarly named public roots are also not identical snapshots: their direct tree comparison changes 179 files (`+8,492/-1,184`). Therefore, declaring either root to be the other's parent would assert ancestry that the repository cannot prove.
+
+The safest architecture is an **upstream base plus downstream contract overlay**:
+
+```text
+upstream/main @ pinned SHA
+        │
+        ├── verified upstream tree (all features/fixes present by default)
+        │
+        ├── bum identity + storage overlay
+        ├── bum dual-auth + provider-routing overlay
+        ├── bum Codex wire + cross-provider agent overlay
+        ├── bum privacy/no-phone-home overlay
+        └── adapted docs/tests/packaging overlay
+                │
+                ▼
+       verified integration tree
+                │
+                └── intentional two-parent ancestry bridge
+                    (parent 1: upstream-derived integration line;
+                     parent 2: previous bum main; tree unchanged)
 ```
 
-### Component Responsibilities
+This is preferable to applying 127,000 lines of upstream snapshot deltas onto today's bum tree because it makes upstream inclusion the default and downstream divergence the reviewable exception. It is also preferable to blindly replaying all 478 local commits: planning commits and superseded implementation steps are not a durable product patch stack. Port only the behavior required by bum's invariant ledger, using local commits as provenance and implementation evidence.
 
-| Component | Responsibility | Typical Implementation | Monorepo touch points |
-|-----------|----------------|------------------------|------------------------|
-| **ProviderRegistry** | Known providers (v1: `xai`, `openai_codex`); static metadata (issuer, default base URL, login capability) | Small enum + const table; no plugin loading in v1 | New module under `xai-grok-shell/src/auth/provider.rs` (or leaf `xai-grok-providers` only if shared) |
-| **CredentialHub** | Multi-provider credential ownership: load/store, proactive refresh, 401 recovery **per provider** | Façade over N `AuthManager`-like slots sharing one `auth.json` file lock | Extend `shell/src/auth/` (`manager.rs`, `storage.rs`, `model.rs`); keep `xai-grok-auth` traits |
-| **Provider login flows** | Interactive + device-code OAuth per provider | xAI: existing `oidc/` + `device_code.rs`; Codex: new ChatGPT OAuth (browser/PKCE, optional device-code) | `shell/src/auth/flow.rs`, `oidc/`, new `auth/codex/` or `auth/openai/`; CLI `login` in `pager-bin` / `pager/cli.rs` |
-| **ModelCatalog** | Unified picker list: Grok (proxy/remote) + GPT-5.6 family (bundled/static); each entry carries `provider` | Extend `ModelInfo` / `ModelEntry` + merge in `ModelsManager` | `shell/src/agent/models.rs`, `agent/config.rs` (`ModelInfo`), `xai-grok-models/default_models.json` |
-| **RequestRouter** | `model_id` → `ModelEntry` → base URL, API backend, credential slot, URL-derived headers | Pure function path on existing `sampling_config_for_model` / `resolve_credentials` | `agent/config.rs` (`resolve_credentials`, `sampling_config_for_model`, `inject_url_derived_headers`); `session/acp_session_impl/sampler_turn.rs` |
-| **Provider-aware BearerResolver** | Per-request bearer from the **correct** provider manager (not a single global token) | `Arc<dyn BearerResolver>` that keys off current model’s provider | `xai-grok-sampler` trait unchanged; new resolver in shell (`AuthManagerBearerResolver` → multi) |
-| **Missing-provider gate** | Block model select / first sample if provider has no usable credential; prompt that provider’s login | Gate in `set_model` / session set_model path + TUI effect | `ModelsManager::set_current_model_id`, ACP `session/set_model`, pager dispatch/effects for login modal |
-| **Product home / branding** | Isolate identity under `~/.bum`; binary `bum`; no xAI update/telemetry phone-home | Path default + env rename; feature flags / no-ops on update & Mixpanel | `xai-grok-config` paths, `shell/util/grok_home`, `xai-grok-update`, `xai-grok-telemetry`, pager-bin |
+After the one-time bridge, future synchronization becomes conventional: the previous pinned upstream SHA is a real ancestor of the integrated line, so the next upstream snapshot can be merged or rebased in an isolated integration branch with a real three-way base. The ancestry bridge must happen **only after** the resolved tree and ledger pass all gates; it is a history-recording operation, not a way to obtain the resolved content.
 
-## Recommended Project Structure
+## Observed Repository Topology
 
-v1 prefers **in-place extension** of existing crates over a parallel rewrite tree.
+| Fact | Observation | Architectural consequence |
+|---|---|---|
+| Shared ancestry | None | Ordinary merge/rebase semantics are unavailable for this first sync. |
+| Local history | 479 commits at inspection time | Contains product work plus extensive planning/verification history; not a clean downstream patch queue. |
+| Upstream history | 7 public commits | Each post-root commit is a large “Synced from monorepo” snapshot, not a feature-sized change. |
+| Upstream root → target | 872 files, `+127,391/-54,015` | Snapshot-by-snapshot cherry-picking still creates very large, mixed-domain changes. |
+| Current bum ↔ target | 1,345 paths overall, `+138,194/-151,932` | Endpoint diff is useful for inventory, not as a patch to apply wholesale. |
+| Root snapshot skew | 179 files, `+8,492/-1,184` | The same root subject does not establish content identity or parentage. |
+| New crate | `crates/codegen/xai-workflow` | Must be integrated as a new leaf/domain crate before shell and pager workflow consumers. |
+| Generated root manifest | `Cargo.toml` says it is auto-generated | Root dependency/member changes are generated export artifacts; do not make it the first manual integration surface. |
+| Export provenance | `SOURCE_REV` exists upstream | Preserve both the public export SHA and monorepo `SOURCE_REV` in the sync ledger. |
 
-```
-crates/codegen/
-├── xai-grok-pager-bin/          # Composition root; ship binary name `bum`
-├── xai-grok-pager/              # TUI: multi-provider picker labels, login effects
-│   └── src/app/{dispatch,effects,cli}.rs
-├── xai-grok-shell/              # Primary integration surface for provider plane
-│   └── src/
-│       ├── auth/
-│       │   ├── provider.rs      # NEW: ProviderId, ProviderMeta, CredentialHub
-│       │   ├── model.rs         # AuthStore scopes; extend for openai_codex scopes
-│       │   ├── manager.rs       # Keep; hub owns one manager (or logical slot) per provider
-│       │   ├── storage.rs       # Shared auth.json lock; multi-key map (already BTreeMap)
-│       │   ├── oidc/ + device_code.rs   # xAI (existing)
-│       │   ├── openai/          # NEW: ChatGPT/Codex OAuth + refresher
-│       │   ├── flow.rs          # login CLI: `bum login xai` / `bum login openai`
-│       │   └── credential_provider.rs   # ShellAuthCredentialProvider → hub-aware
-│       ├── agent/
-│       │   ├── models.rs        # Catalog merge + auth gate on set_current_model_id
-│       │   └── config.rs        # ModelInfo.provider; resolve_credentials by provider
-│       └── session/acp_session_impl/
-│           └── sampler_turn.rs  # reconstruct_full_config: provider-scoped bearer
-├── xai-grok-models/
-│   └── default_models.json      # Grok + GPT-5.6 entries with provider + base_url
-├── xai-grok-sampler/            # Prefer zero/low change: already URL-agnostic
-├── xai-grok-auth/               # Keep AuthCredentialProvider / HttpAuth traits
-├── xai-grok-config/             # Default home ~/.bum; BUM_HOME / GROK_HOME alias
-└── xai-grok-update|telemetry/   # Disable phone-home for bum product builds
+The upstream target is internally coherent: its generated root manifest, per-crate manifests, and lockfile were exported together. Starting the integration branch at that commit preserves this coherence. Starting from current bum and copying directories incrementally would repeatedly break the dependency graph and makes it easy to miss deleted or moved files.
+
+## Recommended Durable Architecture
+
+### 1. Upstream baseline layer
+
+A read-only baseline ref pins the exact public export:
+
+```text
+refs/remotes/upstream/main          moving discovery ref
+refs/tags/bum-upstream/<date-or-rev> immutable reviewed target
+integration/upstream-<short-sha>     temporary working branch from pinned target
 ```
 
-### Structure Rationale
+The baseline is the source of truth for applicable upstream content. It must be validated standalone before any bum overlay is added. Record:
 
-- **Provider plane lives in shell auth + agent config:** That is where OAuth, catalog, and sampling config already meet. A new top-level crate is optional later; v1 should not pay for monorepo cycle thrash.
-- **Sampler stays URL-agnostic:** `SamplerConfig` already carries `base_url`, `api_backend`, `auth_scheme`, `extra_headers`, and `bearer_resolver`. Routing belongs **above** the sampler (shell), not inside HTTP stream parsers.
-- **Auth store remains one file with multi-key map:** `AuthStore = BTreeMap<String, GrokAuth>` already scopes by issuer/API-key key. Add stable keys for Codex (e.g. `openai::chatgpt` / issuer URL) rather than inventing a second file format.
-- **Models carry provider:** `ModelInfo` already has per-model `base_url` and `api_backend`. Adding `provider: ProviderId` makes routing explicit and enables the missing-provider gate without URL sniffing.
+- upstream repository URL;
+- public export commit SHA and tree SHA;
+- upstream `SOURCE_REV` monorepo SHA;
+- fetch timestamp;
+- prior reviewed upstream SHA (none for this first lineage);
+- Cargo.lock checksum and toolchain version;
+- release/changelog range represented by the snapshot.
 
-## Architectural Patterns
+Do not use a moving `upstream/main` directly in plans or verification evidence after the pin.
 
-### Pattern 1: Provider as credential + endpoint boundary
+### 2. Bum contract overlay layer
 
-**What:** A provider is the unit of (1) OAuth/API identity, (2) default inference base URL, (3) catalog source. Models never “float” without a provider; credentials never cross providers.
+Treat the following as protected architecture contracts, not scattered textual edits:
 
-**When to use:** Always for multi-provider agent CLIs. Matches industry “connection / connected-account” OAuth modeling and Claude Code’s compile-time provider set.
+| Contract | Owning boundaries | Required outcome |
+|---|---|---|
+| Product identity | pager-bin, pager chrome/docs, version/update helpers | Binary and product are `bum`; no user-facing regression to stock `grok`. |
+| Home isolation | `xai-grok-config`, `xai-grok-paths`, shell home helpers, test support | `BUM_HOME` / `~/.bum` remains authoritative; no stock home credential/session sharing. |
+| Dual authentication | `xai-grok-shell/src/auth`, composition-root login/logout/status | Independent xAI and Codex OAuth slots, refresh, selective logout, and corruption-safe sibling preservation. |
+| Provider identity and routing | model catalog, agent config, sampler reconstruction | Every built-in model has an explicit inference provider; model selection chooses endpoint and credential per request. |
+| Codex wire behavior | sampling types, sampler, shell turn reconstruction | Trusted Codex Responses request shape, account attribution, effort handling, encrypted-reasoning cleanup, and tolerant streaming remain intact. |
+| Cross-provider children | subagent coordinator and `Task` backend | Child model/provider is resolved independently of parent; missing provider fails before pending work is created. |
+| Quiet operation | update, telemetry, feedback, composition root | Stock update and product telemetry paths remain hard-off/default-off as specified; no silent reactivation through new upstream entry points. |
 
-**Trade-offs:** Clear isolation and fail-closed gates; slightly more bookkeeping than a single global session token.
+Keep this overlay small in *conceptual ownership*, even where its implementation touches many files. Every final difference from the pinned upstream tree must map to one of these contracts, an upstream adaptation, or an explicit exclusion.
 
-**Example (conceptual):**
+### 3. Synchronization control plane
 
-```rust
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub enum ProviderId {
-    Xai,
-    OpenaiCodex,
-}
+Add a durable, machine-readable ledger plus a human summary. Recommended logical artifacts (exact paths may be chosen during planning):
 
-pub struct ProviderMeta {
-    pub id: ProviderId,
-    pub display_name: &'static str,
-    /// Stable auth.json scope key
-    pub auth_scope: &'static str,
-    pub default_base_url: &'static str,
-}
-
-// ModelInfo gains:
-// provider: ProviderId  // required for routing + login gate
+```text
+sync/
+├── upstream.toml                 # current/previous public SHA, tree, SOURCE_REV
+├── ledger.toml                   # change-unit dispositions and evidence
+├── invariants.toml               # protected bum contracts + validation commands
+├── path-map.toml                 # moves/splits and ownership boundaries
+├── allowlist.toml                # expected final upstream↔bum tree differences
+└── reports/<target-sha>/         # generated inventory/coverage reports
 ```
 
-### Pattern 2: Per-model routing, not session-global “mode”
+A ledger entry should be addressable by a stable change-unit ID rather than only a pathname:
 
-**What:** The active model id alone decides which provider credentials and base URL are used. Session history is shared; transport is not.
-
-**When to use:** Product requirement: mixed picker, switch anytime (PROJECT.md). Avoids “Codex mode” / “Grok mode” session forks.
-
-**Trade-offs:** Conversation may mix models with different tool/API quirks; document provider gaps instead of forking session storage in v1.
-
-**Existing seam:** `ModelsManager::set_current_model_id` + session rebuild of sampling config (`reconstruct_full_config` in `sampler_turn.rs`).
-
-### Pattern 3: Multi-slot credential hub over single AuthManager API
-
-**What:** Keep the battle-tested `AuthManager` (file lock, refresh chain, sleep gate, proactive refresh) but own **one slot per provider**. A thin `CredentialHub` resolves `ProviderId → Arc<AuthManager>` (or one manager with multi-scope active map — prefer **one manager per provider** if scope/refresher coupling is tight).
-
-**When to use:** Dual OAuth with independent refresh tokens (xAI vs ChatGPT). Critical: refresh-token reuse bugs are provider-local; do not serialize all providers behind one in-memory “current” bearer only.
-
-**Trade-offs:** Two proactive refresh loops; still one on-disk `auth.json` with shared flock (already designed for multi-scope map).
-
-**Codex/community warning:** Access/refresh tokens must persist after refresh; failed disk write → token-family revocation loops. Reuse existing `write_auth_json` atomic/fallback path.
-
-### Pattern 4: Catalog merge (remote xAI + static OpenAI)
-
-**What:** xAI catalog continues via cli-chat-proxy `/v1/models` + cache. OpenAI/GPT models ship from `default_models.json` (and/or config.toml) with `provider = openai_codex` and OpenAI base URL. Unified picker = merge + sort/group.
-
-**When to use:** OpenAI does not expose the same entitlement-gated proxy catalog; static GPT-5.6 family is the v1 source of truth (IDs confirmed at implement time against current OpenAI/Codex availability).
-
-**Trade-offs:** GPT list is not live-entitlement-filtered; missing-provider gate + runtime 401/403 UX cover entitlement failures.
-
-### Pattern 5: Missing-provider gate (fail closed)
-
-**What:** Before accepting a model switch or starting a turn, require `CredentialHub::has_usable(provider)`. On failure, return a typed error the TUI maps to “Login to OpenAI / xAI” rather than a mid-stream 401.
-
-**When to use:** Always for OAuth-backed models. Aligns with PROJECT.md “no silent failure mid-turn.”
-
-**Trade-offs:** Extra check on hot path (cheap disk/memory snapshot). Do not auto-open browser without user action in headless mode — surface CLI `bum login openai` instead.
-
-## Data Flow
-
-### Login flow (provider-scoped)
-
-```
-User: `bum login openai` | TUI login action
-    ↓
-CLI/TUI → shell auth::flow (provider argument)
-    ↓
-Provider login strategy
-  · xai  → existing OIDC/device-code against auth.x.ai
-  · openai_codex → ChatGPT OAuth (browser loopback / device-code if needed)
-    ↓
-Tokens written to ~/.bum/auth.json under provider scope key
-    ↓
-CredentialHub hot-swaps that provider’s AuthManager
-    ↓
-Optional: refresh model catalog (xAI only); GPT static list already present
-    ↓
-TUI/CLI shows provider as authenticated
+```toml
+[[change]]
+id = "UP-3af4d5-workflow-engine"
+source_public_from = "a881e670..."
+source_public_to = "3af4d5d3..."
+source_monorepo = "0f4d7c91..."
+paths = ["crates/codegen/xai-workflow/**", "crates/codegen/xai-grok-shell/src/session/workflow/**"]
+disposition = "adapted" # imported | adapted | excluded | superseded | pending
+reason = "Route workflow children through bum provider-aware subagent preflight"
+bum_commits = ["<integration commit sha>"]
+contract_ids = ["AGENT-CROSS-PROVIDER", "AUTH-PROVIDER-GATE"]
+validation = ["cargo test -p xai-workflow", "<workflow cross-provider gate>"]
 ```
 
-**Codex reference shape (external, do not share path):** stock CLI caches ChatGPT OAuth under `~/.codex/auth.json` (`tokens.access_token`, `refresh_token`, `account_id`) with auto-refresh. bum **copies the pattern**, stores under `~/.bum`, never reads/writes `~/.codex` in v1.
-
-### Model switch flow
-
-```
-User selects model in picker / ACP session/set_model
-    ↓
-ModelsManager resolves ModelEntry (id → provider, base_url, api_backend, …)
-    ↓
-Missing-provider gate:
-  if !CredentialHub.has_usable(entry.provider) → typed error → login prompt
-    ↓
-set_current_model_id + model_switch_watch bump
-    ↓
-Session rebuilds SamplingConfig via sampling_config_for_model + provider bearer
-    ↓
-Next turn uses new transport; conversation history unchanged
-```
-
-### Chat turn / sampling flow
-
-```
-ACP session/prompt
-    ↓
-ChatStateActor records user message
-    ↓
-sampler_turn::reconstruct_full_config
-    · read chat-state SamplingConfig (model, base_url, api_backend, …)
-    · resolve provider from ModelCatalog
-    · attach BearerResolver bound to that provider’s AuthManager
-    · inject_url_derived_headers only for cli-chat-proxy URLs (xAI path)
-    ↓
-SamplerActor / SamplingClient POST stream
-  · Grok  → cli-chat-proxy (or configured proxy) + xAI bearer + X-XAI-Token-Auth
-  · GPT   → OpenAI/Codex API base + ChatGPT OAuth bearer (no xAI proxy headers)
-    ↓
-Stream events → ACP notifications → TUI
-    · 401 → provider-scoped refresh_after_unauthorized → single retry
-    · permanent auth fail → surface re-login for that provider only
-```
-
-### State management
-
-| State | Owner | Multi-provider note |
-|-------|--------|---------------------|
-| TUI AppView / AgentView | pager dispatch | Show multi-provider auth badges; login modals |
-| Current model id | `ModelsManager` | Must map to provider for gates |
-| Conversation | `ChatStateActor` | Shared across providers |
-| Credentials | `CredentialHub` + `~/.bum/auth.json` | Per-provider scopes; shared file lock |
-| Sampler concurrent requests | `SamplerActor` | Config is per-request; mid-flight switch should not mutate in-flight auth mid-stream (existing cancel/switch patterns) |
-
-### Key Data Flows (summary)
-
-1. **Login:** User → flow → provider OAuth → scoped `auth.json` → hub.
-2. **Catalog:** defaults JSON (+ remote xAI fetch) → `ModelsManager` → picker ACP models.
-3. **Route:** model id → entry.provider + base_url → credentials + headers → `SamplerConfig`.
-4. **Turn:** session → reconstruct_full_config → sampler stream → tools → continue.
-
-## Scaling Considerations
-
-This is a **local single-user CLI**, not a multi-tenant gateway. Scale concerns differ:
-
-| Scale | Architecture adjustments |
-|-------|--------------------------|
-| 1 developer, 2 providers (v1) | CredentialHub + static GPT catalog; no plugin providers |
-| More providers later | Add `ProviderId` variants + login strategy trait; keep sampler URL-agnostic |
-| Multi-account per provider | Deferred (PROJECT out of scope); would need account picker + multi-scope keys |
-| Shared team policy | Existing managed config / signed policy remain xAI-centric; do not block OpenAI path on xAI team policy |
-
-### Scaling Priorities
-
-1. **First bottleneck:** Wrong-token routing (xAI bearer on OpenAI URL or vice versa) — fix with explicit provider on model + hub-scoped resolver.
-2. **Second bottleneck:** Refresh-token races across processes — keep existing `auth.json.lock` and per-scope refresh semantics.
-3. **Third bottleneck:** Provider-specific API/tool gaps (web search via proxy, etc.) — document and fall back; do not dual-implement every tool in v1.
-
-## Anti-Patterns
-
-### Anti-Pattern 1: Global “current provider” mode
-
-**What people do:** One session flag `provider = openai` that filters the whole picker and auth.
-
-**Why it's wrong:** Breaks mixed Grok/GPT workflow; forces re-login mental model; fights existing per-model `base_url` design.
-
-**Do this instead:** Per-model `provider` field; route every sample from the active model entry.
-
-### Anti-Pattern 2: Single AuthManager “current bearer” for all backends
-
-**What people do:** Keep one in-memory token; swap on model switch.
-
-**Why it's wrong:** Loses the other provider’s proactive refresh; racey under concurrent subagent/aux sampling; 401 recovery refreshes the wrong IdP.
-
-**Do this instead:** Multi-slot hub; `BearerResolver` closes over the provider required by the request’s model.
-
-### Anti-Pattern 3: Sniffing provider from base_url alone
-
-**What people do:** `if url.contains("openai") { … }`.
-
-**Why it's wrong:** Custom proxies, enterprise gateways, and test doubles break; headers like `X-XAI-Token-Auth` must only attach for true cli-chat-proxy (already special-cased in `inject_url_derived_headers`).
-
-**Do this instead:** Explicit `ProviderId` on catalog entries; URL helpers remain for header injection only where already correct.
-
-### Anti-Pattern 4: Reading stock `~/.codex` or `~/.grok`
-
-**What people do:** Import credentials for convenience.
-
-**Why it's wrong:** Violates isolated `~/.bum` product identity; couples refresh/logout to foreign CLIs; PROJECT.md explicitly out of scopes sharing in v1.
-
-**Do this instead:** Full re-login into `~/.bum/auth.json`.
-
-### Anti-Pattern 5: Implementing multi-provider inside the sampler crate
-
-**What people do:** Hard-code OpenAI vs xAI branches in `SamplingClient`.
-
-**Why it's wrong:** Sampler is deliberately URL-agnostic; branches belong in shell config assembly. Sampler already supports Responses/ChatCompletions/Messages backends.
-
-**Do this instead:** Build correct `SamplerConfig` in shell; leave stream parsers generic.
-
-### Anti-Pattern 6: Auto-login browser on every missing credential in headless/CI
-
-**What people do:** Open OAuth whenever a sample fails.
-
-**Why it's wrong:** Breaks non-interactive agents; surprising UX.
-
-**Do this instead:** Typed `ProviderAuthRequired { provider }` error; interactive TUI offers login; headless prints `bum login <provider>`.
-
-## Integration Points
-
-### External Services
-
-| Service | Integration Pattern | Notes |
-|---------|---------------------|-------|
-| xAI OAuth (`auth.x.ai`) | Existing device/browser OIDC in `shell/src/auth` | Preserve; store under bum home scopes |
-| cli-chat-proxy (`cli-chat-proxy.grok.com/v1`) | Bearer + `X-XAI-Token-Auth` via `inject_url_derived_headers` | Grok models only |
-| ChatGPT / Codex OAuth | Browser PKCE (+ device-code option) | Mirror Codex CLI behavior; isolate credentials in `~/.bum` |
-| OpenAI/Codex inference API | OpenAI-compatible HTTP via existing `async-openai` / sampler streams | Prefer Responses/ChatCompletions already in sampler; confirm GPT-5.6 model ids at implement time |
-| xAI auto-update / Mixpanel / Sentry | Disable or no-op for bum product identity | Quiet local fork requirement |
-
-### Internal Boundaries
-
-| Boundary | Communication | Notes |
-|----------|---------------|-------|
-| Pager ↔ Shell | ACP JSON-RPC | Model list, set_model, auth status notifications |
-| Shell auth ↔ Sampler | `SamplerConfig` + `BearerResolver` | No auth crate dependency from sampler |
-| ModelsManager ↔ CredentialHub | Provider gate on set_model | Do not fetch OpenAI catalog via xAI proxy |
-| Session ↔ Tools | Unchanged registry | Provider gaps documented; tools stay workspace-local |
-| Config paths ↔ All | `grok_home()` / `BUM_HOME` | Default `~/.bum`; env override for tests |
-
-### Monorepo touch map (implementation checklist)
-
-| Concern | Primary files/crates |
-|---------|----------------------|
-| Home rename | `xai-grok-config/src/paths.rs`, shell `util/grok_home`, env docs |
-| Auth store multi-provider | `shell/src/auth/{model,storage,manager,flow}.rs` |
-| Codex OAuth | new `shell/src/auth/openai/*` + refresher in `auth/refresh/` |
-| Model provider field + GPT list | `agent/config.rs` `ModelInfo`, `xai-grok-models/default_models.json` |
-| Catalog merge | `agent/models.rs` |
-| Credential resolve | `agent/config.rs` `resolve_credentials`, `sampling_config_for_model` |
-| Turn-time bearer | `session/acp_session_impl/sampler_turn.rs` |
-| Login CLI | `pager/src/app/cli.rs`, `pager-bin` Command routing |
-| TUI gate UX | `pager` dispatch/effects + auth views |
-| Quiet fork | `xai-grok-update`, `xai-grok-telemetry`, Mixpanel init sites |
-| Binary name | `xai-grok-pager-bin` `[[bin]]` / install scripts → `bum` |
-
-## Suggested Build Order
-
-Dependencies flow **identity → credentials → catalog → routing → UX → quiet/rebrand polish**. Do not start with TUI chrome before routing is testable headless.
-
-### Phase A — Product identity & home (foundation)
-
-1. Default home `~/.bum` (`BUM_HOME` / dual-read `GROK_HOME` only if needed for tests — prefer clean cut).
-2. Binary rename path to `bum` (composition root wiring).
-3. Smoke: config, sessions, auth path resolve under new home.
-
-**Unblocks:** All credential and session persistence.
-
-### Phase B — Provider types & multi-slot credential store
-
-1. Introduce `ProviderId` + auth scope keys.
-2. CredentialHub / multi-scope load: xAI continues to work unchanged as `ProviderId::Xai`.
-3. Keep single-provider behavior green (regression).
-
-**Unblocks:** Second OAuth without rewriting sampler.
-
-### Phase C — Model catalog provider tagging + static GPT models
-
-1. Add `provider` (and OpenAI `base_url`) to `ModelInfo` / defaults JSON.
-2. Merge static GPT-5.6 family into `ModelsManager` available list.
-3. Picker can list both; selection may still fail sample until D/E.
-
-**Unblocks:** Explicit routing keys.
-
-### Phase D — Request routing & provider-scoped bearer
-
-1. `resolve_credentials` / `sampling_config_for_model` branch on `provider`.
-2. `reconstruct_full_config` attaches hub resolver for that provider.
-3. Ensure `inject_url_derived_headers` never tags OpenAI URLs with xAI proxy headers.
-4. Unit tests: Grok config vs GPT config golden headers/base_url/auth.
-
-**Unblocks:** Correct traffic once Codex tokens exist.
-
-### Phase E — Codex / ChatGPT OAuth login
-
-1. Implement login + refresh + logout for `openai_codex`.
-2. CLI: `bum login openai` / `bum logout openai` (and keep xAI).
-3. Persist tokens in `~/.bum/auth.json` with existing lock writers.
-4. Headless-friendly status command.
-
-**Unblocks:** Real GPT-5.6 turns.
-
-### Phase F — Missing-provider gate + TUI/CLI UX
-
-1. Gate on `session/set_model` and pre-turn.
-2. TUI: prompt provider login; show dual auth status.
-3. Headless: clear error + exit code / ACP error object.
-
-**Unblocks:** Daily-driver safety (fail closed).
-
-### Phase G — Quiet fork + rebrand polish
-
-1. Disable auto-update channel and product telemetry phone-home.
-2. Remaining UI strings / docs chrome as `bum`.
-3. End-to-end daily-driver validation: dual login, switch mid-session, tools both paths.
-
-**Unblocks:** v1 ship criteria.
-
-### Dependency graph
-
-```
-A home/binary
- └── B provider + multi-slot auth
-      └── C catalog + provider on models
-           └── D routing + bearer
-                ├── E Codex OAuth  (can overlap late C/D once scopes exist)
-                └── F gate + UX (needs D + E for full path)
-                     └── G quiet + polish
+Required dispositions:
+
+- **imported** — upstream behavior retained without bum-specific semantic changes;
+- **adapted** — upstream behavior retained but implementation changed to preserve a bum contract;
+- **excluded** — upstream behavior intentionally omitted, with user/product/security rationale;
+- **superseded** — bum already has equal or stronger behavior, with evidence;
+- **pending** — temporary only; release gate requires zero pending entries.
+
+Coverage must work in two directions:
+
+1. every upstream changed path/change cluster in the reviewed range has a disposition;
+2. every final difference between the integrated tree and pinned upstream has a contract/exclusion owner.
+
+A prose checklist alone is insufficient for 872 upstream-touched paths.
+
+## Component Mapping
+
+### Stable one-to-one boundaries
+
+| Upstream component | bum component | Integration policy |
+|---|---|---|
+| `xai-grok-pager-bin` | Same crate, ships `bum` | Import upstream routing/doctor/wrap changes; reapply binary, version, login-provider, update, and privacy composition. Keep it wiring-only. |
+| `xai-grok-pager` | Same TUI crate | Import Action→Dispatch→Effect changes and new views; adapt chrome, auth state, model badges, and commands. Never bypass dispatch purity. |
+| `xai-grok-pager-render` / minimal / PTY harness | Same crates | Import terminal, clipboard, tmux, minimal-mode and harness changes as a coherent presentation cluster. Update expected product text, not behavior, in fixtures. |
+| `xai-grok-shell` | Same runtime crate | Primary conflict surface. Integrate upstream session/auth/config/workflow changes, then port provider and Codex contracts into the new module layout. |
+| `xai-chat-state` | Same actor crate | Import persistence/compaction/request-building changes before shell session adaptation. Preserve bum's provider-switch cleanup semantics at shell boundaries. |
+| `xai-grok-sampler` / sampling types | Same transport crates | Import upstream stream/error/client changes first; then reapply Codex wire profile and tolerant SSE behavior with provider-specific tests. |
+| `xai-grok-tools` | Same registry/implementation crate | Import upstream tool, scheduler, notification and workflow tools; merge bum Task model/effort schema rather than replacing it. |
+| `xai-grok-workspace` | Same host crate | Import permission, execution-risk, FS/worktree changes as security-sensitive foundations. |
+| config/hooks/MCP/sandbox/plugin crates | Same leaf/domain crates | Integrate before shell/pager consumers; preserve bum home/privacy only at their explicit seams. |
+
+### New upstream boundaries
+
+| New boundary | Responsibility | Consumers | Bum adaptation |
+|---|---|---|---|
+| `xai-workflow` | Rhai workflow engine, metadata validation, host request protocol, budget, journal, outcomes | shell workflow manager | New crate. Keep provider-agnostic; do not put OAuth/routing in the engine. |
+| `shell/session/workflow/*` | Per-session run manager, host service, registry, store, tracker, notifications | ACP session, tools, pager | New orchestration layer. Its `SpawnAgent` conversion must use bum's existing child model/provider preflight. |
+| `shell/session/workflows/deep_research.rhai` | Built-in workflow definition | workflow registry | New data artifact. Rebrand user paths and validate models are not xAI-only assumptions. |
+| `tools/.../workflow` | Model-callable workflow launch schema and handle | shell session resource bridge | New tool. Preserve depth limits, sandbox/permission behavior, and provider-independent child model resolution. |
+| pager workflow ingest/blocks/views/overlay | Workflow progress presentation and controls | pager ACP handler, tasks pane | New presentation path. Keep ACP updates and dispatch/effects boundaries; no workflow runtime state in the TUI. |
+| `shell/auth/auth_provider.rs` | Command-backed rotating credential helper for custom models | model config and turn auth recovery | New generic mechanism. It complements, but must not replace or absorb, bum's built-in xAI/Codex OAuth store. |
+| `shell/agent/model_providers.rs` | Named custom gateway defaults (`[model_providers.<id>]`) | model override resolver | New operator-facing connection template. Distinguish it from bum's built-in provider identity enum. |
+| `config/managed_text/*` | Validated managed text/config transactions | config/shell consumers | New config foundation; import before consumers and review home/path behavior. |
+| `session/storage/relocation/*` | Session discovery/relocation after cwd or host changes | persistence/resume | New persistence flow; validate all paths remain under bum home. |
+| diagnostics + `doctor_cmd` | Terminal/tmux/clipboard/keyboard probes and fixes | composition root and slash command | New user feature; rebrand commands/paths and ensure fixes never install stock `grok` aliases. |
+
+### Semantic naming collision to resolve deliberately
+
+Upstream introduces string-valued `model_provider` / `[model_providers.<id>]` for reusable custom gateway connection settings. bum already uses `ModelProvider` as a closed built-in inference-ownership enum (`Xai`, `Codex`) that determines credentials, trusted endpoints, wire policy, and login gates.
+
+These are **not the same abstraction**:
+
+```text
+Built-in inference ownership: Xai | Codex
+    decides OAuth slot, trusted-host policy, wire profile, login gate
+
+Named model connection profile: "gateway" | "corp-proxy" | ...
+    supplies inherited base_url, headers, env keys, helper reference
 ```
 
-**Parallelism:** A is serial first. B then unlocks C and E in parallel once scope keys exist; D needs C; F needs D+E; G can start mid-F for update/telemetry kill-switches.
+Do not collapse them or infer one from the other. Recommended durable naming:
+
+- rename/express bum's closed concept as `InferenceProvider` (or `CredentialProvider`) in the integrated architecture;
+- retain upstream's `model_provider: Option<String>` as `ModelConnectionProfileId` internally if renaming is practical;
+- resolve connection-profile defaults first, then determine immutable inference ownership for built-in catalog models;
+- custom models remain BYOK/helper-driven unless explicitly and safely bound to a built-in provider;
+- endpoint trust remains an independent check—provider labels alone must never authorize bearer forwarding.
+
+Likewise, upstream's command-backed `auth_provider` is a custom credential-helper reference, while bum's xAI/Codex OAuth is first-party product authentication. Both can feed a request credential, but they have different storage, refresh, trust, and login UX. Keep separate types and define precedence explicitly.
+
+## Renamed, Split, Moved, and Removed Files
+
+Important detected moves/splits include:
+
+| Old path/behavior | Upstream target | Integration instruction |
+|---|---|---|
+| `pager/src/views/settings_modal.rs` | `views/settings_modal/{mod,state,input,render,tests}.rs` | Port bum settings/auth/model UI changes into the owning submodules. Do not resurrect the monolith. |
+| `pager/src/diagnostics.rs` | `diagnostics/mod.rs` plus `model`, `fix`, `view`, `probes/*`; separate `doctor_cmd/*` | Map old terminal setup behavior into doctor/probe command boundaries. |
+| `/terminal-setup` command | Removed/superseded by `/doctor` and `grok doctor` | Preserve upstream replacement, rebrand to `bum doctor`; record supersession rather than exclusion. |
+| sticky minimal screen-mode test | `minimal_cli_screen_mode_does_not_persist.rs` | This is a behavior change, not a pure rename; accept upstream semantics unless a bum contract says otherwise. |
+| endline wake marker test | markerless wakeup test | Treat as changed transcript protocol/UX; update downstream fixtures deliberately. |
+| minimal transcript thinking test | committed thinking-body behavior | Preserve new upstream behavior while revalidating Codex reasoning rendering. |
+| large goal classifier/strategist tests | Removed/restructured goal/session flow | Do not copy deleted tests back automatically; map their assertions to current upstream owners where still required. |
+| built-in shell skill files | Several removed; workflow-oriented discovery added | Inventory semantic replacement before classifying deletion. Paths alone are insufficient. |
+| textarea logic | New `editor.rs`, `editor_keys.rs`, `editor_tests/*` alongside `textarea.rs` | Port bum input behavior at editor abstraction, not into legacy monolith. |
+
+Run rename detection at multiple thresholds for each future sync, but store explicit accepted mappings in `path-map.toml`. Git's rename detection is heuristic; a split such as settings modal cannot be represented by a single rename record.
+
+## Data Flow Changes and Required Adaptations
+
+### A. Model request and authentication flow
+
+Upstream target adds custom connection profiles and command-backed auth helpers to the existing session-token/BYOK gate:
+
+```text
+raw config
+  → parse [model_providers.*] and [auth_provider.*]
+  → resolve per-model inherited endpoint/headers/helper
+  → memoize model auth facts
+  → reconstruct SamplingConfig before turn
+  → optional helper mint or xAI session bearer
+  → sampler
+```
+
+bum's integrated flow must become:
+
+```text
+catalog/config model
+  → apply named connection-profile defaults
+  → resolve built-in InferenceProvider (Xai/Codex/custom)
+  → enforce endpoint trust and credential-source precedence
+  → provider-specific availability/preflight gate
+  → reconstruct SamplingConfig
+       • Xai: xAI slot/resolver + xAI URL-derived headers
+       • Codex: ensure_fresh Codex OAuth + trusted account/wire headers
+       • custom: static/env key or upstream command-backed helper
+  → sampler with no cross-provider credential leakage
+  → provider-specific 401 recovery only
+```
+
+The highest-risk files are `shell/src/agent/config.rs`, `auth/{storage,manager,model,meta,credential_provider}.rs`, `session/acp_session_impl/sampler_turn.rs`, `sampler/src/client.rs`, and `sampling-types/src/conversation.rs`. These files have substantial changes on both lines and must be integrated as one provider-runtime phase with golden request tests.
+
+### B. Workflow and child-agent flow
+
+Upstream workflow execution is correctly split:
+
+```text
+Workflow tool / slash command
+  → Session WorkflowManager
+  → xai-workflow Rhai engine
+  → WorkflowHostRequest::SpawnAgent(AgentOpts)
+  → shell host_service builds SubagentRequest
+  → existing subagent event/coordinator
+  → result + journal + tracker
+  → ACP WorkflowUpdated
+  → pager workflow block/tasks pane
+```
+
+Do not add provider logic to `xai-workflow`. Adapt at `host_service` where `AgentOpts.model` becomes `SubagentRuntimeOverrides.model`. Before emitting `SubagentEvent::Spawn`, call the same effective-model resolution and missing-provider preflight used by bum's `Task` path. This guarantees:
+
+- a workflow can choose Grok or GPT independently of its parent;
+- missing Codex/xAI credentials reject before a workflow child appears pending;
+- child effort/wire profile follows the effective child model;
+- no parent bearer is inherited merely because the workflow was launched by that parent;
+- workflow retries preserve provider isolation.
+
+Add a workflow-specific contract test in both directions (Grok parent → Codex child and Codex parent → Grok child), not just existing Task tests.
+
+### C. Session lifecycle and persistence flow
+
+Upstream adds eager JSONL durability, mirrored/external session state, relocation across directories/hosts, workflow journals, stop gates, and queue combination. These all interact with bum's `~/.bum` isolation and mixed-provider history.
+
+Integrate in this dependency order:
+
+1. `xai-chat-state` commands/persistence/compaction changes;
+2. shell storage JSONL and relocation modules;
+3. ACP session spawn/state fields and run loop;
+4. stop gate, prompt queue, notifications and workflow manager;
+5. model-switch/provider-reasoning cleanup;
+6. pager resume/session UI.
+
+Validate that relocation searches/imports compatible foreign sessions only where explicitly intended, while bum's own durable state and credentials remain rooted under `~/.bum`. Session import compatibility must not become credential import.
+
+### D. TUI flow
+
+The Action → Dispatch → Effect → TaskResult architecture remains the controlling pattern. Upstream adds workflow updates, doctor, external-editor prompt editing, input/editor extraction, usage/cost status, new terminal/wrap behavior, and extensive task/status changes.
+
+Mapping rules:
+
+- ACP notifications enter through `app/acp_handler`, including `WorkflowUpdated`;
+- reducers own modal/status/workflow snapshot state;
+- effects own diagnostics fixes, editor subprocesses, list fetches, and auth refresh;
+- shell owns actual workflow/session/provider state;
+- render crates own terminal, clipboard, tmux and appearance behavior;
+- pager-bin only routes `bum doctor`, wrap, login and other process-level commands.
+
+Do not resolve TUI conflicts by taking entire local versions of `app_view.rs`, `actions.rs`, `effects/mod.rs`, or dispatch tests; that would silently discard upstream state variants.
+
+## Merge-Risk Hotspots
+
+Measured overlap (both upstream and bum changed the path from their respective roots) includes at least 220 paths. Highest-risk architectural hotspots include:
+
+| Hotspot | Why risky | Required review seam |
+|---|---|---|
+| `shell/src/agent/config.rs` | Upstream model/auth-provider profiles overlap bum provider enum/catalog/routing | Config parse matrix + model→provider→endpoint→credential goldens. |
+| `shell/src/auth/storage.rs` and manager | Upstream auth refactors overlap bum multi-slot RMW, Codex OAuth and corruption recovery | Dual-slot persistence, lock, refresh, logout, sibling-preservation tests. |
+| `session/.../sampler_turn.rs` | Upstream helper auth and retry overlap Codex ensure-fresh/wire/header policy | Captured HTTP requests for xAI, Codex, custom helper and hostile endpoint. |
+| `sampler/src/client.rs` / Responses stream | Upstream error fixes overlap bum Codex Responses fidelity | Stored/non-stored Responses, empty terminal frames, tolerant SSE and attribution. |
+| `agent/subagent/*` and Task backend | Upstream child/workflow work overlaps cross-provider gates and effort | Four parent/child provider combinations plus missing-slot failures. |
+| `pager-bin/src/main.rs` | Upstream doctor/wrap/login/update routing overlaps binary identity and quiet mode | CLI snapshot/static gates; no application logic added. |
+| pager `app_view`, dispatch/effects, task-result tests | High upstream UI churn overlaps auth/model badges and product text | Reducer tests first, then PTY; never bulk choose one side. |
+| `xai-grok-update` / telemetry | Upstream update and metrics changes can reintroduce egress | Compile/static entry-point inventory plus runtime no-egress probe. |
+| `default_models.json` | Upstream Grok model changes overlap GPT-5.6 catalog | Schema validation, unique IDs, provider tags, effort sets and default model policy. |
+| generated `Cargo.toml` / `Cargo.lock` | New crate, Rhai, async-openai patch and downstream wire dependencies interact | Resolve manifests first; lockfile last; clean locked build. |
+
+Large upstream-only areas (workflow engine, managed text, diagnostics, relocation, editor extraction, auto-GC) should be imported rather than rewritten. Large overlapping files require semantic adaptation, not “ours/theirs” conflict selection.
+
+## Approach Comparison
+
+| Approach | Initial correctness | Reviewability | Future sync | Recommendation |
+|---|---:|---:|---:|---|
+| `git merge --allow-unrelated-histories upstream/main` into current main | Low: empty/common-root semantics create repository-wide add/add ambiguity | Low | Creates ancestry, but from an untrustworthy first resolution | Reject. The flag bypasses a safety check; it does not reconstruct the missing base. |
+| Synthetic graft/`git replace --graft` then merge | Medium only if the asserted parent is proven | Medium | Fragile/local; replace refs can be absent or disabled and have Git caveats | Use only as a temporary analysis experiment, never as shared synchronization state. |
+| Apply six upstream snapshot patches to current bum | Medium | Medium-low: each snapshot mixes hundreds of files and unrelated features | Histories remain unrelated unless bridged later | Not preferred. Useful only as a comparison oracle against the final result. |
+| Cherry-pick upstream public commits | Low-medium | Low: commits are monorepo export snapshots, not atomic feature commits | Histories still awkward; conflicts huge | Reject as primary method. |
+| Replay all bum commits onto upstream target | Medium-low | Low: includes planning, intermediate red/green states, fixes of fixes and obsolete code layouts | Could create upstream ancestry | Reject mechanically. Use commit history only to reconstruct contract-level patches and tests. |
+| **Start at pinned upstream target, port a curated bum contract overlay, then bridge histories after validation** | **High** | **High: upstream inclusion by default, downstream deviations explicit** | **High: real upstream ancestor for subsequent syncs** | **Recommended.** |
+| Continue forever with content imports + ledger, no ancestry bridge | High if disciplined | High | Medium: every future sync remains endpoint/patch archaeology | Acceptable fallback if history policy forbids a bridge, but higher long-term cost. |
+
+### Why the recommended bridge is not an unsafe merge
+
+The content is resolved and committed on an upstream-derived integration line first. The final bridge should record two parents while retaining the already-validated integration tree unchanged. Conceptually:
+
+```text
+U0--U1--...--UT--B1--B2--...--Bn--J
+                                      \
+L0--...-------------------------------LM
+```
+
+`UT` is the pinned upstream target; `B1..Bn` are curated bum adaptations; `LM` is old bum main; `J` records both histories but has the same tree as `Bn`. The exact safe Git plumbing/merge command should be scripted and reviewed in its own plan. The commit message and ledger must explicitly state that `J` is a **verified content-migration ancestry join**, not evidence that the independent roots were historically identical.
+
+This preserves old bum history, makes `UT` a real ancestor, and permits main to advance to `J` without losing the old line. Never create `J` before parity and invariant gates are green.
+
+## Generated Files and Build Order
+
+### Manifest rules
+
+- Root `Cargo.toml` is explicitly auto-generated in both trees.
+- No generator entry point is exposed in this public export.
+- Upstream adds the `xai-workflow` workspace member, `rhai`, `dhat`, and a pinned `[patch.crates-io]` for `async-openai`.
+- Sixteen per-crate manifests change in the upstream range.
+- `Cargo.lock` changes materially and is maintained by Cargo, not manually edited.
+
+Because the integration branch starts at the upstream target, use its generated root manifest and lockfile as the coherent baseline. Apply bum's required per-crate manifest differences (for example binary identity or Codex-specific dependencies) in the owning crate manifests. Any unavoidable generated root delta must be documented as export-maintenance debt; do not casually hand-edit workspace membership or versions. After all manifests settle, regenerate/update and verify `Cargo.lock` once, then run `cargo check --locked` from a clean state.
+
+### Dependency-aware crate validation order
+
+```text
+1. New/leaf foundations
+   xai-workflow, config-types, shared protocol/types, hooks, sandbox
+
+2. Host and state
+   xai-grok-config, fast-worktree, workspace, chat-state, sampling-types
+
+3. Transport and tools
+   sampler, tools, MCP, agent definitions
+
+4. Runtime
+   xai-grok-shell (auth/config first; session/workflow/subagent second)
+
+5. Presentation
+   ratatui-textarea, pager-render, pager-minimal, pager
+
+6. Composition and packaging
+   pager-bin, PTY harness, docs, generated root/lock closure
+```
+
+A crate compiling does not close its phase if its cross-boundary contract is untested. For example, `xai-workflow` unit tests do not prove provider-safe child spawning; that closes only at shell integration.
+
+## Recommended Integration Phases
+
+### Phase 1 — Pin, inventory, and prove the upstream baseline
+
+**New:** immutable upstream pin, source/tree hashes, path/change inventory, initial ledger schema, path map, validation matrix.
+
+**Modified:** no product source.
+
+Actions:
+
+1. Freeze `3af4d5d3...` (or a deliberately newer fetched SHA if milestone scope changes before implementation) and its `SOURCE_REV`.
+2. Build/test upstream target standalone on its own branch/worktree.
+3. Generate root-skew, upstream-range, current-tree, added/deleted, rename/split and churn reports.
+4. Classify release-note features and security fixes into component change units.
+5. Define bum invariant tests before porting.
+
+**Exit gate:** target reproducible; zero unclassified upstream paths in the initial range inventory; no source integration started against a moving ref.
+
+### Phase 2 — Establish upstream-derived integration line and foundational crates
+
+**New:** `xai-workflow`, managed-text modules, relocation primitives, diagnostics/editor leaf modules as present in target.
+
+**Modified:** per-crate dependency manifests only where bum overlay requires it.
+
+Validate upstream target in dependency order. Do not join histories yet. This phase confirms that failures introduced later belong to downstream adaptation, not the baseline.
+
+**Exit gate:** clean upstream baseline builds with pinned lock and targeted leaf tests.
+
+### Phase 3 — Port product perimeter: identity, home, privacy
+
+**New:** explicit invariant/egress validation around newly added doctor, wrap, workflow paths and command entry points.
+
+**Modified:** config/path helpers, pager-bin, version/update/telemetry/feedback, test-support path fixtures, product chrome foundations.
+
+Port `bum`, `BUM_HOME`, `~/.bum`, hard-off update, telemetry and feedback policies before auth/session data is exercised. Adapt upstream's new `.grok/workflows`, relocation, doctor fix, resume and alias paths to bum identity where they represent bum-owned state.
+
+**Exit gate:** hermetic home test; `bum version`; no stock binary/home in authoritative runtime paths; no update/telemetry egress under defaults.
+
+### Phase 4 — Converge config, auth, catalog, and provider routing
+
+**New:** upstream command-backed auth helpers and named model connection profiles, kept separate from first-party provider ownership.
+
+**Modified:** shell agent config, model catalog, auth module, sampler reconstruction, composition login/logout/status.
+
+Resolve the semantic naming collision, establish precedence, port dual OAuth and missing-provider gates, then test request construction before adding workflows. Keep endpoint trust independent of labels.
+
+**Exit gate:** xAI and Codex auth lifecycle tests; malicious/custom endpoint isolation; mixed catalog; mid-session switching; custom helper tests; no credential crosses provider boundaries.
+
+### Phase 5 — Integrate state, sampling, and persistence changes
+
+**New:** storage relocation, eager durability, stop gate, queue combination and usage/cost state.
+
+**Modified:** chat-state, sampling types, sampler, ACP session spawn/run/model-switch/persistence.
+
+Take upstream state and durability changes first, then reapply Codex Responses wire and mixed-provider history cleanup. This phase must precede workflow orchestration because workflows persist journals and depend on stable session lifecycle.
+
+**Exit gate:** session resume/relocation under bum home; compaction/rewind; xAI and Codex captured request/stream tests; effort preference and provider-switch encrypted reasoning tests.
+
+### Phase 6 — Integrate subagents and workflows
+
+**New:** workflow engine, shell workflow service/manager/store/tracker, workflow tool, built-in scripts, ACP updates.
+
+**Modified:** agent builder/config tool sets, subagent coordinator, Task backend/types, session resource wiring.
+
+Wire workflow child spawning through bum's provider-aware preflight. Keep workflow engine provider-neutral. Verify cancellation, budget, journal, pause/resume and process-restart behavior in addition to provider combinations.
+
+**Exit gate:** workflow unit tests plus shell integration; both cross-provider directions; missing-provider preflight; no pending orphan; tool/schema/effort compatibility.
+
+### Phase 7 — Integrate TUI, terminal, diagnostics, and docs
+
+**New:** workflow blocks/overlay, doctor UI/CLI, external editor, editor extraction, usage/cost display, terminal/tmux fixes.
+
+**Modified:** Action/Effect enums, ACP handler, app/agent view, tasks pane, settings, model/auth badges, pager tests and user guide.
+
+Port local UI contracts into upstream's split modules. Update behavior-sensitive tests according to upstream semantics; rebrand expected strings separately from functional changes.
+
+**Exit gate:** reducer tests, pager tests, PTY/minimal/fullscreen smoke, doctor JSON/human output, dual-provider model/auth UI, workflow progress/cancel UX.
+
+### Phase 8 — Provenance closure, ancestry bridge, and release validation
+
+**New:** final ledger, allowlist, generated reports, future-sync runbook, intentional ancestry bridge.
+
+**Modified:** generated manifest/lock only as justified, release documentation.
+
+Actions:
+
+1. Compare final integrated tree directly against pinned upstream target (two-endpoint diff, not merge-base diff).
+2. Require every difference to map to an invariant/adaptation/exclusion ledger entry.
+3. Require every upstream change unit to be imported/adapted/excluded/superseded; zero pending.
+4. Run clean locked build, targeted matrix, full feasible workspace tests, PTY, and live xAI↔Codex UAT.
+5. Scan for stock identity/home and all known phone-home entry points.
+6. Create the reviewed two-parent ancestry bridge without changing the validated tree.
+7. Verify the pinned upstream commit is now an ancestor and the old bum tip remains reachable.
+
+**Exit gate:** parity ledger complete; bum invariants green; ancestry claims explicit; next-sync dry run documented.
+
+## Validation Seams
+
+### Structural/provenance gates
+
+- `git merge-base` absence is recorded before migration; after the intentional bridge, the pinned upstream target must be an ancestor.
+- Public upstream SHA, tree SHA and `SOURCE_REV` must match the ledger.
+- Added/deleted/moved/split reports are generated from Git objects, not working-directory copies.
+- Final upstream↔bum endpoint diff contains only allowlisted, owner-mapped differences.
+- No `pending` ledger disposition at release.
+- Patch IDs may identify exact patch reuse, but do not prove semantic equivalence for adapted changes.
+- `git range-diff` is a human review aid for iterations of the downstream overlay, not a stable machine ledger format.
+
+### Build gates
+
+- leaf/domain crates before shell/pager consumers;
+- `cargo fmt --all --check`;
+- crate-scoped check/test throughout phases;
+- clean `cargo check --locked -p xai-grok-pager-bin` after manifest closure;
+- feature checks for default `jemalloc`/`sandbox-enforce` and shipping profile where feasible;
+- PTY tests after render/pager integration, not as the first signal.
+
+### Bum invariant gates
+
+| Invariant | Minimum automated evidence |
+|---|---|
+| Identity/home | Hermetic process with conflicting HOME/GROK_HOME/BUM_HOME; all bum-owned state under temp `~/.bum`; `bum version` product token. |
+| Dual auth | Independent login/status/refresh/logout; one-slot corruption or logout never destroys sibling slot. |
+| Routing | Captured destination, Authorization and reserved headers for Grok, Codex, custom helper and hostile endpoints. |
+| Switching | Grok→Codex→Grok in one persisted session; effort and provider reasoning state correct. |
+| Cross-provider children | Parent/child matrix for Task and Workflow; missing-provider failure before pending state. |
+| Privacy | Static entry-point inventory plus runtime network capture proving update/telemetry/feedback paths remain disabled by default. |
+| Compatibility | Interactive, headless and ACP smoke for both providers; provider gaps explicitly documented. |
+
+### Upstream feature gates
+
+Use upstream 0.2.102–0.2.109 changelogs as a feature checklist, but bind each item to code/tests rather than trusting prose. High-level clusters include:
+
+- terminal/minimal/clipboard/wrap/doctor and external editor;
+- auth single-flight/recovery and command-backed custom credentials;
+- named model connection providers and max effort;
+- session relocation/mirroring/eager durability;
+- stop-hook feedback, permission/auto-mode behavior and sandbox/network policy;
+- workflow orchestration and task/status presentation;
+- prompt queue combination, usage/cost, and read-file skill behavior;
+- performance and durability work in chat state, fast worktree and persistence.
+
+## Future Synchronization Runbook
+
+After v1.1 establishes real ancestry:
+
+1. `git fetch upstream` and pin a target; never integrate a moving ref.
+2. Read old/new `SOURCE_REV` and public changelogs.
+3. Generate `previous_upstream..new_upstream` change inventory, rename map, manifest delta and hotspot overlap against current bum overlay.
+4. Open an integration branch from current bum main; merge the pinned upstream target with `--no-commit` or rebase only if policy chooses, now using the real previous upstream ancestor.
+5. Resolve by component ownership, never global “ours/theirs”. Enable `rerere` only as an assistant and review every reused resolution before staging.
+6. Update ledger dispositions and final tree-difference allowlist in the same change.
+7. Run dependency-ordered tests, bum invariant matrix, upstream feature/security gates, then live dual-provider UAT.
+8. Advance the recorded upstream/SOURCE_REV only when all gates pass.
+
+Do not carry synthetic replace refs, grafts, or local rerere state as the source of truth. The committed tree, real ancestry, ledger, and tests are the durable synchronization architecture.
+
+## Anti-Patterns to Avoid
+
+### Treating `--allow-unrelated-histories` as reconstruction
+
+It only overrides Git's refusal. With no common base, it cannot know that two same-subject roots are related or which 179 root-skew changes are export differences.
+
+### Bulk choosing upstream or bum versions of hotspot files
+
+Taking upstream wholesale can delete Codex and privacy contracts. Taking bum wholesale can erase upstream workflow/auth/session fixes. Integrate semantic units behind typed boundaries and tests.
+
+### Calling every final diff an exclusion
+
+Most final differences should be contract adaptations. “Excluded” means the upstream behavior is absent; it requires a stronger rationale and user/security impact statement.
+
+### Letting generated files lead the integration
+
+A root manifest or lockfile that compiles can still hide missing per-crate architecture. Resolve source and owning manifests first; lock closure comes last.
+
+### Mixing custom gateway profiles with built-in provider identity
+
+A named gateway is connection configuration; xAI/Codex is credential and wire ownership. Conflation risks sending a first-party OAuth bearer to an operator-provided URL.
+
+### Implementing workflow-specific auth
+
+Workflow children are ordinary subagent requests. Reuse one provider-aware preflight and request resolver; otherwise Task and Workflow paths will drift.
+
+### Bridging histories before validation
+
+Once a two-parent join exists, Git will assume related ancestry in future operations. An incorrect join makes later merges look safer than they are. Bridge only the final proven tree.
+
+## Research Flags for Roadmap
+
+- **Provider/config convergence:** requires phase-specific design review because upstream's `model_provider` and `auth_provider` concepts overlap bum names but not semantics.
+- **Workflow child routing:** requires dedicated research/test design around model/effort/provider propagation and cancellation ownership.
+- **Session relocation/import:** requires privacy review to separate session compatibility from credential/home sharing.
+- **Generated root manifest:** public export exposes no generator; decide and document how downstream-only workspace dependency changes are maintained without pretending the generated root is hand-owned.
+- **Ancestry bridge mechanics:** script and peer-review the exact operation in the final phase; prove tree identity before and after.
+- **Upstream snapshot semantics:** public commits do not expose monorepo feature commits, so some change-unit grouping remains an informed reconstruction from diffs, modules, tests, and changelogs.
 
 ## Sources
 
-- Local codebase maps: `.planning/codebase/ARCHITECTURE.md`, `STRUCTURE.md`, `INTEGRATIONS.md` (2026-07-16)
-- In-tree auth/sampler seams: `xai-grok-shell/src/auth/*`, `agent/models.rs`, `agent/config.rs` (`ModelInfo`, `resolve_credentials`, `sampling_config_for_model`), `session/acp_session_impl/sampler_turn.rs`, `xai-grok-sampler` (`SamplerConfig`, `BearerResolver`)
-- Project requirements: `.planning/PROJECT.md` (multi-provider, `~/.bum`, fail-closed gate)
-- Codex auth product docs: ChatGPT sign-in, `~/.codex/auth.json` cache, device-code/headless patterns (OpenAI Codex auth documentation)
-- Multi-provider agent patterns: provider as compile-time set + model routing layer (Claude Code / Hermes-style analyses); OAuth connection/account separation for long-lived agent tokens
-- Community Codex OAuth pitfalls: refresh must persist to disk; do not share/copy tokens across machines carelessly (token-family revocation)
+### Repository evidence (direct inspection)
+
+- Local refs and histories: `main`, `upstream/main`, roots, tree hashes, commit counts, merge-base check.
+- Upstream provenance: `SOURCE_REV`, upstream `README.md`, changelogs `0.2.102`–`0.2.109`.
+- Tree comparisons: local root ↔ upstream root; upstream root ↔ target; current main ↔ target; per-snapshot stats; added/deleted and rename detection; per-crate churn and overlap ranking.
+- Architecture maps: `.planning/PROJECT.md`, `.planning/codebase/ARCHITECTURE.md`, `.planning/codebase/STRUCTURE.md`, `.planning/codebase/CONCERNS.md`.
+- Upstream component sources: `xai-workflow`, shell workflow/session/auth/model-provider modules, pager workflow/doctor/settings splits, workspace/config/sampler manifests and tests.
+
+### Official documentation
+
+- [Git merge: unrelated histories and merge semantics](https://git-scm.com/docs/git-merge)
+- [Git replace/graft behavior and caveats](https://git-scm.com/docs/git-replace)
+- [Git patch-id for likely equivalent patches](https://git-scm.com/docs/git-patch-id)
+- [Git range-diff for human comparison of patch-series iterations](https://git-scm.com/docs/git-range-diff)
+- [Git rerere for reusable but review-required conflict resolution](https://git-scm.com/docs/git-rerere)
+- [Git diff: direct endpoint comparison versus merge-base forms](https://git-scm.com/docs/git-diff)
+- [Cargo.toml versus Cargo.lock](https://doc.rust-lang.org/cargo/guide/cargo-toml-vs-cargo-lock.html)
 
 ---
-*Architecture research for: multi-provider OAuth + model routing inside Grok Build → bum*
-*Researched: 2026-07-16*
+
+*Architecture research for v1.1 upstream Grok Build parity. No source implementation performed.*

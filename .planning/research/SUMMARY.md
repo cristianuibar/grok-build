@@ -1,196 +1,277 @@
 # Project Research Summary
 
-**Project:** bum
-**Domain:** Multi-provider AI coding-agent CLI (Rust fork of Grok Build: xAI + ChatGPT/Codex OAuth)
-**Researched:** 2026-07-16
-**Confidence:** HIGH
+**Project:** bum — v1.1 Upstream Grok Build parity
+**Domain:** Controlled synchronization of a heavily customized Rust terminal AI coding-agent fork
+**Researched:** 2026-07-22
+**Confidence:** MEDIUM-HIGH
 
 ## Executive Summary
 
-**bum** is a full-product brownfield fork of Grok Build: ship as `bum` with isolated `~/.bum`, keep the existing agent/TUI harness, and add a thin **provider plane** so one CLI can OAuth to both xAI (Grok) and ChatGPT/Codex (GPT-5.6), then route each sample by **active model**, not a global session mode. Experts building multi-provider agent CLIs (Claude Code, Codex CLI, OpenCode) treat provider as the unit of credentials + default base URL + catalog source; they fail closed on missing auth and isolate product home from stock vendor CLIs. This research strongly endorses that pattern inside the existing monorepo rather than a rewrite or OpenRouter-first multi-cloud surface.
+bum v1.1 is a security-sensitive content integration, not a conventional upgrade merge. The official target is public commit `3af4d5d39897855bdcc74f23e690024a5dc05573` (0.2.109), whose exported monorepo source is `0f4d7c91b8b2b408333f6de1e8a76cb8eaa71899`; research inspected bum at `128992c5a151e857c728bcbb054c2a8c7c47ce7a`. There is **no merge base** between bum and upstream. Their publication roots—bum `c1b5909ec707c069f1d21a93917af044e71da0d7` and upstream `c68e39f60462f28d9be5e683d9cbe2c57b1a5027`—already differ by 179 paths. Therefore `--allow-unrelated-histories`, bulk checkout, ordinary rebase, or tip-to-tip patching cannot establish trustworthy parity.
 
-**Recommended approach:** Stay on Rust 2024 / Tokio / existing sampler (`async-openai` Responses path, `SamplerConfig` + `BearerResolver`). Reimplement Codex PKCE/device-code **in-tree** (mirror `openai/codex` `codex-rs/login`; do not use crates.io `codex-oauth`). Store multi-scope credentials only under `~/.bum/auth.json`. Route Grok → cli-chat-proxy + xAI bearer; route GPT → `https://chatgpt.com/backend-api/codex` + ChatGPT Bearer + `ChatGPT-Account-ID`. Ship static GPT-5.6 Sol/Terra/Luna in the picker with explicit `provider` on every model entry. Order work **identity → multi-slot auth → catalog → routing → Codex OAuth → gate/UX → quiet rebrand polish**.
+The recommended architecture is an immutable upstream baseline plus a curated bum contract overlay, validated before any optional ancestry bridge. Upstream inclusion should be the default; every deviation must map to a bum invariant, an adaptation, a tested supersession, or an explicit exclusion. Completeness is governed by a machine-readable ledger covering **every U001–U168 item exactly once**, all 0.2.102–0.2.109 release-note behavior, path/change clusters, additions, deletions, tests, and final upstream↔bum differences. Security is P0: permission/RCE, SSRF, credential-file, plugin, managed-policy, sandbox, MCP, prompt-injection, and repo-trust fixes must land or be proven equally mitigated before feature parity work.
 
-**Key risks:** (1) single-slot auth overwrite / shared wipe wiping both providers; (2) wrong token on wrong backend (or ChatGPT OAuth treated as Platform API key); (3) half-rebrand still writing `~/.grok` and phone-home via Mixpanel/Sentry/auto-update; (4) global “provider mode” fighting mixed mid-session switch. Mitigate with provider-scoped credential hub, per-request routing from model metadata, fail-closed missing-provider gate, full home/identity inventory early, and compile-time kill of stock egress channels.
+The principal risk is producing a compiling stock Grok tree that silently erases bum v1.0. Non-negotiable invariants are the `bum` binary/product, `BUM_HOME` and isolated `~/.bum`, independent xAI and ChatGPT/Codex OAuth, explicit mixed per-model routing, cross-provider children, Codex wire behavior, and no stock updater or product telemetry phone-home. The highest-conflict seam is provider/auth configuration: upstream connection profiles and command-backed credential helpers are useful additions, but they are not bum's built-in inference-provider identity and must never authorize first-party bearer forwarding to arbitrary endpoints.
+
+## Verified Baseline and Scope
+
+### Verified facts
+
+- Public upstream pin: `3af4d5d39897855bdcc74f23e690024a5dc05573`, version 0.2.109.
+- Upstream `SOURCE_REV`: `0f4d7c91b8b2b408333f6de1e8a76cb8eaa71899`.
+- bum tip inspected: `128992c5a151e857c728bcbb054c2a8c7c47ce7a`.
+- No merge base exists between bum and upstream.
+- Publication roots are unrelated and non-equivalent: bum `c1b5909ec707c069f1d21a93917af044e71da0d7`; upstream `c68e39f60462f28d9be5e683d9cbe2c57b1a5027`; 179 paths differ.
+- Official post-publication syncs are `8adf9013a0929e5c7f1d4e849492d2387837a28d`, `98c3b2438aa922fbbe6178a5c0a4c48f85edc8ce`, `7cfcb20d2b50b0d18801a6c0af2e401c0e060894`, `ba76b0a683fa52e4e60685017b85905451be17bc`, `a881e6703f46b01d8c7d4a5437683546df30449d`, and the pinned tip.
+- The six sync bodies contain 168 explicit bullets. Research verified the U001–U168 partition has no missing or duplicate IDs.
+- Upstream root→tip touches 872 files; 220 paths overlap changes made by bum. A final endpoint diff is an audit input, not a change inventory by itself.
+
+### Recommendation
+
+Use three comparison legs—publication-root skew, upstream root→pin, and bum root→current—and assign each unit one terminal disposition: **PORT**, **ADAPT**, **ALREADY/SUPERSEDED**, **EXCLUDE**, or **UNAVAILABLE**. Preserve the public SHA and `SOURCE_REV` as separate provenance fields. Freeze the target for the milestone; a newer upstream commit requires restarting inventory rather than moving the pin mid-execution.
 
 ## Key Findings
 
 ### Recommended Stack
 
-Details: [STACK.md](./STACK.md)
+The existing Rust workspace remains the correct platform. There is no framework migration: Rust 1.92.0/edition 2024, Cargo resolver 2/lockfile v4, Tokio 1, ratatui 0.29, crossterm 0.28, ACP 0.10.4, reqwest 0.12 (0.13 only in MCP), rmcp 2.1, tonic/prost 0.14, serde/JSON/TOML remain.
 
-Stay on the **existing Grok Build workspace**. Codex is a second auth scope + second sampler base URL, not a second agent runtime. Browser OAuth uses fixed loopback port **1455** (fallback **1457**), public Codex `client_id`, and issuer `https://auth.openai.com`. Inference stays Responses API; ChatGPT subscription traffic uses the Codex backend base, not `api.openai.com` with OAuth tokens. Platform API key is optional secondary only.
+**Required stack additions and pins:**
 
-**Core technologies:**
-- **Rust 1.92 / edition 2024 + Tokio 1** — entire product runtime — brownfield constraint; do not bump for v1
-- **In-tree Codex PKCE/device-code** (reqwest, oauth2 5, axum loopback, sha2/base64) — ChatGPT login parity with Codex CLI — official client is open-source Rust; avoid immature third-party crates
-- **Multi-scope `~/.bum/auth.json`** — dual OAuth isolation — extend existing scoped store; never share `~/.grok` / `~/.codex`
-- **`xai-grok-sampler` + `async-openai` 0.33 Responses** — streaming agent turns — branch only `SamplerConfig` fields by provider
-- **GPT-5.6 Sol / Terra / Luna** (`gpt-5.6-sol` default Codex-side) — coding model family for ChatGPT sign-in — verified against Codex/OpenAI docs 2026-07
-- **ratatui/crossterm TUI + clap CLI** — daily-driver surface — out of rewrite scope; keep
+- `async-openai` 0.33.1 fork — git `https://github.com/our-forks/async-openai.git`, rev **`95b52ebdedf42143083cf3d6f0e0be7c84e9c808`**; adds distinct `ReasoningEffort::Max`.
+- `rhai` — manifest 1.25 with `serde`, lock **1.25.1**; powers upstream workflows.
+- `xai-workflow` 0.1.0 — new provider-neutral workflow engine, metadata validator, host protocol, journal/replay, and outcomes.
+- `dhat` — manifest 0.3, lock **0.3.3**; optional `dhat-heap` lifecycle soak only.
+- Adopt upstream target/feature/test dependencies (`shlex`, `xai-tty-utils`, sandbox dependencies, Windows file-system feature, Unix `libc`) with owning source changes.
+
+Critical protocol facts: the checked-in protobuf is unchanged; tool protocol remains 1.0.0; leader protocol remains 1; ACP stays 0.10.4 and gains x.ai extension methods. Do not invent a protocol bump or fabricate unexported schema.
+
+Pinned upstream audit checksums: `Cargo.lock` `6b2eb2c1633bdf2dcfd030208c19a36c52df862522cb72c707982b0bb365e5b8`; `Cargo.toml` `71965098017b6d6c4e228454beab58d8854257afbc648f65190c9fd7891f53bb`; `rust-toolchain.toml` `8632e4f532c10ff7728fdef1bb73f9f391577ca2b23ed133272c714bd371e696`; `default_models.json` `620cfe2b3e4ba8d5e74560ce22a4d42f0f5418a2fb5f192bd38c35b234f3c148`.
 
 ### Expected Features
 
-Details: [FEATURES.md](./FEATURES.md)
-
-v1 validates Core Value: *one CLI, log into both, switch Grok ↔ GPT-5.6 in a real coding session*. Baseline TUI, tools, sessions, and xAI OAuth already exist; v1 is identity + dual OAuth + routing + quiet fork.
-
 **Must have (table stakes):**
-- Product CLI as `bum` + isolated home `~/.bum` — clear product identity
-- xAI OAuth preserved + first-class ChatGPT/Codex OAuth (browser + device-code)
-- Per-provider login / logout / status
-- Mixed model picker with Grok + GPT-5.6 family; switch anytime
-- Provider-aware routing + missing-provider gate (block + prompt correct login)
-- Independent token refresh per provider; clear provider-scoped auth errors
-- Quiet local fork (no xAI auto-update / product telemetry)
-- Daily-driver bar: tools, permissions, sessions work on both backends
 
-**Should have (competitive):**
-- True dual-subscription OAuth in one harness (primary differentiator vs two CLIs or OpenRouter-first tools)
-- Per-model provider binding (not session-global mode)
-- Fail-closed login gate at selection time with provider-specific UX
-- Isolated identity from stock `grok` / `codex` homes
+- Complete U001–U168 ledger plus changelog/path/deletion/test coverage, with source, disposition, bum evidence, verification, and rationale.
+- P0 security parity: redirect and `web_fetch` SSRF, owner-only credential/artifact files, bearer scoping, plugin SHA/Git operand safety, rollback/replay-resistant managed policy, shell/hook permission hardening, sandbox inheritance/no-TTY Landlock, MCP identity/OAuth issuer safety, prompt/rules/repository trust gates, and auto-mode RCE corpus.
+- Session/runtime parity: eager durable persistence, rewind identity, relocation, explicit mirrored import, background status/tasks, scheduler lifecycle/versioning, serialized loops, queue combination, and provider-aware usage.
+- TUI/terminal parity: canonical editor, minimal/fullscreen behavior, clipboard and SSH handling, external editor, `bum doctor`, navigation/rendering/status fixes, and PTY coverage.
+- Skills/plugins/MCP/hooks parity, including no silent default-skill installation, qualified collisions, non-overwrite, full Markdown reads, setup preferences, stop-hook feedback, and fail-closed matching.
+- Workflow runtime imported as upstream infrastructure, disabled by default, after security and persistence; workflow children must reuse bum's provider-aware subagent preflight.
+- Worktree auto-GC only with TTL, liveness/CWD, dry-run, stale-registration, and platform guards.
+- Grok 4.5 catalog merge without deleting GPT-5.6 Sol/Terra/Luna; distinct `max` only where model capability advertises it.
 
-**Defer (v2+ / v1.x polish):**
-- Arbitrary third-party providers, custom agentic workflows, multi-account aliases
-- Import/share stock credential stores, cost dashboards, cloud remote agents
-- Reasoning-effort knobs / richer status UI / capability matrix docs (v1.x once dual path works)
-- API-key fallback secondary (P2 — useful for CI; not primary identity story)
+**Should have / parity differentiators:**
+
+- Explicit provenance/version display separating bum release identity, upstream public SHA, and `SOURCE_REV`.
+- Named custom connection profiles and command-backed credentials, safely subordinate to built-in provider identity and endpoint trust.
+- Cross-provider workflow acceptance in both directions, preserving bum's core differentiator.
+- A repeatable future-sync report, protected-path inventory, egress/home gates, and final-diff allowlist.
+
+**Defer beyond v1.1:**
+
+- A bespoke bum workflow product/design; import upstream parity infrastructure only.
+- Arbitrary third-party providers as shipped first-class choices.
+- Official x.ai/npm distribution, complete internal crate rename, and unrelated framework/monorepo cleanup.
 
 ### Architecture Approach
 
-Details: [ARCHITECTURE.md](./ARCHITECTURE.md)
-
-v1 inserts a thin **provider plane** between session/sampler and external IdPs/APIs. Agent tools, workspace, ACP, and Action→Effect TUI stay as today. Sampler remains URL-agnostic; shell builds correct `SamplerConfig` per model. One `auth.json` multi-key map with multi-slot credential hub; models carry explicit `ProviderId`.
+**Recommendation:** start an integration line from the immutable upstream target, import its coherent tree and new foundations, then port a curated bum overlay. Validate the resolved content before creating any optional two-parent ancestry bridge whose tree is unchanged. This reconciles the research: STACK recommends semantic content porting, while ARCHITECTURE recommends upstream-as-base. Both reject a normal merge and agree that the durable unit is upstream content plus explicit bum contracts. The upstream-derived line is preferable for inclusion completeness; the ledger and endpoint audits are mandatory because root skew and bum overlap prevent trusting ancestry alone.
 
 **Major components:**
-1. **ProviderRegistry** — known providers (`xai`, `openai_codex`), issuers, default base URLs, login capability
-2. **CredentialHub** — multi-slot load/store/refresh/401 recovery per provider over shared `auth.json` lock
-3. **ModelCatalog** — merge remote/static Grok catalog + static GPT-5.6 entries with `provider` field
-4. **RequestRouter** — model → base URL, api backend, credential slot, headers (no URL sniffing for identity)
-5. **Provider-aware BearerResolver** — per-request bearer from correct provider manager
-6. **Missing-provider gate** — fail closed on set_model / pre-turn with typed `ProviderAuthRequired`
-7. **Product home / quiet branding** — `BUM_HOME` → `~/.bum`, binary `bum`, no-op update/telemetry
+
+1. **Upstream baseline/provenance control plane** — pins public SHA/tree/`SOURCE_REV`, U001–U168 and path ledgers, path maps, invariant owners, and final-diff allowlist.
+2. **Leaf foundations** — config/types, managed text, hooks, MCP, sandbox, fast-worktree, diagnostics, relocation, and provider-neutral `xai-workflow`.
+3. **Provider runtime** — shell auth/config, catalog, inference ownership, connection profiles, credential precedence, sampler, and Codex/xAI request policies.
+4. **State/orchestration** — chat state, persistence, ACP session lifecycle, subagents, workflows, scheduler, prompt queue, and worktree lifecycle.
+5. **Presentation/composition** — pager Action→Dispatch→Effect TUI, terminal/render/doctor/workflow UI, and pager-bin wiring that ships `bum` and keeps egress hard-off.
+
+**Key boundary decision:** built-in inference ownership (`Xai`/`Codex`) decides OAuth slot, trusted endpoints, wire policy, and login gate. Upstream named `model_provider` profiles supply connection defaults, and `auth_provider` supplies custom helper credentials. They are separate types with explicit precedence; endpoint trust is checked independently of labels.
+
+### Bum Invariants
+
+Every phase must preserve and test:
+
+- Product/binary/chrome: `bum`, not stock `grok`.
+- Storage: `BUM_HOME` and isolated `~/.bum`; no stock credential import/sharing.
+- Auth: independent xAI and ChatGPT/Codex OAuth slots, refresh, status, selective logout, and sibling-safe corruption recovery.
+- Routing: explicit per-model provider→endpoint→credential→wire resolution; no model-name guessing or global mode.
+- Sessions: safe mid-session switching and provider-specific reasoning cleanup.
+- Children: Task and Workflow children resolve independently from parents and fail before side effects when credentials are missing.
+- Privacy: stock update, feedback transport, Mixpanel, Sentry, internal OTEL, and implicit upload remain unreachable; local tracing/user-owned diagnostics only under explicit policy.
 
 ### Critical Pitfalls
 
-Details: [PITFALLS.md](./PITFALLS.md)
+1. **False completeness** — reconcile U001–U168, changelogs, all path clusters, additions/deletions/tests, and final differences; zero pending rows at release.
+2. **Unsafe unrelated-history operations** — never use an initial merge/bridge as content resolution; freeze and validate the tree first.
+3. **Broad replacement erases bum** — protect bum-only auth/routing/privacy/identity/tests; integrate hotspot files semantically.
+4. **Security loss in conflicts** — port complete dependency closures and adversarial fixtures first, then re-review after provider/home adaptation.
+5. **Provider/auth conflation leaks credentials** — keep inference ownership, connection profiles, helper credentials, and endpoint trust separate.
+6. **New `.grok` or egress paths** — extend hermetic filesystem and network audits to workflows, relocation, worktrees, doctor, all startup modes, and shutdown.
+7. **Green tests through test deletion** — snapshot discovered tests before integration and block unexplained drops/ignores.
+8. **Generated manifest/lock misuse** — use the upstream coherent baseline, settle owning manifests first, regenerate lock state with Cargo, and document the absent public root generator.
 
-1. **Single-slot auth overwrite** — Design provider-scoped records + independent refresh/wipe from day one; dual login/logout/refresh tests before shipping GPT UX.
-2. **Wrong credential / wrong backend** — Bind every catalog entry to `ProviderId`; resolve credentials per request; never attach dual auth headers; never send ChatGPT OAuth to Platform API as if it were an API key.
-3. **Half-rebrand / incomplete home isolation** — Inventory all path writers and identity strings early; temp-home e2e must show zero writes under `~/.grok` / `~/.codex`.
-4. **Phone-home channels still open** — Kill Mixpanel, Sentry, auto-update/`minimum_version`, and stock marketplace phone-home with compile-time defaults, not a single TOML flag.
-5. **Auth error misclassification (403 → wipe)** — Keep 401-only refresh triggers; scope invalid_grant counters to one provider; never wipe both on policy 403.
-6. **Global provider mode** — Session stores current model id only; history shared; next sample chooses backend.
+## Explicit Unavailable and Excluded Items
+
+### Unavailable at the pinned public snapshot
+
+- Commit summaries mention `ClientToolResult` and `ChatConfig` client-side tool proto work, but the public tree exports no corresponding identifiers/schema and the checked-in proto is unchanged. **Do not fabricate it.**
+- U156 names workflow-authoring skills (`create-workflow` / `import-claude-workflow`), but matching `SKILL.md` files are not exposed at the pin. Do not invent or auto-install them.
+- U019 `MiniSweAgent:bash` is not trivially traceable by literal fingerprint; determine observable type/schema behavior during planning.
+- The root `Cargo.toml` claims generation, but no public generator entry point was identified.
+- The upstream initial export lacks `SOURCE_REV`; exact pre-public monorepo lineage cannot be proven.
+
+### Explicitly excluded or not adopted verbatim
+
+- Stock binary/default-run, `GROK_HOME`/`~/.grok`, managed `bin/grok`, or stock credential sharing.
+- Stock xAI updater/minimum-version/install/npm behavior.
+- xAI feedback identity transport; Mixpanel, Sentry, internal OTEL, trace/codebase/session upload, or remotely enabled product telemetry.
+- Replacing bum's mixed catalog, dual OAuth, per-model routing, or cross-provider children with stock single-provider assumptions.
+- Treating `[model_providers]` as authorization to use xAI/Codex OAuth or as bum's provider router.
+- Sending xAI-only headers/privacy/App Builder/deployment flags on Codex or generic gateways.
+- Blind version mass-bumps, stock catalog replacement, invented proto fields, or automatic workflow-skill installation.
+
+Exclusions remain ledger entries and require negative regression tests; security value may not be excluded for convenience.
 
 ## Implications for Roadmap
 
-Based on research, suggested phase structure (architecture A–G + pitfalls ordering):
+### Phase 1: Immutable Baseline, Provenance, and Completeness Ledger
+**Rationale:** No merge base and root skew make trustworthy scope the first dependency.
+**Delivers:** frozen public SHA, `SOURCE_REV`, tree/checksums, three-leg inventory, U001–U168 rows, changelog/path/deletion/test clusters, protected bum contracts, validation matrix.
+**Addresses:** complete parity and repeatable sync.
+**Avoids:** false completeness, moving targets, premature ancestry claims.
 
-### Phase 1: Product identity & isolated home
-**Rationale:** All credential and session work must land under `~/.bum` without clobbering stock Grok; half-rebrand is a top critical pitfall.
-**Delivers:** Default home `~/.bum` (`BUM_HOME`), binary path toward `bum`, path/env smoke under new home.
-**Addresses:** Product rename (partial), isolated home cutover (P1).
-**Avoids:** Half-rebrand path leakage; incomplete home isolation (auth yes / everything else no).
+### Phase 2: P0 Security Floor
+**Rationale:** Known upstream RCE/SSRF/credential/policy fixes cannot wait behind UX work.
+**Delivers:** complete security matrix and adapted upstream adversarial tests across hooks, tools, permissions, sandbox, plugins, managed policy, MCP, auth files, and repo trust.
+**Addresses:** all U001–U168 security rows classified and verified.
+**Avoids:** partial fixes and conflict-induced regression.
 
-### Phase 2: Provider types & multi-slot credential store
-**Rationale:** Dual OAuth without provider-scoped store causes last-login-wins and cross-wipe; foundation before second login UX.
-**Delivers:** `ProviderId` + auth scope keys; CredentialHub / multi-scope load; xAI continues green as `ProviderId::Xai`.
-**Addresses:** Preserve xAI under bum store; dual credential architecture for later Codex.
-**Avoids:** Single-slot overwrite; shared wipe thresholds; bolting Codex into `GrokAuth.key`.
+### Phase 3: Upstream Foundations and Dependency Closure
+**Rationale:** New consumers depend on coherent leaf crates, types, moves, and pinned dependencies.
+**Delivers:** upstream-derived integration line; `xai-workflow`; managed text, relocation, diagnostics/editor, auto-GC foundations; exact async-openai/Rhai/dhat pins; test scaffolding.
+**Addresses:** structural parity and build topology.
+**Avoids:** broad file replacement, deletion mistakes, hand-edited lockfile.
 
-### Phase 3: Model catalog provider tagging + static GPT-5.6
-**Rationale:** Routing and gates need explicit model→provider metadata; list both ecosystems without global mode.
-**Delivers:** `provider` (+ OpenAI base_url) on `ModelInfo` / `default_models.json`; GPT-5.6 Sol/Terra/Luna (and alias) in merged picker list.
-**Addresses:** Mixed model picker entries; GPT-5.6 family IDs (P1 catalog half).
-**Avoids:** Floating models without provider; global mode filtering the whole session.
+### Phase 4: Product Perimeter and Quiet-Fork Contracts
+**Rationale:** New runtime features must use bum identity/home/privacy before they persist or communicate.
+**Delivers:** `bum`/`BUM_HOME` adaptation across every new path; updater/telemetry/feedback hard-off; hermetic filesystem and runtime egress gates.
+**Addresses:** identity, storage, privacy, distribution constraints.
+**Avoids:** `.grok` leakage, stock install repair, hidden telemetry.
 
-### Phase 4: Provider-aware request routing & bearer
-**Rationale:** Wrong host/token is silent failure/billing risk; must be correct before live GPT turns.
-**Delivers:** `resolve_credentials` / `sampling_config_for_model` branch on provider; hub-scoped `BearerResolver`; golden tests for Grok vs GPT headers/base_url; no xAI proxy headers on OpenAI URLs.
-**Addresses:** Provider-aware routing (P1).
-**Avoids:** Wrong credential/backend; dual headers; URL-only sniffing for identity.
+### Phase 5: Auth, Catalog, Provider Routing, and Sampling
+**Rationale:** This highest-conflict seam must be correct before workflows or imported model UI can spawn requests.
+**Delivers:** separate inference ownership vs connection profile/helper types; dual-provider secure auth improvements; Grok 4.5 mixed-catalog merge; distinct supported `max`; captured request goldens and both-provider switching.
+**Addresses:** U001/U017/U050/U054/U077/U117/U138/U148/U152 and related auth/model behavior.
+**Avoids:** credential crossover, xAI-only defaults, model-name guessing, Codex wire regression.
 
-### Phase 5: Codex / ChatGPT OAuth login
-**Rationale:** Real GPT-5.6 requires ChatGPT subscription OAuth path (not Platform key primary); can start once scope keys exist (overlaps late Phase 3–4).
-**Delivers:** Browser PKCE (ports 1455/1457) + device-code; refresh (5m JWT / ~8d last_refresh policy); logout/status; tokens only under `~/.bum`; CLI `bum login openai` / `logout` / status.
-**Addresses:** Codex/ChatGPT OAuth; per-provider login/logout/status; token refresh dual-store (P1).
-**Avoids:** ChatGPT OAuth ≠ Platform API confusion; stock `~/.codex` coupling; non-persisted refresh → `refresh_token_reused`.
+### Phase 6: Durable Sessions, ACP, Scheduler, and Worktrees
+**Rationale:** Workflows depend on stable persistence, cancellation, task lifecycle, and child/worktree ownership.
+**Delivers:** eager persistence, rewind IDs, relocation, explicit session state/import, queue combination, usage, scheduler durability, serialized loops, guarded auto-GC.
+**Addresses:** runtime/session U-items and 0.2.106–0.2.109 lifecycle behavior.
+**Avoids:** orphan state, unsafe GC, implicit remote upload, resume incompatibility.
 
-### Phase 6: Missing-provider gate + multi-provider UX
-**Rationale:** Daily-driver safety — no mid-stream 401; mixed switch without restart; headless must print clear login command.
-**Delivers:** Gate on set_model / pre-turn; TUI dual auth badges + login prompts; headless/ACP typed errors; mid-session model switch without transport freeze.
-**Addresses:** Missing-provider gate; multi-provider session UX; clear auth errors (P1).
-**Avoids:** Silent fail mid-turn; single “Login” that only does xAI; global mode; mid-switch capability drift (basic).
+### Phase 7: Workflow and Cross-Provider Orchestration
+**Rationale:** Security, routing, and persistence must exist before enabling another agent-spawn path.
+**Delivers:** upstream workflow host/manager/store/tools/scripts/ACP integration, disabled by default; budget/pause/cancel/reconnect/restart tests; Grok→Codex and Codex→Grok workflow children.
+**Addresses:** upstream workflow parity without expanding bespoke bum workflow scope.
+**Avoids:** workflow-specific auth, inherited parent bearer, pending side effects after missing-provider failure.
 
-### Phase 7: Quiet fork, rebrand polish & daily-driver validation
-**Rationale:** Privacy and product identity complete ship criteria; end-to-end proves Core Value.
-**Delivers:** Disable auto-update + product telemetry/Mixpanel/Sentry phone-home; remaining chrome/docs as `bum`; e2e dual login, switch mid-session, tools both paths.
-**Addresses:** Quiet local fork; product rename completeness; daily-driver bar (P1).
-**Avoids:** Residual phone-home; auto-update overwriting fork; incomplete identity strings.
+### Phase 8: TUI, Terminal, Doctor, Skills, and Documentation
+**Rationale:** Presentation should integrate only after backend contracts stabilize, using upstream's split modules and reducer/effect architecture.
+**Delivers:** canonical editor, doctor CLI/slash flow, terminal/clipboard/SSH fixes, workflow/task/status UI, skills/plugins/MCP/hooks UX, minimal/fullscreen PTY suites, bum-adapted guides.
+**Addresses:** user-visible 0.2.102–0.2.109 parity.
+**Avoids:** stock commands/home/install guidance, whole-file UI resolutions, backend-incomplete UI.
+
+### Phase 9: Parity Closure and Optional Ancestry Bridge
+**Rationale:** History may record the integration only after content and invariants are proven.
+**Delivers:** zero pending ledger rows; final endpoint allowlist; dependency/license/artifact closure; locked builds; v1.0 audit rerun; live dual-provider UAT; future-sync dry run; reviewed tree-preserving two-parent bridge if approved.
+**Addresses:** auditable parity and maintainable future synchronization.
+**Avoids:** green suite after test loss, ambiguous versions/artifacts, unsafe early bridge.
 
 ### Phase Ordering Rationale
 
-- **Identity first** — safe sandbox for auth tests without nuking real `~/.grok`.
-- **Multi-slot auth before UX** — dual store/refresh is the hard failure mode; picker without it is a trap.
-- **Catalog → routing before (or with) live OAuth** — unit-test correct `SamplerConfig` with fake tokens; then real Codex login unlocks GPT turns.
-- **Gate after routing + OAuth** — fail-closed needs both “which provider” and invokable login.
-- **Quiet fork early enough to parallel polish** — can start mid-Phase 6; must land before trusting daily use (overwrite risk).
-- **No agent rewrite** — stack research forbids forking TUI/tools/chat-state for v1.
+- Provenance defines scope; security establishes the minimum safe baseline.
+- Leaf/type/dependency foundations precede overlapping product-contract seams.
+- Identity/home/privacy are installed before new persistence or network paths execute.
+- Provider routing precedes sessions that reconstruct requests and workflows that spawn children.
+- Persistence/scheduler/worktree lifecycle precedes workflow orchestration.
+- TUI follows backend state contracts; final docs and artifacts describe only verified behavior.
+- The ancestry bridge is a final history-recording action, never a merge strategy.
 
 ### Research Flags
 
-Phases likely needing deeper research during planning:
-- **Phase 5 (Codex OAuth):** Live authorize/token/device-code parity, `chatgpt_account_id` claims, refresh failure taxonomy — confirm against current `openai/codex` + live IdP; legal/ToS of public `client_id` reuse remains MEDIUM.
-- **Phase 4–5 (ChatGPT inference path):** Exact Responses request body / SSE event parity vs cli-chat-proxy; **HTTP SSE vs WebSocket** for `chatgpt.com/backend-api/codex` (start HTTP; flag WS if empty streams).
-- **Phase 6 (capability gaps):** Tool/schema quirks and subagent model inheritance on OpenAI path — document first real gaps when found.
+Phases needing `/gsd-plan-phase --research-phase` or equivalent focused design:
 
-Phases with standard patterns (skip research-phase):
-- **Phase 1 (home/binary):** Path rename and env override are well-mapped in-tree.
-- **Phase 2 (multi-scope store):** Extend existing `AuthStore` BTreeMap + flock patterns.
-- **Phase 3 (static catalog):** `default_models.json` + `ModelsManager` merge already exist.
-- **Phase 7 (telemetry kill switches):** INTEGRATIONS/CONCERNS already enumerate egress surfaces.
+- **Phase 1:** ledger schema, 872-path/change-cluster reconciliation, and exact pin/tree provenance.
+- **Phase 3:** generated root manifest maintenance and structural deletion/move mapping.
+- **Phase 5:** provider/profile/helper naming, precedence, endpoint trust, Codex wire golden tests.
+- **Phase 6:** privacy model for relocation/import and platform-safe worktree GC.
+- **Phase 7:** workflow child routing, cancellation ownership, journal/restart semantics, unavailable authoring skills.
+- **Phase 9:** exact ancestry-bridge plumbing and proof that the validated tree is unchanged.
+
+Phases using established patterns where separate research can usually be skipped:
+
+- **Phase 2:** upstream code and adversarial tests provide concrete security behavior; planning should focus on adaptation and coverage.
+- **Phase 4:** bum's existing identity/home/no-egress contracts and tests are established.
+- **Phase 8:** ratatui Action→Dispatch→Effect boundaries and upstream test topology are well documented, though PTY execution remains substantial.
+
+## Major Open Decisions
+
+1. Whether to create the final two-parent ancestry bridge or retain content-lineage synchronization without a bridge. Recommendation: bridge only after full validation because it materially reduces future sync cost.
+2. Naming for bum's closed provider concept (`InferenceProvider` recommended) versus upstream connection-profile ID, and exact credential precedence.
+3. Default model after merging Grok 4.5; this is a bum product decision, not automatic upstream parity.
+4. Compatibility aliases for identity-scoped `GROK_*` variables and project `.grok/workflows` discovery versus bum-primary names/paths.
+5. Bum release semver versus upstream 0.2.109 provenance presentation.
+6. Whether explicit operator-configured cross-host session mirroring is supported in v1.1; default/implicit remote destinations remain prohibited.
+7. Whether authoritative dollar cost can be shown for ChatGPT subscription traffic; recommendation is token counts plus “unknown” rather than estimates.
+8. Maintenance procedure for the generated root manifest when the public generator is unavailable.
 
 ## Confidence Assessment
 
 | Area | Confidence | Notes |
 |------|------------|-------|
-| Stack | HIGH | Codex OAuth endpoints/client_id/ports/headers and GPT-5.6 IDs verified from openai/codex + OpenAI docs; brownfield versions from this repo |
-| Features | HIGH | Aligns tightly with PROJECT.md + competitor UX patterns (Claude/Codex/OpenCode); daily-driver bar is product judgment (MEDIUM) |
-| Architecture | HIGH | Provider plane maps to existing seams (`ModelsManager`, `sampling_config_for_model`, `BearerResolver`, multi-key auth store) |
-| Pitfalls | MEDIUM–HIGH | HIGH for in-tree auth wipe, home, update/telemetry; MEDIUM for community multi-provider failure modes |
+| Stack | HIGH | Exact manifests, lockfile, SHAs, versions, checksums, and isolated upstream builds were inspected. |
+| Features | MEDIUM-HIGH | U001–U168, changelogs, docs, tests, and diffs reconcile well; public snapshot omits several named artifacts/contracts. |
+| Architecture | HIGH for topology; MEDIUM for intent | No-merge-base, roots, boundaries, and overlaps are verified; feature grouping reconstructs monorepo snapshot intent. |
+| Pitfalls | HIGH | Repository-specific conflict surfaces and bum v1 invariants are directly evidenced; external Git/Cargo guidance is supporting only. |
 
-**Overall confidence:** HIGH
+**Overall confidence:** MEDIUM-HIGH. The recommended integration method and safety priorities are strongly supported; a few public-source gaps and product-policy decisions must be resolved during planning.
 
 ### Gaps to Address
 
-- **ChatGPT Responses transport:** Whether HTTP SSE is sufficient for v1 or WS is required — validate with integration tests against live Codex backend; feature-flag WS if needed.
-- **Request body parity:** Exact ChatGPT backend Responses payload vs existing sampler — phase planning should add golden/live fixtures.
-- **GPT-5.6 ID / plan gating:** Availability may be plan/region gated; reconfirm IDs at implement time; gate UX on auth + entitlement errors.
-- **OAuth client_id ToS:** Reusing Codex public client is common practice but not a formal partner API — document risk; isolate storage; plan rotation if OpenAI tightens.
-- **OS keyring:** Defer to post-v1; file store `0600` is enough for launch.
-- **API-key secondary path:** P2 — implement only after ChatGPT OAuth primary is solid to avoid billing confusion.
-- **Subagent model inheritance:** Ensure parent model/provider propagates; verify in Phase 6/7 tests.
+- Unexported proto/client-tool behavior: keep unavailable until authoritative schema/source appears.
+- Workflow authoring skills and MiniSweAgent item: investigate observable behavior without fabrication.
+- Root manifest generator: choose a documented reproducible downstream maintenance method.
+- Cross-host import/mirroring: privacy review and explicit opt-in design.
+- App Builder flags: xAI-only until backend semantics are proven; never leak to Codex.
+- Dollar usage: require authoritative provider pricing/account semantics.
+- Windows parity: document limits; Unix success is not proof of Windows behavior.
+- Upstream may advance: either retain this exact pin or formally restart the inventory.
 
 ## Sources
 
-### Primary (HIGH confidence)
-- openai/codex `codex-rs/login`, `model-provider-info`, `model-provider` — OAuth flow, `CHATGPT_CODEX_BASE_URL`, bearer headers
-- [Codex Authentication](https://learn.chatgpt.com/docs/auth) — login UX, device-code, credential store
-- [Codex Models](https://learn.chatgpt.com/docs/models) — gpt-5.6-sol/terra/luna, deprecations
-- [OpenAI Models catalog](https://developers.openai.com/api/docs/models) / GPT-5.6 Sol — IDs and aliases
-- This repo `.planning/PROJECT.md`, `.planning/codebase/{ARCHITECTURE,STACK,INTEGRATIONS,CONCERNS}.md` — brownfield seams and constraints
-- In-tree: `xai-grok-shell` auth/models/config, `xai-grok-sampler` (`SamplerConfig`, `BearerResolver`), `xai-grok-models/default_models.json`
+### Primary repository evidence (HIGH confidence)
 
-### Secondary (MEDIUM confidence)
-- OpenCode / Claude Code / Continue / Aider multi-provider UX patterns — table stakes for login, picker, homes
-- Community multi-agent trackers (dual-auth headers, reauth loops, subagent model override) — failure modes
-- HTTP SSE sufficiency for ChatGPT Codex backend — needs live validation
+- Official repository: https://github.com/xai-org/grok-build
+- Pinned official commit: https://github.com/xai-org/grok-build/commit/3af4d5d39897855bdcc74f23e690024a5dc05573
+- Pinned `SOURCE_REV`, commit bodies, changelog 0.2.102–0.2.109, user guides, manifests, lockfile, schemas, tests, and exact local Git objects.
+- bum `.planning/PROJECT.md`, v1.0 milestone audit/requirements, and codebase architecture/concerns.
+- Pinned async-openai fork: https://github.com/our-forks/async-openai/commit/95b52ebdedf42143083cf3d6f0e0be7c84e9c808
 
-### Tertiary (LOW confidence)
-- Legal durability of third-party reuse of Codex public OAuth client_id — common practice, not formalized
-- Whether FedRAMP header path is needed for Buff Up Media accounts — only if claim present
+### Supporting official documentation
+
+- Git merge/unrelated histories, replace, patch-id, range-diff, rerere, and diff documentation: https://git-scm.com/docs
+- Cargo manifest/lockfile guidance: https://doc.rust-lang.org/cargo/guide/cargo-toml-vs-cargo-lock.html
+- Rhai 1.25.1 feature metadata: https://docs.rs/crate/rhai/1.25.1/features
+
+### Detailed research artifacts
+
+- `.planning/research/STACK.md`
+- `.planning/research/FEATURES.md`
+- `.planning/research/ARCHITECTURE.md`
+- `.planning/research/PITFALLS.md`
 
 ---
-*Research completed: 2026-07-16*
+*Research completed: 2026-07-22*
 *Ready for roadmap: yes*
