@@ -125,63 +125,65 @@
 
 ## Traceability
 
-Roadmap creation will map each requirement to exactly one phase.
+Each approved v1.1 requirement maps to exactly one roadmap phase.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| SYNC-01 | TBD | Pending |
-| SYNC-02 | TBD | Pending |
-| SYNC-03 | TBD | Pending |
-| SYNC-04 | TBD | Pending |
-| SYNC-05 | TBD | Pending |
-| SYNC-06 | TBD | Pending |
-| SEC-01 | TBD | Pending |
-| SEC-02 | TBD | Pending |
-| SEC-03 | TBD | Pending |
-| SEC-04 | TBD | Pending |
-| SEC-05 | TBD | Pending |
-| SEC-06 | TBD | Pending |
-| FOUND-01 | TBD | Pending |
-| FOUND-02 | TBD | Pending |
-| FOUND-03 | TBD | Pending |
-| ID-01 | TBD | Pending |
-| ID-02 | TBD | Pending |
-| PRIV-01 | TBD | Pending |
-| PRIV-02 | TBD | Pending |
-| PRIV-03 | TBD | Pending |
-| PROV-01 | TBD | Pending |
-| PROV-02 | TBD | Pending |
-| PROV-03 | TBD | Pending |
-| PROV-04 | TBD | Pending |
-| PROV-05 | TBD | Pending |
-| PROV-06 | TBD | Pending |
-| PROV-07 | TBD | Pending |
-| PROV-08 | TBD | Pending |
-| SESS-01 | TBD | Pending |
-| SESS-02 | TBD | Pending |
-| SCHED-01 | TBD | Pending |
-| WORK-01 | TBD | Pending |
-| WORK-02 | TBD | Pending |
-| FLOW-01 | TBD | Pending |
-| FLOW-02 | TBD | Pending |
-| FLOW-03 | TBD | Pending |
-| FLOW-04 | TBD | Pending |
-| FLOW-05 | TBD | Pending |
-| UX-01 | TBD | Pending |
-| UX-02 | TBD | Pending |
-| EXT-01 | TBD | Pending |
-| EXT-02 | TBD | Pending |
-| DOC-01 | TBD | Pending |
-| DONE-01 | TBD | Pending |
-| DONE-02 | TBD | Pending |
-| DONE-03 | TBD | Pending |
-| DONE-04 | TBD | Pending |
+| SYNC-01 | Phase 13 | Pending |
+| SYNC-02 | Phase 13 | Pending |
+| SYNC-03 | Phase 13 | Pending |
+| SYNC-04 | Phase 13 | Pending |
+| SYNC-05 | Phase 13 | Pending |
+| SYNC-06 | Phase 13 | Pending |
+| SEC-01 | Phase 14 | Pending |
+| SEC-02 | Phase 14 | Pending |
+| SEC-03 | Phase 14 | Pending |
+| SEC-04 | Phase 14 | Pending |
+| SEC-05 | Phase 14 | Pending |
+| SEC-06 | Phase 14 | Pending |
+| FOUND-01 | Phase 15 | Pending |
+| FOUND-02 | Phase 15 | Pending |
+| FOUND-03 | Phase 15 | Pending |
+| ID-01 | Phase 16 | Pending |
+| ID-02 | Phase 16 | Pending |
+| PRIV-01 | Phase 16 | Pending |
+| PRIV-02 | Phase 16 | Pending |
+| PRIV-03 | Phase 16 | Pending |
+| PROV-01 | Phase 17 | Pending |
+| PROV-02 | Phase 17 | Pending |
+| PROV-03 | Phase 17 | Pending |
+| PROV-04 | Phase 17 | Pending |
+| PROV-05 | Phase 17 | Pending |
+| PROV-06 | Phase 17 | Pending |
+| PROV-07 | Phase 17 | Pending |
+| PROV-08 | Phase 17 | Pending |
+| SESS-01 | Phase 18 | Pending |
+| SESS-02 | Phase 18 | Pending |
+| SCHED-01 | Phase 18 | Pending |
+| WORK-01 | Phase 18 | Pending |
+| WORK-02 | Phase 18 | Pending |
+| FLOW-01 | Phase 19 | Pending |
+| FLOW-02 | Phase 19 | Pending |
+| FLOW-03 | Phase 19 | Pending |
+| FLOW-04 | Phase 19 | Pending |
+| FLOW-05 | Phase 19 | Pending |
+| UX-01 | Phase 20 | Pending |
+| UX-02 | Phase 20 | Pending |
+| EXT-01 | Phase 20 | Pending |
+| EXT-02 | Phase 20 | Pending |
+| DOC-01 | Phase 20 | Pending |
+| DONE-01 | Phase 21 | Pending |
+| DONE-02 | Phase 21 | Pending |
+| DONE-03 | Phase 21 | Pending |
+| DONE-04 | Phase 21 | Pending |
 
 **Coverage:**
 - v1.1 requirements: 47 total
-- Mapped to phases: 0
-- Unmapped: 47 (roadmap pending)
+- Mapped to phases: 47
+- Unmapped: 0
+- Duplicate mappings: 0
+- Unique coverage: 100%
 
 ---
 *Requirements defined: 2026-07-22*
-*Last updated: 2026-07-22 after research and user scope approval*
+*Last updated: 2026-07-22 after v1.1 roadmap creation and unique coverage validation*

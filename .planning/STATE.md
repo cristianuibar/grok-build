@@ -2,11 +2,11 @@
 gsd_state_version: 1.0
 milestone: v1.1
 milestone_name: Upstream Grok Build parity
-status: planning
-last_updated: "2026-07-22T08:06:47.932Z"
+status: ready_to_plan
+last_updated: "2026-07-22T00:00:00Z"
 last_activity: 2026-07-22
 progress:
-  total_phases: 0
+  total_phases: 9
   completed_phases: 0
   total_plans: 0
   completed_plans: 0
@@ -17,42 +17,68 @@ progress:
 
 ## Project Reference
 
-See: `.planning/PROJECT.md`
+See: `.planning/PROJECT.md` (updated 2026-07-22)
 
-**Core value:** One CLI (`bum`) can log into both xAI and Codex and freely switch between Grok and GPT-5.6 models in a real coding session — including cross-provider subagent orchestration.
+**Core value:** One CLI (`bum`) can log into both xAI and Codex and freely switch between Grok and GPT-5.6 models in a real coding session, including cross-provider subagent orchestration.
 
-**Current focus:** v1.0 shipped — ready for `/gsd-new-milestone` (custom agentic workflows).
+**Current focus:** Phase 13 — Immutable Baseline & Provenance for v1.1 upstream parity.
 
 ## Current Position
 
-Phase: Not started (defining requirements)
-Plan: —
-Status: Defining requirements
-Last activity: 2026-07-22 — Milestone v1.1 started
+Phase: 13 of 21 (milestone phase 1 of 9) — Immutable Baseline & Provenance
+Plan: — (phase not yet planned)
+Status: Ready to plan
+Last activity: 2026-07-22 — v1.1 roadmap created with 47/47 requirements uniquely mapped
 
-## Shipped (v1.0)
+Progress: [░░░░░░░░░░] 0%
 
-- Isolated `~/.bum` identity + `bum` binary (ID-01, ID-03)
-- Dual OAuth (xAI + ChatGPT/Codex) multi-slot store (AUTH-01..05)
-- Mixed Grok + GPT-5.6 catalog with provider-aware routing (MOD-01..06)
-- Mid-session switch + missing-provider fail-closed gate
-- Cross-provider subagent orchestration (AGENT-01..06)
-- Quiet fork (no stock auto-update / telemetry phone-home) (OPS-01..02)
-- Daily-driver live bar OPS-03..06 + Codex wire/effort/attribution polish
-- ID-02 version branding closed in Phase 12.1 (`bum version` → bum)
+## Performance Metrics
+
+**v1.1 velocity:**
+- Total plans completed: 0
+- Average duration: —
+- Total execution time: 0 hours
+
+| Phase | Plans | Total | Avg/Plan |
+|-------|-------|-------|----------|
+| v1.1 | 0 | 0 min | — |
+
+## Accumulated Context
+
+### Decisions
+
+Decisions are logged in `.planning/PROJECT.md` and `.planning/REQUIREMENTS.md`.
+
+- v1.1 is frozen to upstream public SHA `3af4d5d39897855bdcc74f23e690024a5dc05573` (0.2.109), `SOURCE_REV` `0f4d7c91b8b2b408333f6de1e8a76cb8eaa71899`.
+- There is no merge base; integrate from the pinned upstream baseline plus a curated bum contract overlay.
+- Preserve `bum`, `~/.bum`, dual OAuth, per-model routing, cross-provider children, Codex wire behavior, and quiet/no-phone-home operation.
+- A two-parent ancestry bridge is allowed only after validation and must leave the parity tree byte-for-byte unchanged.
+
+### Pending Todos
+
+- Plan Phase 13 with deeper provenance research.
+- Run focused phase research before planning Phases 15, 17, 18, 19, and 21.
+
+### Blockers/Concerns
+
+- The exported root `Cargo.toml` is generated, but no public generator entry point is known; resolve in Phase 15 research.
+- Public-pin gaps (`ClientToolResult`/`ChatConfig`, workflow-authoring skills, MiniSweAgent traceability) must remain explicit and must not be fabricated.
+- The no-merge-base constraint makes premature history joining a hard stop.
 
 ## Deferred Items
 
-Non-blocking tech debt from v1.0 audit (see `.planning/milestones/v1.0-MILESTONE-AUDIT.md`):
+Items carried from v1.0 remain non-blocking unless absorbed by a mapped v1.1 requirement:
 
-| Category | Item | Status |
-|----------|------|--------|
-| tech_debt | Codex parent Task model visibility for session-auth-only `grok-build` | deferred |
-| tech_debt | Child token longevity regression test | deferred |
-| tech_debt | OPS-01 defense-in-depth if settings write called out-of-band | deferred |
-| tech_debt | Residual internal rebrand (crate names / non-user-facing strings) | deferred |
-| tech_debt | Nyquist VALIDATION metadata hygiene | deferred |
+| Category | Item | Status | Deferred At |
+|----------|------|--------|-------------|
+| tech_debt | Codex parent Task visibility for session-auth-only `grok-build` | pending review | v1.0 |
+| tech_debt | Child token longevity regression test | pending review | v1.0 |
+| tech_debt | Out-of-band auto-update setting normalization | pending review | v1.0 |
+| tech_debt | Residual internal crate rebrand | deferred beyond v1.1 | v1.0 |
+| tech_debt | Nyquist validation metadata hygiene | pending review | v1.0 |
 
-## Next
+## Session Continuity
 
-Run `/gsd-new-milestone` to define requirements and roadmap for custom agentic workflows (or other next-version goals).
+Last session: 2026-07-22
+Stopped at: v1.1 roadmap and unique requirement traceability created; awaiting user approval before Phase 13 planning
+Resume file: None
