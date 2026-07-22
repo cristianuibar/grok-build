@@ -25,6 +25,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [x] **Phase 10: Codex Responses wire parity** - Align bum request shape with official Codex CLI (headers, reasoning defaults, continuity) (completed 2026-07-18)
 - [x] **Phase 11: Codex effort & catalog fidelity** - GPT-5.6 effort levels, soft-clamp UX, catalog capability flags from Codex models.json patterns (completed 2026-07-21)
 - [x] **Phase 12: Codex depth & attribution polish** - Optional tool/WS/originator depth; honest product attribution (bum ≠ Codex CLI) (completed 2026-07-21)
+- [ ] **Phase 12.1: Close gap: ID-02 — fix bum version branding** (INSERTED) - `bum version` prints bum, not grok
 
 ## Phase Details
 
@@ -318,12 +319,32 @@ Plans:
 
 - [x] 12-08-PLAN.md — Exact review-artifact allowlist fixtures and current-HEAD credential-free re-verification
 
+### Phase 12.1: Close gap: ID-02 — fix bum version branding (INSERTED)
+
+**Goal:** Close the release-blocking ID-02 gap: `bum version` (and any remaining version printers) identify the product as **bum**, not stock `grok`
+**Mode:** mvp
+**Depends on:** Phase 12 (and Phase 8 rebrand — residual gap)
+**Requirements**: ID-02
+**Success Criteria** (what must be TRUE):
+
+  1. `bum version` prints a bum product label (not `grok …`) with version/hash still present
+  2. Grep/static gates show no remaining hard-coded `grok {version}` / product-label regressions on the version path
+  3. Live or hermetic probe reconfirms ID-02 for the version command after the fix
+
+**Plans:** 2 plans
+
+Plans:
+
+- [ ] 12.1-01-PLAN.md — Product const + format_version_cmd_line + wire Command::Version + p8_bin unit test
+- [ ] 12.1-02-PLAN.md — Hermetic bum version product-token probe + scoped static residual gate + VALIDATION
+
 ## Progress
 
 **Execution Order:**
-Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 → 9 → 10 → 11 → 12  
+Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 → 9 → 10 → 11 → 12 → 12.1  
 (Phase 8 quiet/rebrand polish may start in parallel once Phase 1 identity is stable, but ships before Phase 9 validation.  
-Phases 10–12 deepen Codex after Phase 9 daily-driver bar; Phase 9 in-phase fix for system→instructions is required for OPS-04 green.)
+Phases 10–12 deepen Codex after Phase 9 daily-driver bar; Phase 9 in-phase fix for system→instructions is required for OPS-04 green.  
+Phase 12.1 (INSERTED) closes the residual ID-02 version branding gap before v1.0 archive.)
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
@@ -345,7 +366,7 @@ Phases 10–12 deepen Codex after Phase 9 daily-driver bar; Phase 9 in-phase fix
 | Requirement | Phase |
 |-------------|-------|
 | ID-01 | Phase 1 |
-| ID-02 | Phase 8 |
+| ID-02 | Phase 8 (+ Phase 12.1 gap close) |
 | ID-03 | Phase 1 |
 | AUTH-01 | Phase 2 |
 | AUTH-02 | Phase 5 |
@@ -371,7 +392,7 @@ Phases 10–12 deepen Codex after Phase 9 daily-driver bar; Phase 9 in-phase fix
 | OPS-05 | Phase 9 (+ Phase 10 deepen) |
 | OPS-06 | Phase 9 |
 
-**Coverage:** 26/26 v1 requirements mapped ✓ (Phases 10–12 deepen OPS/MOD without new requirement IDs)
+**Coverage:** 26/26 v1 requirements mapped ✓ (Phases 10–12 deepen OPS/MOD without new requirement IDs; Phase 12.1 re-closes ID-02)
 
 ---
 *Roadmap created: 2026-07-16*  
