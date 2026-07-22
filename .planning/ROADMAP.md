@@ -360,6 +360,7 @@ Phase 12.1 (INSERTED) closes the residual ID-02 version branding gap before v1.0
 | 10. Codex Responses wire parity | 7/7 | Complete    | 2026-07-18 |
 | 11. Codex effort & catalog fidelity | 2/2 | Complete    | 2026-07-21 |
 | 12. Codex depth & attribution polish | 8/8 | Complete    | 2026-07-22 |
+| 12.1 Close gap: ID-02 version branding | 0/2 | Planned     | — |
 
 ## Coverage map
 
