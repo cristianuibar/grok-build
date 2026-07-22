@@ -316,7 +316,7 @@ RUST_LOG=debug bum -p "hello" 2> /tmp/bum.log
 
 ### Common fixes
 
-- **"Authentication failed"** -- Run `bum logout` to clear the selected provider's cached credentials, then `bum login` to sign in again.
+- **"Authentication failed"** -- Re-authenticate the affected slot with `bum logout --provider xai` and `bum login --provider xai`, or use `--provider codex` for the Codex slot.
 - **Token expires too quickly** -- Set `auth_token_ttl` or return `expires_in` in your auth provider's JSON output.
 - **OIDC redirect fails** -- Ensure your IdP allows loopback redirect URIs (`http://127.0.0.1/callback`).
 - **External auth provider not found** -- Check that the `auth_provider_command` path is correct and the binary is executable.

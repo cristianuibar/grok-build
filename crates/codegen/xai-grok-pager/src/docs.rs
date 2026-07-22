@@ -255,6 +255,27 @@ pub fn extract_user_guide_docs(grok_home: &std::path::Path) {
 mod tests {
     use super::*;
 
+    fn bare_markdown_command_lines<'a>(markdown: &'a str, command: &str) -> Vec<(usize, &'a str)> {
+        let inline = regex::Regex::new(&format!(r"`\s*{}\s*`", regex::escape(command)))
+            .expect("valid inline command regex");
+        let fenced = regex::Regex::new(&format!(r"^\s*(?:\$\s*)?{}\s*$", regex::escape(command)))
+            .expect("valid fenced command regex");
+        let mut in_fence = false;
+
+        markdown
+            .lines()
+            .enumerate()
+            .filter_map(|(index, line)| {
+                if line.trim_start().starts_with("```") {
+                    in_fence = !in_fence;
+                    return None;
+                }
+                (inline.is_match(line) || (in_fence && fenced.is_match(line)))
+                    .then_some((index + 1, line))
+            })
+            .collect()
+    }
+
     fn identity_violation(markdown: &str) -> Option<&'static str> {
         let stock_subject = regex::Regex::new(
             r"(?i)\b(?:grok build|grok)\s+(?:is|supports|uses|stores|opens|automatically|prompts|provides|includes|runs|will|can)\b",
@@ -506,9 +527,23 @@ mod tests {
                 && getting_started.contains("bum login --provider codex"),
             "01-getting-started.md must present both provider selectors"
         );
-        assert!(
-            !auth.contains("To sign out, run `bum logout`"),
-            "Authentication guide must not claim bare logout is valid"
+        let bare_logout = bare_markdown_command_lines(auth, "bum logout");
+        assert_eq!(
+            bare_logout,
+            vec![(
+                62,
+                "Bare `bum logout` is rejected and does not mutate credentials. A provider-scoped"
+            )],
+            "Authentication guide may mention bare logout only in the explicit rejection; command-position occurrences are invalid"
+        );
+        let bare_login = bare_markdown_command_lines(auth, "bum login");
+        assert_eq!(
+            bare_login,
+            vec![(
+                44,
+                "Bare `bum login` is retained as an xAI-only compatibility shortcut. Provider"
+            )],
+            "Authentication guide may mention bare login only as the documented xAI compatibility shortcut"
         );
         assert!(
             !getting_started.contains("run `bum login` and choose"),
