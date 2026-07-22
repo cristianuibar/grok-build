@@ -3,18 +3,18 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 current_phase: 12.1
-status: executing
-stopped_at: Completed 12.1-01-PLAN.md
-last_updated: "2026-07-22T06:04:13.765Z"
+current_plan: 2
+status: verifying
+stopped_at: Completed 12.1-02-PLAN.md
+last_updated: "2026-07-22T06:17:05.210Z"
 last_activity: 2026-07-22
-last_activity_desc: "Completed 12.1-01 version cmd product formatter + wire-up"
+last_activity_desc: Completed 12.1-01 version cmd product formatter + wire-up
 progress:
   total_phases: 13
   completed_phases: 8
   total_plans: 70
-  completed_plans: 64
+  completed_plans: 65
 current_phase_name: close-gap-id-02-fix-bum-version-branding
-current_plan: 2
 total_plans_in_phase: 2
 ---
 
@@ -31,13 +31,13 @@ See: .planning/PROJECT.md (updated 2026-07-17)
 
 Phase: 12.1
 Plan: 2 of 2
-Status: executing
+Status: Phase complete — ready for verification
 Current Plan: 2
 Total Plans in Phase: 2
 Next: Execute 12.1-02-PLAN.md (hermetic probe + static gate)
 Last activity: 2026-07-22 — Completed 12.1-01 version cmd product formatter + wire-up
 
-Progress: [█████████░] 91%
+Progress: [█████████░] 93%
 
 ## Performance Metrics
 
@@ -90,6 +90,7 @@ Progress: [█████████░] 91%
 | Phase 12 P07 | 20 min | 3 tasks | 3 files |
 | Phase 12 P08 | 12 min | 3 tasks | 3 files |
 | Phase 12.1 P01 | 4min | 2 tasks | 1 files |
+| Phase 12.1 P02 | 7min | 2 tasks | 2 files |
 
 ## Decisions
 
@@ -101,6 +102,8 @@ Progress: [█████████░] 91%
 - [Phase 12]: Tie closure evidence to the committed Task 1 SHA and observed credential-free counts.
 - [Phase 12.1]: Product label for bum version is bum only; text shape bum {version} via VERSION_CMD_PRODUCT_NAME + format_version_cmd_line
 - [Phase 12.1]: Keep display_version_with_commit + channel_label; JSON version payload stays currentVersion + channel only
+- [Phase ?]: Hermetic product-token probe separate from isolation test; D-08 dual-login UAT not required for ID-02
+- [Phase ?]: Static residual scoped to pager-bin main.rs stock product-token format only (D-11); no repo-wide rebrand greps
 
 ### Phase 11 (Codex effort & catalog fidelity)
 
@@ -155,8 +158,8 @@ Progress: [█████████░] 91%
 
 ## Session
 
-**Last session:** 2026-07-22T06:04:13.730Z
-**Stopped at:** Completed 12.1-01-PLAN.md
+**Last session:** 2026-07-22T06:17:05.179Z
+**Stopped at:** Completed 12.1-02-PLAN.md
 **Resume file:** None
 **Binary preflight:** `target/debug/bum` rebuilt 2026-07-22 after version branding wire-up
 **Next:**
