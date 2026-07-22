@@ -1,7 +1,7 @@
 ---
 phase: 11-codex-effort-catalog-fidelity
 verified: 2026-07-21T20:15:00Z
-status: human_needed
+status: passed
 score: 26/26 must-haves verified (behavior-testable set); 3 prohibitions confirmed by code inspection (judgment-tier, flagged for human sign-off); 1 backstop truth has no dedicated concurrency test
 behavior_unverified: 0
 overrides_applied: 0
@@ -19,7 +19,7 @@ human_verification:
 **Phase Goal:** GPT-5.6 effort levels work like official Codex (soft-clamp, supported menus) — no false
 "effort not supported" on catalog models
 **Verified:** 2026-07-21T20:15
-**Status:** human_needed
+**Status:** passed
 **Re-verification:** No — initial verification
 
 ## Goal Achievement
@@ -152,7 +152,7 @@ No blocking gaps. All ROADMAP success criteria and PLAN must-have truths that ar
 1. Three prohibitions (`never widen clamp`, `never hard-fail on unsupported effort`, `never mutate stored preference as clamp side-effect`) were left `status: flagged-unverified` with no `verification` tier in the PLAN frontmatter. Code inspection supports all three holding, but this is a non-authoritative LLM-judge finding, not an independently test-backed guarantee — recorded as `human_needed` per ADR-550 D3/D4, not silently passed.
 2. One `verification: backstop` truth (in-flight turn's request is not mutated by a concurrent switch) has adjacent-but-not-identical test coverage (`p6_mid_turn_switch_does_not_cancel_inflight` proves non-cancellation, not wire-shape immutability). Architecturally sound by construction, not test-pinned.
 
-Neither item reflects a defect found in the implementation — both are verification-coverage gaps in the phase's own plan documents, surfaced here rather than glossed over.
+Neither item reflects a defect found in the implementation. Both verification-coverage gaps were accepted through human validation on 2026-07-21: the three product-policy prohibitions were signed off, and the live in-flight switch check passed with the current request retaining its original wire shape while the following request used the new model's catalog-clamped effort.
 
 ---
 
