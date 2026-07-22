@@ -483,6 +483,10 @@ is_allowed_phase_diff_file() {
     "$PHASE_DIR"/12-PATTERNS.md | \
     "$PHASE_DIR"/12-VALIDATION.md | \
     "$PHASE_DIR"/12-PHASE-GATE.md | \
+    "$PHASE_DIR"/12-REVIEW.md | \
+    "$PHASE_DIR"/12-REVIEW-FIX.md | \
+    "$PHASE_DIR"/12-08-PLAN.md | \
+    "$PHASE_DIR"/12-08-SUMMARY.md | \
     "$PHASE_DIR"/12-0[1-7]-PLAN.md | \
     "$PHASE_DIR"/12-0[1-7]-SUMMARY.md)
       return 0
