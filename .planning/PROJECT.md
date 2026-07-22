@@ -4,56 +4,59 @@
 
 ## What This Is
 
-**bum** (*Build Using Multiagents*) is a full-product fork of Grok Build (this repo): a terminal AI coding agent TUI/CLI that you launch as `bum` instead of `grok`. v1 keeps the Grok Build agent/TUI harness and makes it a multi-provider daily driver — xAI OAuth for Grok models, ChatGPT/Codex OAuth for GPT-5.6 models, with per-model routing and an isolated `~/.bum` identity. Later milestones will layer custom agentic workflows on the same harness.
+**bum** (*Build Using Multiagents*) is a full-product fork of Grok Build (this repo): a terminal AI coding agent TUI/CLI launched as `bum`. **v1.0 shipped** as a multi-provider daily driver — xAI OAuth for Grok models, ChatGPT/Codex OAuth for GPT-5.6 models, per-model routing, cross-provider subagents, quiet fork (no phone-home), and isolated `~/.bum` identity. Later milestones layer custom agentic workflows on the same harness.
 
 ## Core Value
 
 You can run one CLI (`bum`), log into both xAI and Codex, and freely switch between Grok and GPT-5.6 models in a real coding session without leaving the tool.
 
+## Current State
+
+**Shipped:** v1.0 Multi-provider daily driver (2026-07-22)  
+**Archive:** `.planning/milestones/v1.0-ROADMAP.md`, `v1.0-REQUIREMENTS.md`, `v1.0-MILESTONE-AUDIT.md`, `v1.0-phases/`  
+**Live identity:** `bum version` prints bum product label (ID-02 closed in Phase 12.1).
+
 ## Requirements
 
 ### Validated
 
-Capabilities already present in this Grok Build fork (baseline the product builds on):
+Baseline fork + v1.0 multi-provider daily driver:
 
 - ✓ Full-screen TUI coding agent (pager) with action → dispatch → effect loop — existing
-- ✓ Interactive, headless, and ACP agent runtimes (`xai-grok-shell` / `xai-grok-pager`) — existing
-- ✓ xAI OAuth2 / device-code auth against `auth.x.ai` (and local-dev issuer) — existing
-- ✓ Model selector driven by embedded `default_models.json` + runtime model list — existing
+- ✓ Interactive, headless, and ACP agent runtimes — existing
 - ✓ Tool surface (bash, edit, search, web, MCP, subagents, workspace/VCS) — existing
-- ✓ Session, config, hooks, and skills infrastructure under `~/.grok`-style home — existing (paths rebrand to `~/.bum` in Active)
-- ✓ Isolated `~/.bum` product home + multi-slot auth store (`providers.xai` / `providers.codex`) — Phases 1–2
-- ✓ xAI OAuth (browser + device-code) under bum auth store — Phase 2 (AUTH-01)
-- ✓ GPT-5.6 family in mixed model catalog with explicit `provider` binding — Phase 3
-- ✓ Provider-aware request routing (model → backend + credential slot) — Phase 4
-- ✓ Codex / ChatGPT OAuth login, selective logout, dual status, independent refresh (AUTH-02..05) — Phase 5
-- ✓ Multi-provider session UX with fail-closed missing-provider prompts — Phase 6
-- ✓ Quiet local fork with stock auto-update and product telemetry disabled — Phase 8
-- ✓ Daily-driver bar on live xAI and Codex sessions, same-process switching, and cross-provider child tasks — Phase 9 (OPS-03..06)
-- ✓ Cross-provider multi-agent orchestration, including live dual-login proof in both directions — Phases 7 and 9
+- ✓ Isolated `~/.bum` product home + `bum` binary (ID-01, ID-03) — v1.0
+- ✓ Multi-slot auth store + xAI OAuth under bum (AUTH-01) — v1.0
+- ✓ Codex / ChatGPT OAuth dual lifecycle (AUTH-02..05) — v1.0
+- ✓ Mixed Grok + GPT-5.6 catalog with explicit provider binding (MOD-01..02) — v1.0
+- ✓ Provider-aware routing + mid-session switch + missing-provider gate (MOD-03..06) — v1.0
+- ✓ Cross-provider multi-agent orchestration (AGENT-01..06) — v1.0
+- ✓ Quiet fork: no stock auto-update / product telemetry phone-home (OPS-01..02) — v1.0
+- ✓ Daily-driver live bar OPS-03..06 + Codex wire/effort/attribution polish — v1.0
+- ✓ User-facing product chrome including `bum version` (ID-02) — v1.0 / Phase 12.1
 
 ### Active
 
-- [ ] **Product rename polish** — Full rebrand of UI chrome, help strings, and remaining “Grok Build” product surface (binary/`BUM_HOME` already ship in Phases 1+)
+- [ ] **Custom agentic workflows** — workflow engine / multi-agent pipelines on the same harness (next milestone)
 
 ### Out of Scope
 
-- Custom agentic workflows / workflow engine — deferred to a later milestone; v1 is multi-provider identity + routing + cross-provider subagents + rebrand (not a full custom workflow product)
-- Sharing or importing stock `~/.grok` / Codex credential stores — v1 is isolated `~/.bum` only
+- Sharing or importing stock `~/.grok` / Codex credential stores — isolated `~/.bum` only (v1 constraint retained)
 - Official public distribution / signed x.ai install channel for bum — local/team daily driver first
 - Replacing the agent runtime with a new framework — stay on this Grok Build fork’s runtime
-- Supporting arbitrary third-party providers beyond xAI + Codex/OpenAI in v1 — multi-provider architecture should not block more later, but only these two ship in v1
-- Enterprise IdP SSO customization beyond what the fork already supports for xAI — not a v1 goal
-- Full monorepo cleanup of god-files / workspace-types dual system — tracked as background debt, not v1 success criteria
+- Supporting arbitrary third-party providers beyond xAI + Codex/OpenAI until a later milestone decides
+- Enterprise IdP SSO customization beyond what the fork already supports for xAI
+- Full monorepo cleanup of god-files / workspace-types dual system — background debt
+- Complete internal crate rename away from `xai-grok-*` — residual rebrand tech debt, not user-facing
 
 ## Context
 
-- **Codebase:** Brownfield Grok Build (SpaceXAI terminal agent). Composition root `xai-grok-pager-bin` → binary historically `xai-grok-pager` / shipped as `grok`. Mapped under `.planning/codebase/` (ARCHITECTURE, STACK, CONCERNS, etc., 2026-07-16).
-- **Auth today:** xAI OAuth2 device/browser flow (`auth.x.ai`), device-code grant, credential store under Grok home; API key fallback exists. No Codex/ChatGPT OAuth in-tree yet.
-- **Models today:** Embedded `default_models.json` is Grok-centric (e.g. `grok-build`); sampling goes through cli-chat-proxy / xAI paths.
-- **Why this exists:** Want a single harness (`bum`) that is *our* product surface — not stock `grok` or `codex` — able to use both ecosystems’ models under OAuth, then later host custom agentic workflows without bolting them onto two separate CLIs.
-- **Audience:** Cristian / Buff Up Media internal daily driver (CLI name and project name **bum**).
-- **Later vision:** Custom agentic workflows integrated into the same harness (explicitly not v1).
+- **Codebase:** Brownfield Grok Build fork. Composition root `xai-grok-pager-bin` ships binary **`bum`**. Mapped under `.planning/codebase/`.
+- **Auth:** Dual multi-slot store under `~/.bum` — xAI OAuth + ChatGPT/Codex OAuth (PKCE/device), selective logout, independent refresh.
+- **Models:** Mixed catalog — Grok (xAI) + GPT-5.6 Sol/Terra/Luna (Codex) with provider-aware sampling and mid-session switch.
+- **Why this exists:** Single harness that is *our* product surface — not stock `grok` or `codex` — both ecosystems under OAuth, then custom agentic workflows without two CLIs.
+- **Audience:** Cristian / Buff Up Media internal daily driver.
+- **Next vision:** Custom agentic workflows integrated into the same harness (next milestone).
 
 ## Constraints
 
@@ -78,12 +81,14 @@ Capabilities already present in this Grok Build fork (baseline the product build
 | Missing provider → block + prompt login | Fail closed and fixable, not mid-request surprise | Phase 6 — validated |
 | Disable xAI auto-update + telemetry | Private daily-driver fork must not phone home as stock client | Phase 8 — validated |
 | Custom agentic workflows deferred | Keep v1 shippable: identity + models + cross-provider subagents + rebrand | — Pending |
-| Cross-provider subagents in v1 | Parent model/provider must not limit child; NL + tool spawn with model + effort | Phase 7 automated + Phase 9 live both-direction PASS |
-| v1 success = feature-complete daily driver | Not a prototype — usable as default coding CLI | Phase 9 — OPS-03..06 live PASS |
+| Cross-provider subagents in v1 | Parent model/provider must not limit child; NL + tool spawn with model + effort | ✓ Phase 7 + Phase 9 live both-direction PASS |
+| v1 success = feature-complete daily driver | Not a prototype — usable as default coding CLI | ✓ Phase 9 OPS-03..06 + Phase 12.1 ID-02 close |
+| Version path product token local const + pure formatter | Match Phase 8 product-name pattern; unit + hermetic + static gates | ✓ Phase 12.1 |
 
 ## Evolution
 
 This document evolves at phase transitions and milestone boundaries.
+
 
 **After each phase transition** (via `/gsd:transition`):
 1. Requirements invalidated? → Move to Out of Scope with reason
@@ -100,4 +105,4 @@ This document evolves at phase transitions and milestone boundaries.
 5. Promote next milestone (e.g. custom agentic workflows) into Active when ready
 
 ---
-*Last updated: 2026-07-22 after Phase 9 closeout reconciliation*
+*Last updated: 2026-07-22 after v1.0 milestone*
