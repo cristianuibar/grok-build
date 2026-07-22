@@ -25,7 +25,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [x] **Phase 10: Codex Responses wire parity** - Align bum request shape with official Codex CLI (headers, reasoning defaults, continuity) (completed 2026-07-18)
 - [x] **Phase 11: Codex effort & catalog fidelity** - GPT-5.6 effort levels, soft-clamp UX, catalog capability flags from Codex models.json patterns (completed 2026-07-21)
 - [x] **Phase 12: Codex depth & attribution polish** - Optional tool/WS/originator depth; honest product attribution (bum ≠ Codex CLI) (completed 2026-07-21)
-- [ ] **Phase 12.1: Close gap: ID-02 — fix bum version branding** (INSERTED) - `bum version` prints bum, not grok
+- [x] **Phase 12.1: Close gap: ID-02 — fix bum version branding** (INSERTED) - `bum version` prints bum, not grok (completed 2026-07-22)
 
 ## Phase Details
 
@@ -331,7 +331,7 @@ Plans:
   2. Grep/static gates show no remaining hard-coded `grok {version}` / product-label regressions on the version path
   3. Live or hermetic probe reconfirms ID-02 for the version command after the fix
 
-**Plans:** 2/2 plans executed
+**Plans:** 2/2 plans complete
 
 Plans:
 
@@ -360,7 +360,7 @@ Phase 12.1 (INSERTED) closes the residual ID-02 version branding gap before v1.0
 | 10. Codex Responses wire parity | 7/7 | Complete    | 2026-07-18 |
 | 11. Codex effort & catalog fidelity | 2/2 | Complete    | 2026-07-21 |
 | 12. Codex depth & attribution polish | 8/8 | Complete    | 2026-07-22 |
-| 12.1 Close gap: ID-02 version branding | 2/2 | In Progress|  |
+| 12.1 Close gap: ID-02 version branding | 2/2 | Complete    | 2026-07-22 |
 
 ## Coverage map
 
