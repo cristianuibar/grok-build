@@ -60,7 +60,7 @@ bum detects these terminal emulators from environment variables:
 - **foot** (Wayland-native, Linux)
 - **VS Code**, **Cursor**, **Windsurf**, and **Zed** integrated terminals
 - **JetBrains** IDE terminals (IntelliJ, PhpStorm, and others)
-- **Grok Desktop**
+- **Legacy native desktop host**
 - **VTE**-based terminals (GNOME Terminal, GNOME Console, Tilix)
 - **Windows Terminal**
 

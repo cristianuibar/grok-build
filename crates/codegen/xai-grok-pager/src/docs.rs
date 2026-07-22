@@ -277,38 +277,14 @@ mod tests {
     }
 
     fn identity_violation(markdown: &str) -> Option<&'static str> {
-        let stock_subject = regex::Regex::new(
-            r"(?i)\b(?:grok build|grok)\s+(?:is|supports|uses|stores|opens|automatically|prompts|provides|includes|runs|will|can)\b",
-        )
-        .expect("valid stock-product regex");
-        let imperative_stock_name = regex::Regex::new(
-            r"(?i)\b(?:launch|invoke|run|start)\s+(?:the\s+)?(?:`|\./)?grok(?:`|\s|$)",
-        )
-        .expect("valid stock-command regex");
-        let inline_stock_executable =
-            regex::Regex::new(r"(?i)`(?:\./)?grok(?:`|\s)").expect("valid inline-command regex");
-        let stock_cli_name =
-            regex::Regex::new(r"(?i)\b(?:the\s+)?grok cli\b").expect("valid stock-CLI regex");
+        let stock_name =
+            regex::Regex::new(r"(?i)\bgrok(?: build)?\b").expect("valid stock-name regex");
         let stock_home = regex::Regex::new(r"(?i)~/\.grok(?:/|[^[:alnum:]_-]|$)")
             .expect("valid stock-home regex");
         let stock_codex_identity = regex::Regex::new(
             r"(?i)\bbum\s+is\s+(?:the\s+)?(?:stock\s+)?(?:openai\s+)?codex cli\b",
         )
         .expect("valid Codex-identity regex");
-        let fenced_stock_command = regex::Regex::new(
-            r"(?i)^\s*(?:\$\s*)?(?:\./)?grok(?:\s+(?:-{1,2}[[:alnum:]-]+|login|logout|auth|agent|mcp|plugin|sessions?|inspect|update|workspace|models?))?\s*$",
-        )
-        .expect("valid fenced-command regex");
-
-        if stock_subject.is_match(markdown) {
-            return Some("stock product used as the acting subject");
-        }
-        if imperative_stock_name.is_match(markdown)
-            || inline_stock_executable.is_match(markdown)
-            || stock_cli_name.is_match(markdown)
-        {
-            return Some("stock executable used in command position");
-        }
         if stock_home.is_match(markdown) {
             return Some("user-global stock home path");
         }
@@ -316,14 +292,77 @@ mod tests {
             return Some("stock Codex CLI impersonation claim");
         }
 
-        let mut in_fence = false;
         for line in markdown.lines() {
-            if line.trim_start().starts_with("```") {
-                in_fence = !in_fence;
-                continue;
-            }
-            if in_fence && fenced_stock_command.is_match(line) {
-                return Some("stock executable used in a command block");
+            for occurrence in stock_name.find_iter(line) {
+                let bytes = line.as_bytes();
+                let is_token_byte = |byte: u8| {
+                    byte.is_ascii_alphanumeric()
+                        || matches!(byte, b'_' | b'.' | b'/' | b'~' | b':' | b'$' | b'-')
+                };
+                let mut token_start = occurrence.start();
+                while token_start > 0 && is_token_byte(bytes[token_start - 1]) {
+                    token_start -= 1;
+                }
+                let mut token_end = occurrence.end();
+                while token_end < bytes.len() && is_token_byte(bytes[token_end]) {
+                    token_end += 1;
+                }
+                let token = &line[token_start..token_end];
+                let lower_token = token.to_ascii_lowercase();
+
+                let hosted_domain =
+                    lower_token.contains("grok.com") || lower_token.contains("grok-proxy.");
+                let internal_identifier = token.starts_with("GROK_")
+                    || lower_token.contains("xai-grok-")
+                    || lower_token.contains("grok-hooks")
+                    || lower_token.contains("-grok-")
+                    || lower_token.contains("grok-night")
+                    || lower_token.contains("grok-day")
+                    || lower_token.contains("--grok-");
+                let compatibility_path = lower_token.contains(".grok/")
+                    || lower_token.starts_with("/etc/grok/")
+                    || (lower_token == ".grok"
+                        && regex::Regex::new(r"(?i)\b(?:project|compatibility)\b")
+                            .expect("valid compatibility-path regex")
+                            .is_match(line));
+                let model_id = lower_token == "grok-build"
+                    || lower_token.starts_with("grok-")
+                    || lower_token.ends_with("-grok");
+                let explicit_model_or_provider = [
+                    r"(?i)(?:xai|x\.ai).{0,40}\bgrok(?: build)?\b",
+                    r"(?i)\bgrok(?: build)?\b.{0,40}(?:xai|x\.ai)",
+                    r"(?i)\b(?:model|models|provider|service|family)\b.{0,30}\bgrok(?: build)?\b",
+                    r"(?i)\bgrok(?: build)?\s+(?:model|models|family)\b",
+                    r"(?i)^\s*/m(?:odel)?\s+grok(?: build)?\b",
+                    r#"(?i)^\s*name\s*=\s*"grok(?: build)?\b"#,
+                ]
+                .iter()
+                .any(|pattern| {
+                    regex::Regex::new(pattern)
+                        .expect("valid allowed provider/model regex")
+                        .is_match(line)
+                });
+                let lineage_or_legal = regex::Regex::new(
+                    r"(?i)\b(?:fork|forked|lineage|ancestry|upstream|derived|legal|notice|harness)\b",
+                )
+                .expect("valid lineage/legal regex")
+                .is_match(line);
+                let named_internal = regex::Regex::new(
+                    r#"(?i)(?:\b(?:internal|identifier|item name)\b.{0,30}\bgrok\b|\bitems\s*=\s*\[[^]]*"grok")"#,
+                )
+                .expect("valid named-internal regex")
+                .is_match(line);
+
+                if !(hosted_domain
+                    || internal_identifier
+                    || compatibility_path
+                    || model_id
+                    || explicit_model_or_provider
+                    || lineage_or_legal
+                    || named_internal)
+                {
+                    return Some("stock product or executable lacks an allowed context");
+                }
             }
         }
         None
@@ -430,6 +469,9 @@ mod tests {
     fn p12_identity_classifier_adversarial_contract() {
         let allowed = [
             "bum supports xAI Grok models and OpenAI Codex models.",
+            "## xAI/Grok provider support",
+            "Select [Grok models](models.md) from the picker.",
+            "```text\n/model grok-build\n```",
             "bum is built from the Grok Build harness lineage.",
             "Authenticate through https://grok.com when using xAI.",
             "The internal identifiers `GROK_HOME` and `xai-grok-shell` remain compatible.",
@@ -437,7 +479,15 @@ mod tests {
             "The legal notice records Grok Build ancestry.",
         ];
         let forbidden = [
-            "Grok provides a terminal coding workflow.",
+            "Grok delivers a terminal coding workflow.",
+            "Grok offers fast edits.",
+            "Grok powers the terminal.",
+            "Grok helps with refactors.",
+            "Grok works everywhere.",
+            "# Grok: a terminal coding agent",
+            "Grok—now with more tools.",
+            "[Grok](https://example.com) handles the task.",
+            "Use `Grok` for this task.",
             "Launch Grok to begin.",
             "Use the Grok CLI for this task.",
             "Run `grok` now.",

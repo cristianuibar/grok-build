@@ -41,11 +41,6 @@ readonly DOCS_RS=crates/codegen/xai-grok-pager/src/docs.rs
 readonly AUTH_DOC=crates/codegen/xai-grok-pager/docs/user-guide/02-authentication.md
 readonly CODEX_AUTH=crates/codegen/xai-grok-shell/src/auth/codex/mod.rs
 readonly NO_LIVE_OAUTH_OR_NETWORK=true
-readonly IDENTITY_STOCK_SUBJECT='(^|[^[:alnum:]_])(grok build|grok)[[:space:]]+(is|supports|uses|stores|opens|automatically|prompts|provides|includes|runs|will|can)([^[:alnum:]_]|$)'
-readonly IDENTITY_STOCK_COMMAND='`(\./)?grok([[:space:]]|`)|(^|[^[:alnum:]_])(the[[:space:]]+)?grok cli([^[:alnum:]_]|$)|(^|[^[:alnum:]_])(launch|invoke|run|start)[[:space:]]+(the[[:space:]]+)?(`|\./)?grok(`|[[:space:]]|$)|^[[:space:]]*(\$[[:space:]]*)?(\./)?grok([[:space:]]+(-{1,2}[[:alnum:]-]+|login|logout|auth|agent|mcp|plugin|sessions?|inspect|update|workspace|models?))?[[:space:]]*$'
-readonly IDENTITY_STOCK_HOME='~/.grok(/|[^[:alnum:]_-]|$)'
-readonly IDENTITY_STOCK_CODEX='bum[[:space:]]+is[[:space:]]+(the[[:space:]]+)?(stock[[:space:]]+)?(openai[[:space:]]+)?codex cli'
-
 readonly -a GUIDE_FILES=(
   crates/codegen/xai-grok-pager/docs/user-guide/01-getting-started.md
   crates/codegen/xai-grok-pager/docs/user-guide/02-authentication.md
@@ -113,64 +108,133 @@ is_known_doc() {
   return 1
 }
 
-# Allowed contextual categories are explicit: provider/model names, fork lineage,
-# legal notices, internal identifiers (GROK_* and xai-grok-*), hosted domains such
-# as grok.com, and project-local .grok/ compatibility paths. The classifier rejects
-# only product-subject, executable-command, user-global-home, and impersonation claims.
+# Every standalone Grok/Grok Build reference is denied unless its Markdown line
+# establishes one of the documented allowlist contexts. This covers prose,
+# headings, links, inline code, and fenced commands without guessing at verbs.
+identity_classifier_node() {
+  node - "$@" <<'NODE'
+const fs = require("fs");
+
+function classify(markdown) {
+  const lines = markdown.split(/\r?\n/);
+  for (let index = 0; index < lines.length; index += 1) {
+    const line = lines[index];
+    if (/~\/\.grok(?:\/|[^A-Za-z0-9_-]|$)/i.test(line)) {
+      return { line: index + 1, reason: "user-global stock home path" };
+    }
+    if (/\bbum\s+is\s+(?:the\s+)?(?:stock\s+)?(?:openai\s+)?codex cli\b/i.test(line)) {
+      return { line: index + 1, reason: "stock Codex CLI impersonation claim" };
+    }
+
+    for (const occurrence of line.matchAll(/\bgrok(?: build)?\b/giu)) {
+      let start = occurrence.index;
+      let end = start + occurrence[0].length;
+      while (start > 0 && /[A-Za-z0-9_./~:$-]/.test(line[start - 1])) start -= 1;
+      while (end < line.length && /[A-Za-z0-9_./~:$-]/.test(line[end])) end += 1;
+      const token = line.slice(start, end);
+      const lower = token.toLowerCase();
+
+      const hostedDomain = lower.includes("grok.com") || lower.includes("grok-proxy.");
+      const internalIdentifier = token.startsWith("GROK_")
+        || lower.includes("xai-grok-")
+        || lower.includes("grok-hooks")
+        || lower.includes("-grok-")
+        || lower.includes("grok-night")
+        || lower.includes("grok-day")
+        || lower.includes("--grok-");
+      const compatibilityPath = lower.includes(".grok/")
+        || lower.startsWith("/etc/grok/")
+        || (lower === ".grok" && /\b(?:project|compatibility)\b/i.test(line));
+      const modelId = lower === "grok-build" || lower.startsWith("grok-") || lower.endsWith("-grok");
+      const explicitModelOrProvider = [
+        /(?:xai|x\.ai).{0,40}\bgrok(?: build)?\b/i,
+        /\bgrok(?: build)?\b.{0,40}(?:xai|x\.ai)/i,
+        /\b(?:model|models|provider|service|family)\b.{0,30}\bgrok(?: build)?\b/i,
+        /\bgrok(?: build)?\s+(?:model|models|family)\b/i,
+        /^\s*\/m(?:odel)?\s+grok(?: build)?\b/i,
+        /^\s*name\s*=\s*"grok(?: build)?\b/i,
+      ].some((pattern) => pattern.test(line));
+      const lineageOrLegal = /\b(?:fork|forked|lineage|ancestry|upstream|derived|legal|notice|harness)\b/i.test(line);
+      const namedInternal = /(?:\b(?:internal|identifier|item name)\b.{0,30}\bgrok\b|\bitems\s*=\s*\[[^\]]*"grok")/i.test(line);
+
+      if (!(hostedDomain || internalIdentifier || compatibilityPath || modelId
+          || explicitModelOrProvider || lineageOrLegal || namedInternal)) {
+        return { line: index + 1, reason: "stock product or executable lacks an allowed context" };
+      }
+    }
+  }
+  return null;
+}
+
+const mode = process.argv[2];
+if (mode === "files") {
+  let failed = false;
+  for (const file of process.argv.slice(3)) {
+    const violation = classify(fs.readFileSync(file, "utf8"));
+    if (violation) {
+      console.error(`${file}:${violation.line}: ${violation.reason}`);
+      failed = true;
+    } else {
+      console.log(`identity clean: ${file}`);
+    }
+  }
+  process.exit(failed ? 1 : 0);
+}
+
+if (mode === "fixtures") {
+  const allowed = [
+    "bum supports xAI Grok models and OpenAI Codex models.",
+    "## xAI/Grok provider support",
+    "Select [Grok models](models.md) from the picker.",
+    "```text\n/model grok-build\n```",
+    "bum is built from the Grok Build harness lineage.",
+    "Authenticate through https://grok.com when using xAI.",
+    "The internal identifiers `GROK_HOME` and `xai-grok-shell` remain compatible.",
+    "A project-local `.grok/config.toml` is supported for compatibility.",
+    "The legal notice records Grok Build ancestry.",
+  ];
+  const forbidden = [
+    "Grok delivers a terminal coding workflow.",
+    "Grok offers fast edits.",
+    "Grok powers the terminal.",
+    "Grok helps with refactors.",
+    "Grok works everywhere.",
+    "# Grok: a terminal coding agent",
+    "Grok—now with more tools.",
+    "[Grok](https://example.com) handles the task.",
+    "Use `Grok` for this task.",
+    "Launch Grok to begin.",
+    "Use the Grok CLI for this task.",
+    "Run `grok` now.",
+    "```bash\ngrok\n```",
+    "```bash\n./grok login\n```",
+    "Credentials are stored in ~/.grok.",
+    "bum is the stock OpenAI Codex CLI.",
+  ];
+  for (const fixture of allowed) {
+    if (classify(fixture)) throw new Error(`allowed identity category was rejected: ${JSON.stringify(fixture)}`);
+  }
+  for (const fixture of forbidden) {
+    if (!classify(fixture)) throw new Error(`forbidden identity category was accepted: ${JSON.stringify(fixture)}`);
+  }
+  console.log(`identity classifier fixtures: ${allowed.length} allowed, ${forbidden.length} forbidden`);
+  process.exit(0);
+}
+
+throw new Error(`unknown identity classifier mode: ${mode}`);
+NODE
+}
+
 classify_identity_file() {
   local file="$1"
   test -f "$file" || fail "missing documentation file: $file"
   is_known_doc "$file" || fail "file is outside the Phase 12 documentation inventory: $file"
-
   rg -q -i '\bbum\b' "$file" || fail "$file does not identify bum where applicable"
-
-  if rg -n -i "$IDENTITY_STOCK_SUBJECT" "$file"; then
-    fail "$file contains a stock-product subject claim"
-  fi
-  if rg -n -i "$IDENTITY_STOCK_COMMAND" "$file"; then
-    fail "$file contains a stock executable command"
-  fi
-  if rg -n -i "$IDENTITY_STOCK_HOME" "$file"; then
-    fail "$file contains a user-global stock-home path"
-  fi
-  if rg -n -i "$IDENTITY_STOCK_CODEX" "$file"; then
-    fail "$file claims bum is the stock Codex CLI"
-  fi
-
-  echo "identity clean: $file"
+  identity_classifier_node files "$file" || fail "$file contains a forbidden identity reference"
 }
 
 identity_fixture_gate() {
-  local fixture
-  local -a allowed=(
-    'bum supports xAI Grok models and OpenAI Codex models.'
-    'bum is built from the Grok Build harness lineage.'
-    'Authenticate through https://grok.com when using xAI.'
-    'The internal identifiers `GROK_HOME` and `xai-grok-shell` remain compatible.'
-    'A project-local `.grok/config.toml` is supported for compatibility.'
-    'The legal notice records Grok Build ancestry.'
-  )
-  local -a forbidden=(
-    'Grok provides a terminal coding workflow.'
-    'Launch Grok to begin.'
-    'Use the Grok CLI for this task.'
-    'Run `grok` now.'
-    $'```bash\ngrok\n```'
-    $'```bash\n./grok login\n```'
-    'Credentials are stored in ~/.grok.'
-    'bum is the stock OpenAI Codex CLI.'
-  )
-  local combined="$IDENTITY_STOCK_SUBJECT|$IDENTITY_STOCK_COMMAND|$IDENTITY_STOCK_HOME|$IDENTITY_STOCK_CODEX"
-
-  for fixture in "${allowed[@]}"; do
-    ! rg -q -i "$combined" <<< "$fixture" ||
-      fail "identity classifier rejected allowed fixture: $fixture"
-  done
-  for fixture in "${forbidden[@]}"; do
-    rg -q -i "$combined" <<< "$fixture" ||
-      fail "identity classifier accepted forbidden fixture: $fixture"
-  done
-  echo "identity classifier fixtures: ${#allowed[@]} allowed, ${#forbidden[@]} forbidden"
+  identity_classifier_node fixtures || fail "identity classifier fixtures failed"
 }
 
 docs_files_gate() {

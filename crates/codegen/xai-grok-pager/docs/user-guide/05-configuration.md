@@ -474,7 +474,7 @@ items = ["action-required", "spinner", "activity", "session-name", "grok"]
 | VS Code | BEL | Yes | No |
 | Apple Terminal | BEL | No | No |
 | VTE (GNOME Terminal) | OSC 777 | Yes | No |
-| Grok Desktop | None (native) | N/A | N/A |
+| Legacy native desktop host | None (native) | N/A | N/A |
 | Unknown | BEL | No | No |
 
 When `method = "auto"`, bum detects the terminal brand and selects the best
