@@ -3,17 +3,17 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 current_phase: 12
-current_phase_name: codex-depth-attribution-polish
 status: phase_complete
 stopped_at: Completed 12-08-PLAN.md
-last_updated: "2026-07-22T04:29:39.809Z"
+last_updated: "2026-07-22T04:39:38.334Z"
 last_activity: 2026-07-22
-last_activity_desc: Phase 12 Plan 08 completed; fail-closed review artifact gap closed with credential-free evidence
+last_activity_desc: Phase 12 complete
 progress:
   total_phases: 12
   completed_phases: 8
   total_plans: 67
   completed_plans: 61
+current_phase_name: codex-depth-attribution-polish
 current_plan: 8
 ---
 
@@ -28,9 +28,9 @@ See: .planning/PROJECT.md (updated 2026-07-17)
 
 ## Current Position
 
-Phase: 12 (codex-depth-attribution-polish) — COMPLETE (12-VALIDATION.md: 18/18 green, Nyquist compliant)
+Phase: 12
 Next: Phase 12 verification and milestone closeout.
-Last activity: 2026-07-22 — Phase 12 Plan 08 completed; fail-closed review artifact gap closed with credential-free evidence
+Last activity: 2026-07-22 — Phase 12 complete
 
 Progress: [█████████░] 91%
 

@@ -348,9 +348,9 @@ The tool is registered as `Codex:apply_patch`, reports model-facing id `apply_pa
 ### Focused Validation Commands
 
 ```bash
-cargo test -p xai-grok-tools --lib apply_patch -- --nocapture
-cargo test -p xai-grok-pager --lib docs::tests -- --nocapture
-cargo test -p xai-grok-shell --lib trusted_codex_reconstruct_enables_profile_and_metadata -- --nocapture
+test "$(cargo test -p xai-grok-tools --lib -- --list | awk -F': ' '$1 ~ /apply_patch/ && $2 == "test" { n++ } END { print n + 0 }')" -eq 41 && cargo test -p xai-grok-tools --lib apply_patch -- --nocapture
+test "$(cargo test -p xai-grok-pager --lib -- --list | awk -F': ' '$1 ~ /docs::tests/ && $2 == "test" { n++ } END { print n + 0 }')" -eq 15 && cargo test -p xai-grok-pager --lib docs::tests -- --nocapture
+test "$(cargo test -p xai-grok-shell --lib -- --list | awk -F': ' '$1 ~ /::trusted_codex_reconstruct_enables_profile_and_metadata$/ && $2 == "test" { n++ } END { print n + 0 }')" -eq 1 && cargo test -p xai-grok-shell --lib trusted_codex_reconstruct_enables_profile_and_metadata -- --nocapture
 cargo fmt --all -- --check
 ```
 
@@ -377,17 +377,19 @@ The first three commands passed during this research: 41 apply-patch-related tes
 |---|-------|---------|---------------|
 | — | None. All implementation claims were verified against the current tree, focused tests, planning artifacts, or official OpenAI/Codex sources. | — | — |
 
-## Open Questions
+## Open Questions (RESOLVED)
 
-1. **How broad should the embedded-guide wording sweep be?**
+1. **RESOLVED — How broad should the embedded-guide wording sweep be?**
    - What we know: all 22 registered numbered docs plus two reference docs are shipped through `include_str!`; 21 numbered docs contain at least one stock product/executable/home pattern. [VERIFIED: codebase grep]
    - What's unclear: some pages also document intentionally preserved project-local `.grok/` compatibility and internal `GROK_*` knobs, which must not be blindly renamed. [VERIFIED: Phase 1 decisions and codebase]
    - Recommendation: sweep every embedded page for product/executable claims, but classify each `.grok`/`GROK_*` occurrence as user-global product state, project-local compatibility, or internal compatibility before editing. [VERIFIED: recommendation]
+   - Resolution: adopted. Phase 12 sweeps all 22 registered numbered guides plus both registered reference documents, with per-file classified negative checks that preserve legitimate provider/model, legal, lineage, internal, hosted-domain, and project-local compatibility references. [RESOLVED: plans 12-01 and 12-03 through 12-07]
 
-2. **Should Phase 12 add a new toolset regression?**
+2. **RESOLVED — Should Phase 12 add a new toolset regression?**
    - What we know: 41 apply-patch-related tests pass and the Codex preset currently contains `Codex:apply_patch`; there is no phase-prefixed assertion that locks the preset/name boundary against broad parity renames. [VERIFIED: cargo test and codebase grep]
    - What's unclear: whether the planner considers static source verification enough for the "focused test gaps" decision. [VERIFIED: locked discretion]
    - Recommendation: add one pure `xai-grok-agent` config test that asserts the Codex preset retains `Codex:apply_patch` while the default bum preset retains its existing edit tool; do not add new filesystem behavior tests unless an actual defect is found. [VERIFIED: recommendation]
+   - Resolution: adopted. Add exactly one phase-prefixed config regression against the real preset builder; keep production composition and filesystem behavior unchanged. [RESOLVED: plans 12-01 and 12-07]
 
 ## Environment Availability
 
@@ -411,18 +413,18 @@ The first three commands passed during this research: 41 apply-patch-related tes
 |----------|-------|
 | Framework | Rust built-in `cargo test` 1.92.0 plus scoped `rg` assertions. [VERIFIED: environment and project conventions] |
 | Config file | `rust-toolchain.toml`; no separate global test config. [VERIFIED: repository] |
-| Quick run command | `cargo test -p xai-grok-pager --lib p12_ -- --nocapture` [VERIFIED: recommended phase prefix pattern] |
-| Full suite command | Discover and execute `p12_` filters in pager/agent plus existing apply-patch and trusted-originator filters, then run static README/guide/notice gates and `cargo fmt --all -- --check`. [VERIFIED: Phase 8 gate pattern; recommendation] |
+| Quick run command | `bash .planning/phases/12-codex-depth-attribution-polish/12-PHASE-GATE.md --rust`; the script pins exact discovery counts before every filtered test. [VERIFIED: Phase 8 gate pattern; recommendation] |
+| Full suite command | Execute `12-PHASE-GATE.md` to run exact-discovery Rust filters plus static README/guide/notice and committed phase-diff gates and `cargo fmt --all -- --check`. [VERIFIED: Phase 8 gate pattern; recommendation] |
 
 ### Phase Requirements → Test Map
 
 | Req ID | Behavior | Test Type | Automated Command | File Exists? |
 |--------|----------|-----------|-------------------|-------------|
-| ID-02 | Embedded docs identify the executable/product as bum, with explicit allowlists for brands/lineage/legal text | unit + static | `cargo test -p xai-grok-pager --lib p12_embedded_docs_use_bum_product_identity -- --nocapture` | ❌ Wave 0 |
-| D-10 | Shipped capability matrix states non-stock disclaimer, HTTP/SSE support, deferred WS, tool-shape gap, and bum originator | unit | `cargo test -p xai-grok-pager --lib p12_capability_disclosure_is_embedded_and_complete -- --nocapture` | ❌ Wave 0 |
-| OPS-04 | Existing apply-patch behavior remains green | unit | `cargo test -p xai-grok-tools --lib apply_patch -- --nocapture` | ✅ 41 green |
-| D-10 | Codex preset retains current apply-patch boundary without renaming the default toolset | unit | `cargo test -p xai-grok-agent --lib p12_codex_toolset_identity -- --nocapture` | ❌ Wave 0 |
-| Product honesty | Trusted route identifies as bum and upstream identity does not leak | unit + integration | `cargo test -p xai-grok-shell --lib trusted_codex_reconstruct_enables_profile_and_metadata -- --nocapture` and `cargo test -p xai-grok-shell --test model_switch_gate trusted_codex_wire_headers_are_sent_and_stable -- --nocapture` | ✅ existing |
+| ID-02 | Embedded docs identify the executable/product as bum, with explicit allowlists for brands/lineage/legal text | unit + static | `12-PHASE-GATE.md --rust` exact-discovers and executes `p12_embedded_docs_use_bum_product_identity` | ❌ Wave 0 |
+| D-10 | Shipped capability matrix states non-stock disclaimer, HTTP/SSE support, deferred WS, tool-shape gap, and bum originator | unit | `12-PHASE-GATE.md --rust` exact-discovers and executes `p12_capability_disclosure_is_embedded_and_complete` | ❌ Wave 0 |
+| OPS-04 | Existing apply-patch behavior remains green | unit | `12-PHASE-GATE.md --rust` exact-discovers the pinned 41-test apply-patch inventory before execution | ✅ 41 green |
+| D-10 | Codex preset retains current apply-patch boundary without renaming the default toolset | unit | `12-PHASE-GATE.md --rust` exact-discovers and executes `p12_codex_toolset_identity` | ❌ Wave 0 |
+| Product honesty | Trusted route identifies as bum and upstream identity does not leak | unit + integration | `12-PHASE-GATE.md --rust` exact-discovers both pinned trusted-route filters before execution | ✅ existing |
 | Notices | Root and crate-local notices retain OpenAI/Codex apply-patch ancestry; no new notice required absent new derived code | static | scoped `rg` positive checks plus `git diff --` review | ✅ notice content; ❌ Phase 12 gate |
 | Deferred scope | No sampler WebSocket implementation or stock identity header appears in phase diff | static | phase-diff `rg` / file allowlist in `12-PHASE-GATE.md` | ❌ Wave 0 |
 
