@@ -1,1 +1,0 @@
-{"content":"Rhai 1.25.1 exposes a serde feature enabling serde plus serde support in smallvec, smartstring, and thin-vec. Upstream uses rhai 1.25 with serde and the lock resolves 1.25.1 for workflow metadata/value conversion.","source":"web","provider":"webfetch","confidence":"LOW","fetched_at":"2026-07-22T08:15:27.001Z","ttl":86400000,"kind":"docs"}
